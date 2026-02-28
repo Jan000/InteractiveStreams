@@ -783,6 +783,15 @@ void ColorConquest::renderGameOver(sf::RenderTarget& target) {
 // State & Commands (for Web Dashboard)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+bool ColorConquest::isRoundComplete() const {
+    return m_phase == Phase::RoundEnd || m_phase == Phase::GameOver
+        || m_phase == Phase::Lobby;
+}
+
+bool ColorConquest::isGameOver() const {
+    return m_phase == Phase::GameOver;
+}
+
 nlohmann::json ColorConquest::getState() const {
     nlohmann::json state;
     state["phase"] = static_cast<int>(m_phase);

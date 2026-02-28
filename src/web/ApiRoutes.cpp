@@ -2,6 +2,7 @@
 #include "core/Application.h"
 #include "core/GameManager.h"
 #include "core/Config.h"
+#include "games/GameRegistry.h"
 #include "platform/PlatformManager.h"
 #include "platform/local/LocalPlatform.h"
 #include "streaming/StreamEncoder.h"
@@ -26,6 +27,15 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             status["game"]["name"] = game->displayName();
             status["game"]["state"] = game->getState();
             status["game"]["commands"] = game->getCommands();
+            status["game"]["isRoundComplete"] = game->isRoundComplete();
+            status["game"]["isGameOver"] = game->isGameOver();
+        }
+
+        // Pending game switch
+        if (app.gameManager().hasPendingSwitch()) {
+            status["pendingSwitch"]["game"] = app.gameManager().pendingGameName();
+            int mode = static_cast<int>(app.gameManager().pendingSwitchMode());
+            status["pendingSwitch"]["mode"] = mode == 1 ? "after_round" : "after_game";
         }
 
         // Platforms
@@ -42,24 +52,63 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     // ──────── Game Management ────────────────────────────────────────────────
     server.Get("/api/games", [&app](const httplib::Request&, httplib::Response& res) {
-        auto games = app.gameManager().availableGames();
+        auto gameNames = app.gameManager().availableGames();
         nlohmann::json j = nlohmann::json::array();
-        for (const auto& g : games) {
-            j.push_back(g);
+        for (const auto& name : gameNames) {
+            // Create a temporary instance to get metadata
+            auto temp = games::GameRegistry::instance().create(name);
+            if (temp) {
+                j.push_back({
+                    {"id", temp->id()},
+                    {"name", temp->displayName()},
+                    {"description", temp->description()}
+                });
+            } else {
+                j.push_back({{"id", name}, {"name", name}, {"description", ""}});
+            }
         }
-        res.set_content(j.dump(), "application/json");
+        res.set_content(j.dump(2), "application/json");
     });
 
     server.Post("/api/games/load", [&app](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = nlohmann::json::parse(req.body);
             std::string gameName = body["game"];
-            app.gameManager().loadGame(gameName);
+            app.gameManager().requestSwitch(gameName, core::SwitchMode::Immediate);
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
             res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
         }
+    });
+
+    server.Post("/api/games/switch", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string gameName = body["game"];
+            std::string modeStr  = body.value("mode", "immediate");
+
+            core::SwitchMode mode = core::SwitchMode::Immediate;
+            if (modeStr == "after_round")     mode = core::SwitchMode::AfterRound;
+            else if (modeStr == "after_game") mode = core::SwitchMode::AfterGame;
+
+            app.gameManager().requestSwitch(gameName, mode);
+
+            nlohmann::json resp;
+            resp["success"] = true;
+            resp["game"]    = gameName;
+            resp["mode"]    = modeStr;
+            resp["pending"] = (mode != core::SwitchMode::Immediate);
+            res.set_content(resp.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Post("/api/games/cancel-switch", [&app](const httplib::Request&, httplib::Response& res) {
+        app.gameManager().cancelPendingSwitch();
+        res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Get("/api/games/state", [&app](const httplib::Request&, httplib::Response& res) {

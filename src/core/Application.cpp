@@ -135,6 +135,9 @@ void Application::mainLoop() {
             accumulator -= dt;
         }
 
+        // Check for deferred game switch (after round/game end)
+        m_impl->gameManager->checkPendingSwitch();
+
         // Render
         double alpha = accumulator / dt;
         m_impl->renderer->beginFrame();

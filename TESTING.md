@@ -10,12 +10,13 @@ Diese Anleitung beschreibt, wie du das Spiel lokal testen, mehrere Spieler simul
 2. [Bauen & Starten](#bauen--starten)
 3. [Lokales Testen (Einzelspieler)](#lokales-testen-einzelspieler)
 4. [Multi-Player-Test (Dashboard)](#multi-player-test-dashboard)
-5. [Chat bedienen – alle Wege](#chat-bedienen--alle-wege)
-6. [REST-API direkt nutzen (curl)](#rest-api-direkt-nutzen-curl)
-7. [Spielablauf testen](#spielablauf-testen)
-8. [Auto-Play & Bot-Simulation](#auto-play--bot-simulation)
-9. [Automatisierte Tests](#automatisierte-tests)
-10. [Fehlerbehebung](#fehlerbehebung)
+5. [Spiel wechseln (Dashboard & API)](#spiel-wechseln-dashboard--api)
+6. [Chat bedienen – alle Wege](#chat-bedienen--alle-wege)
+7. [REST-API direkt nutzen (curl)](#rest-api-direkt-nutzen-curl)
+8. [Spielablauf testen](#spielablauf-testen)
+9. [Auto-Play & Bot-Simulation](#auto-play--bot-simulation)
+10. [Automatisierte Tests](#automatisierte-tests)
+11. [Fehlerbehebung](#fehlerbehebung)
 
 ---
 
@@ -55,7 +56,7 @@ cmake --build build --config Debug
 > - SFML-Fenster öffnet sich (1920×1080 Live-Vorschau)
 > - Web-Dashboard wird auf **http://localhost:8080** gestartet
 > - „Local"-Plattform verbindet sich (Konsoleneingabe aktiv)
-> - Chaos Arena wird als Standard-Spiel geladen (Lobby-Phase)
+> - Das in `config/default.json` unter `default_game` konfigurierte Spiel wird geladen (Standard: Chaos Arena)
 
 ---
 
@@ -129,6 +130,54 @@ Unterhalb der Quick-Buttons findest du drei Bulk-Aktionen:
 
 ---
 
+## Spiel wechseln (Dashboard & API)
+
+Das System unterstützt **Laufzeit-Spielwechsel** über drei Modi:
+
+### Über das Dashboard
+
+1. Öffne http://localhost:8080
+2. Im Bereich **„Spiel wechseln“** oben:
+   - Wähle das Zielspiel aus dem Dropdown (z.B. „Color Conquest“)
+   - Wähle den Wechsel-Modus:
+     - ⚡ **Sofort** – Wechsel erfolgt unmittelbar
+     - ⏳ **Nach Runde** – Wechsel nach Abschluss der aktuellen Runde
+     - 🏁 **Nach Spiel** – Wechsel nach Game Over
+   - Klicke **„Wechseln“**
+3. Bei verzögertem Wechsel erscheint ein **gelbes Banner** mit dem ausstehenden Wechsel
+4. Zum Abbrechen: Klicke **„Abbrechen“** im Banner
+
+### Über REST-API
+
+```powershell
+# Sofort wechseln
+curl -X POST http://localhost:8080/api/games/switch `
+     -H "Content-Type: application/json" `
+     -d '{"game":"color_conquest","mode":"immediate"}'
+
+# Nach aktueller Runde wechseln
+curl -X POST http://localhost:8080/api/games/switch `
+     -H "Content-Type: application/json" `
+     -d '{"game":"chaos_arena","mode":"after_round"}'
+
+# Nach Spielende wechseln
+curl -X POST http://localhost:8080/api/games/switch `
+     -H "Content-Type: application/json" `
+     -d '{"game":"color_conquest","mode":"after_game"}'
+
+# Ausstehenden Wechsel abbrechen
+curl -X POST http://localhost:8080/api/games/cancel-switch
+```
+
+### Was du testen solltest
+1. **Sofort-Wechsel:** Während Battle-Phase wechseln → Spiel wird sofort ersetzt
+2. **Nach-Runde-Wechsel:** Verzögerten Wechsel setzen, warten bis Runde endet → automatischer Wechsel
+3. **Nach-Spiel-Wechsel:** Verzögerten Wechsel setzen, ganzes Spiel durchspielen → Wechsel bei Game Over
+4. **Abbrechen:** Verzögerten Wechsel setzen, dann abbrechen → Banner verschwindet
+5. **Dashboard-Aktualisierung:** Nach Wechsel müssen Quick-Buttons, Stats und Detail-Ansicht zum neuen Spiel passen
+
+---
+
 ## Chat bedienen – alle Wege
 
 Es gibt **drei Wege**, Chat-Nachrichten an das Spiel zu senden:
@@ -169,17 +218,36 @@ curl -X POST http://localhost:8080/api/chat `
 
 ### Spielstatus abfragen
 ```powershell
-# Vollständiger System-Status
+# Vollständiger System-Status (enthält pendingSwitch-Info)
 curl http://localhost:8080/api/status
 
 # Nur Spielstatus
 curl http://localhost:8080/api/games/state
+
+# Verfügbare Spiele auflisten
+curl http://localhost:8080/api/games
 
 # Chat-Log abrufen
 curl http://localhost:8080/api/chat/log
 
 # Verfügbare Plattformen
 curl http://localhost:8080/api/platforms
+```
+
+### Spiel wechseln
+```powershell
+# Sofort zu Color Conquest wechseln
+curl -X POST http://localhost:8080/api/games/switch `
+     -H "Content-Type: application/json" `
+     -d '{"game":"color_conquest","mode":"immediate"}'
+
+# Nach Runde zurück zu Chaos Arena
+curl -X POST http://localhost:8080/api/games/switch `
+     -H "Content-Type: application/json" `
+     -d '{"game":"chaos_arena","mode":"after_round"}'
+
+# Ausstehenden Wechsel abbrechen
+curl -X POST http://localhost:8080/api/games/cancel-switch
 ```
 
 ### PowerShell-Skript: Mehrere Spieler automatisch joinen
@@ -211,7 +279,18 @@ foreach ($p in $players) {
 | `!block` | `!shield`, `!def` | Block aktivieren (1.5s Dauer) |
 | `!emote` | — | Emote auslösen (z.B. `!emote wave`) |
 
-### Spielphasen
+### Chat-Befehle (Color Conquest)
+
+| Befehl | Aliase | Beschreibung |
+|--------|--------|-------------|
+| `!join [team]` | `!play` | Team beitreten (red/blue/green/yellow oder auto) |
+| `!up` | `!u`, `!w`, `!north` | Für Expansion nach oben stimmen |
+| `!down` | `!d`, `!s`, `!south` | Für Expansion nach unten stimmen |
+| `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
+| `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
+| `!emote [text]` | — | Team-Emote senden |
+
+### Spielphasen (Chaos Arena)
 
 | Phase | Beschreibung | Trigger |
 |-------|-------------|---------|
@@ -221,6 +300,16 @@ foreach ($p in $players) {
 | **RoundEnd** | Rundenwechsel | ≤ 1 Spieler übrig oder Timer |
 | **GameOver** | Endergebnis | Alle Runden gespielt |
 
+### Spielphasen (Color Conquest)
+
+| Phase | Beschreibung | Trigger |
+|-------|-------------|--------|
+| **Lobby** | Warten auf Spieler, Teams wählen | Start / nach GameOver |
+| **Countdown** | 3s Countdown vor der Runde | ≥ 2 Spieler beigetreten |
+| **Voting** | Teams stimmen über Richtung ab (8s) | Countdown abgelaufen |
+| **RoundEnd** | Ergebnis der Expansion anzeigen | Abstimmungszeit vorbei |
+| **GameOver** | Endergebnis – Team mit meisten Zellen gewinnt | 30 Runden gespielt |
+
 ### Was du testen solltest
 1. **Join-Mechanik:** Tritt mit mehreren Spielern bei, prüfe Leaderboard
 2. **Bewegung:** Links/Rechts/Jump, Doppelsprung, Plattform-Interaktion
@@ -229,6 +318,15 @@ foreach ($p in $players) {
 5. **PowerUps:** Erscheinen zufällig, Speed/Damage-Boost, Schild
 6. **Phasen:** Lobby → Countdown → Battle → RoundEnd → GameOver
 7. **UI:** HUD-Anzeigen, Timer, Player-Liste, Leaderboard
+
+### Color Conquest – Was du testen solltest
+1. **Team-Join:** `!join red`, `!join blue`, `!join` (Auto-Zuweisung)
+2. **Abstimmung:** `!up`, `!down`, `!left`, `!right` während Voting-Phase
+3. **Expansion:** Grenzzellen werden erobert, Gebiete wachsen
+4. **Rundenwechsel:** 30 Runden durchspielen, Ergebnis prüfen
+5. **Team-Balance:** Auto-Zuweisung weist kleinsten Teams zu
+6. **Skalierung:** Viele Spieler über Auto-Play testen (500+)
+7. **Spielwechsel:** Während Color Conquest zu Chaos Arena wechseln und umgekehrt
 
 ---
 
@@ -301,6 +399,8 @@ ctest --output-on-failure -C Debug
 | **PhysicsWorld** | Welt-Erstellung, Body-Erstellung, Gravitation, Bodenerkennung |
 | **GameRegistry** | Registrierung, Listing, Duplikat-Handling |
 | **LocalPlatform** | Message-Injection, Polling, Konsolen-Format-Parsing |
+| **Grid** | Grid-Erstellung, Zell-Zuordnung, Expansion, Grenzerkennung |
+| **ColorConquest** | TeamData-Voting, Vote-Tallying, Tie-Break, clearVotes |
 
 ---
 

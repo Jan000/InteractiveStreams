@@ -5,48 +5,69 @@
 const API_BASE = '';
 const POLL_INTERVAL = 1000; // ms
 
-// ─── Phase names ─────────────────────────────────────────────────────────
-const PHASE_NAMES = {
-    0: 'Lobby',
-    1: 'Countdown',
-    2: 'Battle',
-    3: 'Round End',
-    4: 'Game Over'
+// ─── Phase definitions per game ──────────────────────────────────────────
+const GAME_PHASES = {
+    chaos_arena: {
+        names:  { 0: 'Lobby', 1: 'Countdown', 2: 'Battle', 3: 'Round End', 4: 'Game Over' },
+        colors: { 0: '#58a6ff', 1: '#d29922', 2: '#3fb950', 3: '#bc8cff', 4: '#f85149' },
+        battlePhase: 2,
+        maxRoundTime: 120,
+    },
+    color_conquest: {
+        names:  { 0: 'Lobby', 1: 'Voting', 2: 'Results', 3: 'Game Over' },
+        colors: { 0: '#58a6ff', 1: '#3fb950', 2: '#bc8cff', 3: '#f85149' },
+        battlePhase: 1,
+        maxRoundTime: 8,
+    }
 };
 
-const PHASE_COLORS = {
-    0: '#58a6ff',
-    1: '#d29922',
-    2: '#3fb950',
-    3: '#bc8cff',
-    4: '#f85149'
+// ─── Quick-command definitions per game ──────────────────────────────────
+const GAME_QUICK_CMDS = {
+    chaos_arena: ['!join', '!left', '!right', '!jump', '!attack', '!special', '!dash', '!block'],
+    color_conquest: ['!join', '!join red', '!join blue', '!join green', '!join yellow', '!up', '!down', '!left', '!right'],
 };
+
+const GAME_RANDOM_CMDS = {
+    chaos_arena: ['!left', '!right', '!jump', '!attack', '!special', '!dash', '!block'],
+    color_conquest: ['!up', '!down', '!left', '!right'],
+};
+
+const TEAM_COLORS = {
+    Red: '#dc3c3c', Blue: '#3c78dc', Green: '#3cc850', Yellow: '#e6c832'
+};
+
+let currentGameId = '';
 
 // ─── DOM References ──────────────────────────────────────────────────────
 const el = {
     statusDot:       document.getElementById('status-indicator'),
     statusText:      document.getElementById('status-text'),
-    gamePhase:       document.getElementById('game-phase'),
-    gameRound:       document.getElementById('game-round'),
-    gamePlayers:     document.getElementById('game-players'),
-    gameParticles:   document.getElementById('game-particles'),
     roundTimer:      document.getElementById('round-timer'),
+    gameStatsGrid:   document.getElementById('game-stats-grid'),
     streamStatus:    document.getElementById('stream-status'),
     streamFps:       document.getElementById('stream-fps'),
     streamFrames:    document.getElementById('stream-frames'),
     streamTargets:   document.getElementById('stream-targets'),
     platformsList:   document.getElementById('platforms-list'),
     commandsTable:   document.getElementById('commands-table').querySelector('tbody'),
-    playersTable:    document.getElementById('players-table').querySelector('tbody'),
-    leaderboardTable:document.getElementById('leaderboard-table').querySelector('tbody'),
+    gameDetailTitle: document.getElementById('game-detail-title'),
+    gameDetailBody:  document.getElementById('game-detail-body'),
+    leaderboardBody: document.getElementById('leaderboard-body'),
+    leaderboardTable:document.getElementById('leaderboard-table'),
     playerCountBadge:document.getElementById('player-count-badge'),
     lastUpdate:      document.getElementById('last-update'),
     gameSelector:    document.getElementById('game-selector'),
+    switchMode:      document.getElementById('switch-mode'),
+    btnSwitchGame:   document.getElementById('btn-switch-game'),
+    btnCancelSwitch: document.getElementById('btn-cancel-switch'),
+    pendingBanner:   document.getElementById('pending-switch-banner'),
+    pendingGameName: document.getElementById('pending-game-name'),
     btnShutdown:     document.getElementById('btn-shutdown'),
     chatMessages:    document.getElementById('chat-messages'),
     chatInput:       document.getElementById('chat-input'),
-    chatUsername:    document.getElementById('chat-username'),
+    chatUsername:     document.getElementById('chat-username'),
     btnSendChat:     document.getElementById('btn-send-chat'),
+    chatQuickButtons:document.getElementById('chat-quick-buttons'),
 };
 
 // ─── API Calls ───────────────────────────────────────────────────────────
@@ -60,6 +81,54 @@ async function fetchStatus() {
     } catch (e) {
         setOnline(false);
         console.warn('Failed to fetch status:', e.message);
+    }
+}
+
+async function fetchGames() {
+    try {
+        const res = await fetch(`${API_BASE}/api/games`);
+        if (!res.ok) return;
+        const games = await res.json();
+        populateGameSelector(games);
+    } catch (e) {
+        console.warn('Failed to fetch games:', e.message);
+    }
+}
+
+function populateGameSelector(games) {
+    const current = el.gameSelector.value;
+    el.gameSelector.innerHTML = '';
+    for (const g of games) {
+        const opt = document.createElement('option');
+        opt.value = g.id;
+        opt.textContent = g.name;
+        opt.title = g.description || '';
+        el.gameSelector.appendChild(opt);
+    }
+    if (current) el.gameSelector.value = current;
+}
+
+async function switchGame() {
+    const gameName = el.gameSelector.value;
+    const mode = el.switchMode.value;
+    if (!gameName) return;
+
+    try {
+        await fetch(`${API_BASE}/api/games/switch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: gameName, mode })
+        });
+    } catch (e) {
+        console.error('Failed to switch game:', e);
+    }
+}
+
+async function cancelSwitch() {
+    try {
+        await fetch(`${API_BASE}/api/games/cancel-switch`, { method: 'POST' });
+    } catch (e) {
+        console.error('Failed to cancel switch:', e);
     }
 }
 
@@ -123,20 +192,35 @@ function setOnline(online) {
 }
 
 function updateDashboard(data) {
-    // Game state
-    if (data.game && data.game.state) {
-        const state = data.game.state;
+    // Game state – adaptive to current game
+    if (data.game) {
+        const gameId = data.game.id || '';
+        const gameName = data.game.name || gameId;
+        const state = data.game.state || {};
         const phase = state.phase ?? 0;
 
-        el.gamePhase.textContent = PHASE_NAMES[phase] || 'Unknown';
-        el.gamePhase.style.color = PHASE_COLORS[phase] || '#e6edf3';
-        el.gameRound.textContent = `${state.round || 0}/${state.maxRounds || 5}`;
-        el.gamePlayers.textContent = state.playerCount || 0;
-        el.gameParticles.textContent = state.particles || 0;
+        // Update selector to highlight active game
+        if (el.gameSelector.value !== gameId) {
+            el.gameSelector.value = gameId;
+        }
+
+        // Detect game change and update UI
+        if (gameId !== currentGameId) {
+            currentGameId = gameId;
+            updateQuickButtons(gameId);
+        }
+
+        const phases = GAME_PHASES[gameId] || {
+            names: { 0: 'Phase ' + phase }, colors: {}, battlePhase: 0, maxRoundTime: 10
+        };
+
+        // Stats grid – dynamically build based on game
+        updateGameStats(gameId, state, phase, phases);
 
         // Round timer
-        if (state.roundTimer != null && phase === 2) {
-            const maxTime = 120; // match roundDuration
+        const isBattle = phase === phases.battlePhase;
+        if (state.roundTimer != null && isBattle) {
+            const maxTime = phases.maxRoundTime || 10;
             const pct = Math.max(0, Math.min(100, (state.roundTimer / maxTime) * 100));
             el.roundTimer.style.width = `${pct}%`;
             el.roundTimer.style.background = pct > 30 ? 'var(--accent)' : 'var(--red)';
@@ -144,16 +228,24 @@ function updateDashboard(data) {
             el.roundTimer.style.width = '0%';
         }
 
-        // Players table
-        updatePlayersTable(state.players || []);
+        // Game detail section (players/teams)
+        updateGameDetail(gameId, state);
 
         // Leaderboard
-        updateLeaderboard(state.leaderboard || []);
+        updateLeaderboard(gameId, state);
 
         // Commands
         if (data.game.commands) {
             updateCommands(data.game.commands);
         }
+    }
+
+    // Pending switch banner
+    if (data.pendingSwitch) {
+        el.pendingBanner.style.display = 'flex';
+        el.pendingGameName.textContent = data.pendingSwitch.game;
+    } else {
+        el.pendingBanner.style.display = 'none';
     }
 
     // Streaming
@@ -165,7 +257,6 @@ function updateDashboard(data) {
         el.streamFps.textContent = (streaming.fps || 0).toFixed(1);
         el.streamFrames.textContent = formatNumber(streaming.frames || 0);
 
-        // Targets
         if (streaming.targets) {
             el.streamTargets.innerHTML = streaming.targets.map(t => `
                 <div class="target-item">
@@ -187,51 +278,160 @@ function updateDashboard(data) {
     el.lastUpdate.textContent = new Date().toLocaleTimeString();
 }
 
-function updatePlayersTable(players) {
-    el.playerCountBadge.textContent = players.length;
+function updateGameStats(gameId, state, phase, phases) {
+    const phaseName = phases.names[phase] || `Phase ${phase}`;
+    const phaseColor = phases.colors[phase] || '#e6edf3';
 
-    // Sort by score descending
-    players.sort((a, b) => (b.score || 0) - (a.score || 0));
+    let statsHtml = `
+        <div class="stat">
+            <span class="stat-value" style="color:${phaseColor}">${phaseName}</span>
+            <span class="stat-label">Phase</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value">${state.round || 0}/${state.maxRounds || '?'}</span>
+            <span class="stat-label">Round</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value">${state.playerCount || 0}</span>
+            <span class="stat-label">Players</span>
+        </div>
+    `;
 
-    el.playersTable.innerHTML = players.map(p => {
-        const healthPct = Math.max(0, Math.min(100, (p.health / 100) * 100));
-        const healthClass = healthPct > 50 ? 'high' : (healthPct > 25 ? 'mid' : 'low');
-        return `
-            <tr>
-                <td><strong>${escapeHtml(p.name)}</strong></td>
-                <td>
-                    <div class="health-bar">
-                        <div class="health-fill ${healthClass}" style="width:${healthPct}%"></div>
-                    </div>
-                    <span style="font-size:11px;color:var(--text-muted);margin-left:6px">
-                        ${Math.round(p.health)}
-                    </span>
-                </td>
-                <td>${p.kills || 0}</td>
-                <td>${p.deaths || 0}</td>
-                <td><strong>${p.score || 0}</strong></td>
-                <td>
-                    <span class="${p.alive ? 'status-alive' : 'status-dead'}">
-                        ${p.alive ? '● Alive' : '✕ Dead'}
-                    </span>
-                </td>
-            </tr>
+    if (gameId === 'chaos_arena') {
+        statsHtml += `
+            <div class="stat">
+                <span class="stat-value">${state.particles || 0}</span>
+                <span class="stat-label">Particles</span>
+            </div>
         `;
-    }).join('');
+    } else if (gameId === 'color_conquest' && state.teams) {
+        const totalCells = state.teams.reduce((s, t) => s + (t.cells || 0), 0);
+        statsHtml += `
+            <div class="stat">
+                <span class="stat-value">${totalCells}</span>
+                <span class="stat-label">Cells Claimed</span>
+            </div>
+        `;
+    }
+
+    el.gameStatsGrid.innerHTML = statsHtml;
 }
 
-function updateLeaderboard(leaderboard) {
-    leaderboard.sort((a, b) => (b.score || 0) - (a.score || 0));
+function updateGameDetail(gameId, state) {
+    if (gameId === 'chaos_arena') {
+        el.gameDetailTitle.textContent = '👥 Players';
+        updateChaosArenaPlayers(state.players || []);
+        el.playerCountBadge.textContent = (state.players || []).length;
+        document.getElementById('card-leaderboard').style.display = '';
+    } else if (gameId === 'color_conquest') {
+        el.gameDetailTitle.textContent = '🗺 Teams';
+        updateColorConquestTeams(state.teams || [], state.playerCount || 0);
+        el.playerCountBadge.textContent = state.playerCount || 0;
+        document.getElementById('card-leaderboard').style.display = 'none';
+    } else {
+        el.gameDetailTitle.textContent = '📊 Game Details';
+        el.gameDetailBody.innerHTML = `<pre>${JSON.stringify(state, null, 2)}</pre>`;
+        el.playerCountBadge.textContent = state.playerCount || 0;
+    }
+}
 
-    el.leaderboardTable.innerHTML = leaderboard.map((entry, i) => `
-        <tr>
-            <td>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</td>
-            <td><strong>${escapeHtml(entry.name)}</strong></td>
-            <td>${entry.kills || 0}</td>
-            <td>${entry.wins || 0}</td>
-            <td><strong>${entry.score || 0}</strong></td>
-        </tr>
-    `).join('');
+function updateChaosArenaPlayers(players) {
+    players.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    el.gameDetailBody.innerHTML = `
+        <table class="players-table">
+            <thead>
+                <tr><th>Name</th><th>Health</th><th>Kills</th><th>Deaths</th><th>Score</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                ${players.map(p => {
+                    const healthPct = Math.max(0, Math.min(100, (p.health / 100) * 100));
+                    const healthClass = healthPct > 50 ? 'high' : (healthPct > 25 ? 'mid' : 'low');
+                    return `
+                        <tr>
+                            <td><strong>${escapeHtml(p.name)}</strong></td>
+                            <td>
+                                <div class="health-bar">
+                                    <div class="health-fill ${healthClass}" style="width:${healthPct}%"></div>
+                                </div>
+                                <span style="font-size:11px;color:var(--text-muted);margin-left:6px">${Math.round(p.health)}</span>
+                            </td>
+                            <td>${p.kills || 0}</td>
+                            <td>${p.deaths || 0}</td>
+                            <td><strong>${p.score || 0}</strong></td>
+                            <td><span class="${p.alive ? 'status-alive' : 'status-dead'}">${p.alive ? '● Alive' : '✕ Dead'}</span></td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function updateColorConquestTeams(teams, totalPlayers) {
+    const totalCells = teams.reduce((s, t) => s + (t.cells || 0), 0) || 1;
+    const teamNames = ['Red', 'Blue', 'Green', 'Yellow'];
+
+    // Territory bar
+    let barHtml = '<div class="team-bar">';
+    for (let i = 0; i < teams.length; i++) {
+        const pct = ((teams[i].cells || 0) / totalCells * 100).toFixed(1);
+        const color = TEAM_COLORS[teamNames[i]] || '#888';
+        barHtml += `<div class="team-bar-segment" style="width:${pct}%;background:${color}"></div>`;
+    }
+    barHtml += '</div>';
+
+    // Team cards
+    let cardsHtml = '';
+    for (let i = 0; i < teams.length; i++) {
+        const t = teams[i];
+        const color = TEAM_COLORS[teamNames[i]] || '#888';
+        const pct = ((t.cells || 0) / totalCells * 100).toFixed(0);
+
+        let voteStr = '';
+        if (t.votes) {
+            const arrows = { up: '↑', down: '↓', left: '←', right: '→' };
+            for (const [dir, count] of Object.entries(t.votes)) {
+                if (count > 0) voteStr += ` ${arrows[dir] || dir}${count}`;
+            }
+        }
+
+        cardsHtml += `
+            <div class="team-card" style="border-left-color:${color}">
+                <div>
+                    <div class="team-name" style="color:${color}">${t.name || teamNames[i]}</div>
+                    <div class="team-stats">
+                        ${t.players || 0} players · ${t.cells || 0} cells (${pct}%)
+                        ${voteStr ? `· Votes:${voteStr}` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    el.gameDetailBody.innerHTML = barHtml + cardsHtml;
+}
+
+function updateLeaderboard(gameId, state) {
+    if (gameId === 'chaos_arena') {
+        const leaderboard = state.leaderboard || [];
+        leaderboard.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+        const thead = el.leaderboardTable.querySelector('thead tr');
+        thead.innerHTML = '<th>#</th><th>Name</th><th>Kills</th><th>Wins</th><th>Score</th>';
+
+        const tbody = el.leaderboardTable.querySelector('tbody');
+        tbody.innerHTML = leaderboard.map((entry, i) => `
+            <tr>
+                <td>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</td>
+                <td><strong>${escapeHtml(entry.name)}</strong></td>
+                <td>${entry.kills || 0}</td>
+                <td>${entry.wins || 0}</td>
+                <td><strong>${entry.score || 0}</strong></td>
+            </tr>
+        `).join('');
+    }
+    // Color Conquest doesn't have a separate leaderboard
 }
 
 function updatePlatforms(platforms) {
@@ -282,11 +482,24 @@ function formatNumber(n) {
 }
 
 // ─── Event Listeners ─────────────────────────────────────────────────────
-el.gameSelector.addEventListener('change', (e) => {
-    loadGame(e.target.value);
-});
-
+el.btnSwitchGame.addEventListener('click', switchGame);
+el.btnCancelSwitch.addEventListener('click', cancelSwitch);
 el.btnShutdown.addEventListener('click', shutdownServer);
+
+// ─── Quick-command buttons (dynamic per game) ────────────────────────────
+function updateQuickButtons(gameId) {
+    const cmds = GAME_QUICK_CMDS[gameId] || ['!join'];
+    el.chatQuickButtons.innerHTML = cmds.map(cmd =>
+        `<button class="btn btn-sm chat-quick" data-cmd="${escapeHtml(cmd)}">${escapeHtml(cmd)}</button>`
+    ).join('');
+
+    // Re-attach listeners
+    el.chatQuickButtons.querySelectorAll('.chat-quick').forEach(btn => {
+        btn.addEventListener('click', () => {
+            sendChatMessage(el.chatUsername.value || activePlayer, btn.dataset.cmd);
+        });
+    });
+}
 
 // ─── Chat controls ───────────────────────────────────────────────────────
 const PLAYER_COLORS = {
@@ -360,13 +573,6 @@ el.chatInput.addEventListener('keydown', (e) => {
     }
 });
 
-// Quick-command buttons
-document.querySelectorAll('.chat-quick').forEach(btn => {
-    btn.addEventListener('click', () => {
-        sendChatMessage(el.chatUsername.value || activePlayer, btn.dataset.cmd);
-    });
-});
-
 // ─── Bulk actions ────────────────────────────────────────────────────
 function getAllPlayerNames() {
     return Array.from(document.querySelectorAll('.player-tab[data-player]'))
@@ -376,17 +582,23 @@ function getAllPlayerNames() {
 document.getElementById('btn-join-all').addEventListener('click', async () => {
     const players = getAllPlayerNames();
     for (const p of players) {
-        await sendChatMessage(p, '!join');
+        // For Color Conquest, auto-assign teams
+        if (currentGameId === 'color_conquest') {
+            const teams = ['red', 'blue', 'green', 'yellow'];
+            const idx = players.indexOf(p) % teams.length;
+            await sendChatMessage(p, `!join ${teams[idx]}`);
+        } else {
+            await sendChatMessage(p, '!join');
+        }
         await new Promise(r => setTimeout(r, 100));
     }
 });
 
-const RANDOM_CMDS = ['!left', '!right', '!jump', '!attack', '!special', '!dash', '!block'];
-
 document.getElementById('btn-random-actions').addEventListener('click', async () => {
     const players = getAllPlayerNames();
+    const cmds = GAME_RANDOM_CMDS[currentGameId] || ['!left', '!right'];
     for (const p of players) {
-        const cmd = RANDOM_CMDS[Math.floor(Math.random() * RANDOM_CMDS.length)];
+        const cmd = cmds[Math.floor(Math.random() * cmds.length)];
         await sendChatMessage(p, cmd);
         await new Promise(r => setTimeout(r, 50));
     }
@@ -404,11 +616,12 @@ document.getElementById('btn-auto-play').addEventListener('click', () => {
         statusEl.style.color = 'var(--green)';
         autoPlayInterval = setInterval(async () => {
             const players = getAllPlayerNames();
+            const cmds = GAME_RANDOM_CMDS[currentGameId] || ['!left', '!right'];
             // Each tick, 1-3 random players perform a random action
             const count = Math.min(players.length, 1 + Math.floor(Math.random() * 3));
             const shuffled = [...players].sort(() => Math.random() - 0.5);
             for (let i = 0; i < count; i++) {
-                const cmd = RANDOM_CMDS[Math.floor(Math.random() * RANDOM_CMDS.length)];
+                const cmd = cmds[Math.floor(Math.random() * cmds.length)];
                 await sendChatMessage(shuffled[i], cmd);
             }
         }, 500);
@@ -416,5 +629,8 @@ document.getElementById('btn-auto-play').addEventListener('click', () => {
 });
 
 // ─── Initialize ──────────────────────────────────────────────────────────
+fetchGames();
 fetchStatus();
 setInterval(fetchStatus, POLL_INTERVAL);
+// Refresh game list every 30s in case new games are registered
+setInterval(fetchGames, 30000);

@@ -68,6 +68,14 @@
             "max_rounds": 5,
             "lobby_duration": 30,
             "power_up_interval": 10
+        },
+        "color_conquest": {
+            "max_rounds": 30,
+            "round_duration": 8,
+            "result_duration": 3,
+            "lobby_duration": 10,
+            "grid_width": 40,
+            "grid_height": 24
         }
     }
 }

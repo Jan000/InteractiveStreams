@@ -38,6 +38,13 @@ public:
     /// @param alpha Interpolation factor for smooth rendering between updates.
     virtual void render(sf::RenderTarget& target, double alpha) = 0;
 
+    /// Returns true if the current round / phase has ended and a game switch
+    /// could happen without interrupting active gameplay.
+    virtual bool isRoundComplete() const = 0;
+
+    /// Returns true if the entire game session is over.
+    virtual bool isGameOver() const = 0;
+
     /// Get current game state as JSON (for the web dashboard).
     virtual nlohmann::json getState() const = 0;
 

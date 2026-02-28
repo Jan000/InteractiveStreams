@@ -15,6 +15,7 @@ Das Projekt nutzt den Root-Namespace `is::` mit folgenden Sub-Namespaces:
 | `is::core` | `src/core/` | Anwendungsrahmen, Konfiguration, Logging, Spiel-Verwaltung |
 | `is::games` | `src/games/` | Spiel-Interface, Registry, alle Spiel-Implementierungen |
 | `is::games::chaos_arena` | `src/games/chaos_arena/` | Chaos Arena-Spiel (Physik-Arena-Kampf) |
+| `is::games::color_conquest` | `src/games/color_conquest/` | Color Conquest-Spiel (territoriale Eroberung) |
 | `is::platform` | `src/platform/` | Chat-Plattform-Abstraktionen und -Implementierungen |
 | `is::rendering` | `src/rendering/` | SFML-basiertes Rendering, Kamera, Partikel, UI |
 | `is::streaming` | `src/streaming/` | FFmpeg-Encoding und RTMP-Stream-Ausgabe |
@@ -60,6 +61,8 @@ public:
     virtual void onChatMessage(const is::platform::ChatMessage& message) = 0;
     virtual void update(double deltaTime) = 0;
     virtual void render(sf::RenderTarget& target, double interpolationAlpha) = 0;
+    virtual bool isRoundComplete() const = 0;   // true wenn Runde/Phase abgeschlossen
+    virtual bool isGameOver() const = 0;         // true wenn gesamtes Spiel beendet
     virtual nlohmann::json getState() const = 0;
     virtual nlohmann::json getCommands() const = 0;
 };
@@ -135,6 +138,18 @@ config.set("platforms.twitch.channel", "mein_kanal");
 ```
 Die `navigate()`-Methode traversiert das JSON-Objekt entlang der Punkte.
 
+### Spielwechsel (GameManager)
+Der `GameManager` unterstützt drei Wechsel-Modi:
+```cpp
+enum class SwitchMode { Immediate, AfterRound, AfterGame };
+gameManager->requestSwitch("color_conquest", SwitchMode::AfterRound);
+```
+- **Immediate**: Sofortiger Wechsel via `loadGame()`
+- **AfterRound**: Pending-State gesetzt, `checkPendingSwitch()` prüft in der Main-Loop via `isRoundComplete()`
+- **AfterGame**: Pending-State gesetzt, `checkPendingSwitch()` prüft via `isGameOver()`
+
+Thread-Sicherheit: Web-API-Threads setzen den Pending-State über `std::mutex`, der eigentliche `loadGame()`-Call erfolgt nur im Main-Thread.
+
 ---
 
 ## Chaos Arena – Interna
@@ -161,6 +176,28 @@ Befehle in `ChaosArena::onChatMessage()`:
 
 ---
 
+## Color Conquest – Interna
+
+### Spielphasen
+`GamePhase::Lobby` → `Countdown` → `Voting` → `RoundEnd` → ... (30 Runden) → `GameOver`
+
+### Grid-System
+- 40×24 Zellen, jede gehört einem Team oder ist neutral (Owner::None)
+- Teams starten in den Ecken mit 3×3 Blöcken
+- Expansion: Nur Grenzzellen können erobert werden
+- Rendering: Einfache Farbflächen, kein Box2D
+
+### Chat-Befehl-Parsing
+Befehle in `ColorConquest::onChatMessage()`:
+- `!join [team]` / `!play` → Team beitreten (red/blue/green/yellow oder auto)
+- `!up` / `!u` / `!w` / `!north` → Stimme für Expansion nach oben
+- `!down` / `!d` / `!s` / `!south` → Stimme für Expansion nach unten
+- `!left` / `!l` / `!a` / `!west` → Stimme für Expansion nach links
+- `!right` / `!r` / `!e` / `!east` → Stimme für Expansion nach rechts
+- `!emote [text]` → Team-Emote
+
+---
+
 ## Abhängigkeiten & externe Tools
 
 | Dependency | Zweck | Zugriff |
@@ -178,12 +215,13 @@ Befehle in `ChaosArena::onChatMessage()`:
 
 ### Neues Spiel hinzufügen
 1. [ ] Ordner `src/games/<spielname>/` anlegen
-2. [ ] IGame-Interface implementieren mit `REGISTER_GAME` Makro
+2. [ ] IGame-Interface implementieren mit `REGISTER_GAME` Makro (inkl. `isRoundComplete()` und `isGameOver()`)
 3. [ ] Quelldateien in `CMakeLists.txt` → `GAME_SOURCES` eintragen
 4. [ ] Optional: Konfigurationssektion in `config/default.json` hinzufügen
 5. [ ] Optional: Spezifische Chat-Befehle in `getCommands()` zurückgeben
-6. [ ] README.md aktualisieren (Spielbeschreibung, Befehle)
-7. [ ] Git-Commit erstellen
+6. [ ] Dashboard-JS: Spiel-spezifische Phasen, Quick-Commands und Stats in `app.js` registrieren
+7. [ ] README.md und TESTING.md aktualisieren (Spielbeschreibung, Befehle)
+8. [ ] Git-Commit erstellen
 
 ### Neue Plattform hinzufügen
 1. [ ] Ordner `src/platform/<plattform>/` anlegen
@@ -211,7 +249,7 @@ Befehle in `ChaosArena::onChatMessage()`:
 1. **Keine externen Shader**: Aktuell werden Effekte (Bloom, Vignette) in Software berechnet. GLSL-Shader sind als Erweiterung geplant.
 2. **Kein Sound**: Aktuell stumm. Ein Sound-System ist für Phase 2 geplant.
 3. **Pixel-Format**: Der Renderer arbeitet mit `sf::RenderTexture`, der Encoder erwartet RGBA-Pixeldaten.
-4. **Thread-Sicherheit**: Plattform-Threads nutzen `std::mutex`-geschützte Message-Queues. Keine Race Conditions beim Chat-Polling.
+4. **Thread-Sicherheit**: Plattform-Threads und Web-API-Threads nutzen `std::mutex`-geschützte Queues/States. Spielwechsel-Requests vom Web-Thread werden im Main-Thread ausgeführt.
 5. **FFmpeg-Pfad**: FFmpeg wird via `popen("ffmpeg ...")` aufgerufen – muss im System-PATH sein.
 6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
 7. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake).

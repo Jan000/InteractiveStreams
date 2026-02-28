@@ -20,6 +20,8 @@ public:
     void onChatMessage(const is::platform::ChatMessage&) override {}
     void update(double) override {}
     void render(sf::RenderTarget&, double) override {}
+    bool isRoundComplete() const override { return false; }
+    bool isGameOver() const override { return false; }
     nlohmann::json getState() const override { return {}; }
     nlohmann::json getCommands() const override { return {}; }
 

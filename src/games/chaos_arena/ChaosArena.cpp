@@ -1242,6 +1242,15 @@ void ChaosArena::renderCountdown(sf::RenderTarget& target) {
 
 // ─── State / Commands ────────────────────────────────────────────────────────
 
+bool ChaosArena::isRoundComplete() const {
+    return m_phase == GamePhase::RoundEnd || m_phase == GamePhase::GameOver
+        || m_phase == GamePhase::Lobby;
+}
+
+bool ChaosArena::isGameOver() const {
+    return m_phase == GamePhase::GameOver;
+}
+
 nlohmann::json ChaosArena::getState() const {
     nlohmann::json state;
     state["phase"] = static_cast<int>(m_phase);

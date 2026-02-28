@@ -47,6 +47,8 @@ public:
     void onChatMessage(const platform::ChatMessage& msg) override;
     void update(double dt) override;
     void render(sf::RenderTarget& target, double alpha) override;
+    bool isRoundComplete() const override;
+    bool isGameOver() const override;
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
 

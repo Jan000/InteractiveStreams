@@ -26,28 +26,23 @@
             <div class="card" id="card-game">
                 <div class="card-header">
                     <h2>🎯 Active Game</h2>
-                    <select id="game-selector" class="select-sm">
-                        <option value="chaos_arena">Chaos Arena</option>
-                    </select>
+                    <div class="game-switch-controls">
+                        <select id="game-selector" class="select-sm"></select>
+                        <select id="switch-mode" class="select-sm" title="Switch mode">
+                            <option value="immediate">⚡ Sofort</option>
+                            <option value="after_round">⏳ Nach Runde</option>
+                            <option value="after_game">🏁 Nach Spiel</option>
+                        </select>
+                        <button id="btn-switch-game" class="btn btn-sm btn-accent">Wechseln</button>
+                    </div>
+                </div>
+                <div id="pending-switch-banner" class="pending-switch-banner" style="display:none">
+                    <span>⏳ Wechsel zu <strong id="pending-game-name"></strong> ausstehend...</span>
+                    <button id="btn-cancel-switch" class="btn btn-sm btn-danger">Abbrechen</button>
                 </div>
                 <div class="card-body">
-                    <div class="stat-grid">
-                        <div class="stat">
-                            <span class="stat-value" id="game-phase">—</span>
-                            <span class="stat-label">Phase</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-value" id="game-round">—</span>
-                            <span class="stat-label">Round</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-value" id="game-players">—</span>
-                            <span class="stat-label">Players</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-value" id="game-particles">—</span>
-                            <span class="stat-label">Particles</span>
-                        </div>
+                    <div class="stat-grid" id="game-stats-grid">
+                        <!-- Dynamically populated based on active game -->
                     </div>
                     <div class="timer-bar">
                         <div class="timer-fill" id="round-timer"></div>
@@ -141,15 +136,8 @@
                                autocomplete="off">
                         <button id="btn-send-chat" class="btn btn-accent">Send</button>
                     </div>
-                    <div class="chat-quick-buttons">
-                        <button class="btn btn-sm chat-quick" data-cmd="!join">!join</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!left">!left</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!right">!right</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!jump">!jump</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!attack">!attack</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!special">!special</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!dash">!dash</button>
-                        <button class="btn btn-sm chat-quick" data-cmd="!block">!block</button>
+                    <div class="chat-quick-buttons" id="chat-quick-buttons">
+                        <!-- Dynamically populated based on active game -->
                     </div>
                     <div class="chat-bulk-buttons">
                         <button class="btn btn-sm btn-bulk" id="btn-join-all" title="All preset players type !join">
@@ -166,26 +154,14 @@
             </div>
         </section>
 
-        <!-- ─── Players Section ──────────────────────────────────────── -->
-        <section class="card full-width" id="card-players">
+        <!-- ─── Game Detail Section (dynamic) ────────────────────────── -->
+        <section class="card full-width" id="card-game-detail">
             <div class="card-header">
-                <h2>👥 Players</h2>
+                <h2 id="game-detail-title">👥 Game Details</h2>
                 <span id="player-count-badge" class="badge">0</span>
             </div>
-            <div class="card-body">
-                <table class="players-table" id="players-table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Health</th>
-                            <th>Kills</th>
-                            <th>Deaths</th>
-                            <th>Score</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+            <div class="card-body" id="game-detail-body">
+                <!-- Dynamically populated depending on active game -->
             </div>
         </section>
 
@@ -194,16 +170,10 @@
             <div class="card-header">
                 <h2>🏆 Leaderboard</h2>
             </div>
-            <div class="card-body">
+            <div class="card-body" id="leaderboard-body">
                 <table class="leaderboard-table" id="leaderboard-table">
                     <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Name</th>
-                            <th>Kills</th>
-                            <th>Wins</th>
-                            <th>Score</th>
-                        </tr>
+                        <tr></tr>
                     </thead>
                     <tbody></tbody>
                 </table>

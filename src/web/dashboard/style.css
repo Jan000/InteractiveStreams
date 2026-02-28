@@ -576,3 +576,66 @@ footer {
     background: rgba(88, 166, 255, 0.10);
     color: var(--accent);
 }
+
+/* ─── Game Switch Controls ────────────────────────────────────────────── */
+.game-switch-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.pending-switch-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(210, 153, 34, 0.15);
+    border: 1px solid var(--orange);
+    border-radius: var(--radius);
+    margin: 0 16px 8px 16px;
+    font-size: 13px;
+    color: var(--orange);
+    animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+    0%, 100% { border-color: var(--orange); }
+    50% { border-color: rgba(210, 153, 34, 0.4); }
+}
+
+/* ─── Team Colors for Color Conquest ──────────────────────────────────── */
+.team-bar {
+    display: flex;
+    gap: 4px;
+    height: 16px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-hover);
+}
+
+.team-bar-segment {
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.team-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg-hover);
+    border-radius: var(--radius);
+    border-left: 3px solid;
+    margin-bottom: 6px;
+}
+
+.team-card .team-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.team-card .team-stats {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+

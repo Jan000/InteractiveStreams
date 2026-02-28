@@ -65,14 +65,15 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 │  │  │   IGame Interface   │    ││  │  ├── YouTube (API)   │ │
 │  │  │  ┌───────────────┐  │    ││  │  └── ... (erweiterb.)│ │
 │  │  │  │ Chaos Arena   │  │◄───┘│  └─────────────────────┘ │
-│  │  │  │ ┌───────────┐ │  │     │                           │
-│  │  │  │ │ Physics   │ │  │     │  ┌─────────────────────┐  │
-│  │  │  │ │ Particles │ │  │     │  │     Renderer        │  │
-│  │  │  │ │ Arena     │ │  │     │  │  ┌───────────────┐  │  │
-│  │  │  │ │ Players   │ │  │     │  │  │ SFML Window   │  │  │
-│  │  │  │ └───────────┘ │  │     │  │  │ RenderTexture │  │  │
-│  │  │  └───────────────┘  │     │  │  └───────┬───────┘  │  │
-│  │  └─────────────────────┘     │  └──────────┼──────────┘  │
+│  │  │  │ (Box2D)       │  │     │                           │
+│  │  │  ├───────────────┤  │     │  ┌─────────────────────┐  │
+│  │  │  │ Color         │  │     │  │     Renderer        │  │
+│  │  │  │ Conquest      │  │     │  │  ┌───────────────┐  │  │
+│  │  │  │ (Grid-based)  │  │     │  │  │ SFML Window   │  │  │
+│  │  │  ├───────────────┤  │     │  │  │ RenderTexture │  │  │
+│  │  │  │ ... weitere   │  │     │  │  └───────┬───────┘  │  │
+│  │  │  └───────────────┘  │     │  └──────────┼──────────┘  │
+│  │  └─────────────────────┘     │             │              │
 │  └──────────────────────────────┘             │              │
 │                                    ┌──────────▼──────────┐   │
 │  ┌──────────────────────┐          │  Stream Encoder     │   │
@@ -221,14 +222,18 @@ InteractiveStreams/
 │   ├── games/                  # Spiele-Module
 │   │   ├── IGame.h             # Spiel-Interface (abstrakt)
 │   │   ├── GameRegistry.h/cpp  # Spiel-Registrierung & Fabrik
-│   │   └── chaos_arena/        # Chaos Arena Spiel
-│   │       ├── ChaosArena.h/cpp     # Haupt-Spiellogik
-│   │       ├── Player.h/cpp         # Spieler-Entity
-│   │       ├── Arena.h/cpp          # Arena-Level
-│   │       ├── PhysicsWorld.h/cpp   # Box2D-Wrapper
-│   │       ├── ParticleSystem.h/cpp # Partikel-Effekte
-│   │       ├── Projectile.h/cpp     # Projektile
-│   │       └── PowerUp.h/cpp        # Power-Up Items
+│   │   ├── chaos_arena/        # Chaos Arena Spiel
+│   │   │   ├── ChaosArena.h/cpp     # Haupt-Spiellogik
+│   │   │   ├── Player.h/cpp         # Spieler-Entity
+│   │   │   ├── Arena.h/cpp          # Arena-Level
+│   │   │   ├── PhysicsWorld.h/cpp   # Box2D-Wrapper
+│   │   │   ├── ParticleSystem.h/cpp # Partikel-Effekte
+│   │   │   ├── Projectile.h/cpp     # Projektile
+│   │   │   └── PowerUp.h/cpp        # Power-Up Items
+│   │   └── color_conquest/     # Color Conquest Spiel
+│   │       ├── ColorConquest.h/cpp  # Haupt-Spiellogik
+│   │       ├── Grid.h/cpp           # Spielfeld-Grid (40×24)
+│   │       └── Team.h               # Team-Datenstruktur
 │   ├── platform/               # Plattform-Integrationen
 │   │   ├── IPlatform.h         # Plattform-Interface (abstrakt)
 │   │   ├── ChatMessage.h       # Chat-Nachricht Struktur
@@ -256,7 +261,16 @@ InteractiveStreams/
 │           ├── index.html      # Dashboard HTML
 │           ├── style.css       # Dashboard Styles
 │           └── app.js          # Dashboard JavaScript
-└── tests/                      # Tests (geplant)
+└── tests/                      # Unit-Tests (doctest)
+    ├── test_main.cpp           # Test-Runner
+    ├── test_Config.cpp         # Config-Tests
+    ├── test_ChatMessage.cpp    # ChatMessage-Tests
+    ├── test_Player.cpp         # Player-Tests
+    ├── test_PhysicsWorld.cpp   # PhysicsWorld-Tests
+    ├── test_GameRegistry.cpp   # GameRegistry-Tests
+    ├── test_LocalPlatform.cpp  # LocalPlatform-Tests
+    ├── test_Grid.cpp           # Color Conquest Grid-Tests
+    └── test_ColorConquest.cpp  # Color Conquest Team-Tests
 ```
 
 ---
@@ -357,21 +371,36 @@ Die Konfiguration erfolgt über `config/default.json`. Wichtige Einstellungen:
 Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` erreichbar.
 
 ### Dashboard-Features
-- **Echtzeit-Status** – Spielphase, Rundenzähler, Spieleranzahl, Partikelanzahl
-- **Spieler-Übersicht** – Gesundheit, Kills, Deaths, Score für jeden Spieler
-- **Leaderboard** – Gesamtrangliste über alle Runden
+- **Echtzeit-Status** – Spielphase, Rundenzähler, Spieleranzahl (dynamisch pro Spiel)
+- **Spiel-Wechsel** – Zwischen Spielen wechseln: sofort, nach Runde oder nach Spiel
+- **Spieler-/Team-Übersicht** – Chaos Arena: HP, Kills, Score; Color Conquest: Team-Gebiete
+- **Leaderboard** – Dynamische Rangliste passend zum aktiven Spiel
 - **Plattform-Status** – Verbindungsstatus aller Chat-Plattformen
 - **Streaming-Monitoring** – FPS, Frames, Ziel-Endpunkte
-- **Befehls-Referenz** – Alle verfügbaren Chat-Befehle
+- **Dynamische Quick-Buttons** – Kontextabhängige Befehle je nach aktivem Spiel
 - **Remote-Steuerung** – Spiel wechseln, Server herunterfahren
+
+### Spiel-Wechsel über Dashboard
+
+Das Dashboard bietet drei Modi zum Wechseln des aktiven Spiels:
+
+| Modus | Beschreibung |
+|-------|--------------|
+| ⚡ **Sofort** | Wechsel erfolgt unmittelbar (unterbricht laufendes Spiel) |
+| ⏳ **Nach Runde** | Wechsel nach Abschluss der aktuellen Runde |
+| 🏁 **Nach Spiel** | Wechsel nach dem vollständigen Game Over |
+
+Ein ausstehender Wechsel wird als gelbes Banner im Dashboard angezeigt und kann jederzeit abgebrochen werden.
 
 ### REST API Endpunkte
 
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|-------------|
 | GET | `/api/status` | Gesamtstatus (Spiel, Plattformen, Streaming) |
-| GET | `/api/games` | Liste verfügbarer Spiele |
-| POST | `/api/games/load` | Spiel laden `{"game": "chaos_arena"}` |
+| GET | `/api/games` | Liste verfügbarer Spiele (id, name, description) |
+| POST | `/api/games/load` | Spiel sofort laden `{"game": "chaos_arena"}` |
+| POST | `/api/games/switch` | Spiel wechseln `{"game": "...", "mode": "immediate/after_round/after_game"}` |
+| POST | `/api/games/cancel-switch` | Ausstehenden Spielwechsel abbrechen |
 | GET | `/api/games/state` | Aktueller Spielzustand |
 | GET | `/api/platforms` | Plattform-Status |
 | POST | `/api/platforms/connect` | Plattform verbinden |
@@ -398,6 +427,17 @@ Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` 
 | `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
 | `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
 | `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+
+### Color Conquest
+
+| Befehl | Aliases | Beschreibung |
+|--------|---------|-------------|
+| `!join [team]` | `!play` | Team beitreten (red/blue/green/yellow oder auto) |
+| `!up` | `!u`, `!w`, `!north` | Für Expansion nach oben stimmen |
+| `!down` | `!d`, `!s`, `!south` | Für Expansion nach unten stimmen |
+| `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
+| `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
+| `!emote [text]` | — | Team-Emote senden |
 
 ---
 
@@ -463,6 +503,8 @@ public:
     void onChatMessage(const is::platform::ChatMessage& msg) override { /* ... */ }
     void update(double dt) override { /* ... */ }
     void render(sf::RenderTarget& target, double alpha) override { /* ... */ }
+    bool isRoundComplete() const override { return false; }
+    bool isGameOver() const override { return false; }
     nlohmann::json getState() const override { return {}; }
     nlohmann::json getCommands() const override { return {}; }
 };
@@ -516,6 +558,15 @@ public:
 - [x] FFmpeg-Streaming-Pipeline
 - [x] Web-Admin-Dashboard mit REST API und Chat-UI
 - [x] JSON-basierte Konfiguration
+
+### Phase 1.5 – Multi-Game & Switching ✅
+- [x] Color Conquest als zweites Spiel (500+ Spieler)
+- [x] Spielwechsel über Web-Dashboard (sofort / nach Runde / nach Spiel)
+- [x] REST API für Spielwechsel (`/api/games/switch`, `/api/games/cancel-switch`)
+- [x] Thread-sicherer deferred Spielwechsel mit Mutex
+- [x] Dynamisches Dashboard (spielabhängige Stats, Quick-Buttons, Detail-Ansicht)
+- [x] IGame-Interface erweitert (`isRoundComplete()`, `isGameOver()`)
+- [x] 66+ Unit-Tests mit doctest
 
 ### Phase 2 – Polish (geplant)
 - [ ] Font-Rendering für Spielernamen und HUD-Text
