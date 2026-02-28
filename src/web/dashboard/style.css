@@ -493,3 +493,86 @@ footer {
     border-color: var(--purple);
     background: rgba(188, 140, 255, 0.12);
 }
+
+/* ─── Player Tabs ─────────────────────────────────────────────────────────── */
+.player-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.player-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.player-tab:hover {
+    border-color: var(--tab-color, var(--accent));
+    background: rgba(88, 166, 255, 0.08);
+}
+
+.player-tab.active {
+    border-color: var(--tab-color, var(--accent));
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--tab-color, var(--accent));
+    font-weight: 600;
+    box-shadow: 0 0 6px rgba(88, 166, 255, 0.15);
+}
+
+.tab-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.add-player-tab {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 6px 12px;
+    color: var(--text-muted);
+}
+
+.add-player-tab:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+/* ─── Bulk Action Buttons ─────────────────────────────────────────────────── */
+.chat-bulk-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+}
+
+.btn-bulk {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-bulk:hover {
+    border-color: var(--accent);
+    background: rgba(88, 166, 255, 0.10);
+    color: var(--accent);
+}

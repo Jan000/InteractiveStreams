@@ -1,0 +1,197 @@
+CMake is re-running because C:/Users/janki/Repos/InteractiveStreams/build/_deps/httplib-build/CMakeFiles/generate.stamp is out-of-date.
+  the file 'C:/Users/janki/Repos/InteractiveStreams/build/_deps/httplib-src/CMakeLists.txt'
+  is newer than 'C:/Users/janki/Repos/InteractiveStreams/build/_deps/httplib-build/CMakeFiles/generate.stamp.depend'
+  result='-1'
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26200.
+-- Found OpenGL: opengl32
+-- Using the multi-header code from C:/Users/janki/Repos/InteractiveStreams/build/_deps/json-src/include/
+-- Build spdlog: 1.13.0
+-- Build type: Release
+-- Configuring done (78.2s)
+-- Generating done (2.5s)
+-- Build files have been written to: C:/Users/janki/Repos/InteractiveStreams/build
+MSBuild-Version 17.14.40+3e7442088 f├╝r .NET Framework
+
+  1>Checking Build System
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/box2d-src/src/CMakeLists.txt
+  b2_broad_phase.cpp
+  b2_chain_shape.cpp
+  b2_circle_shape.cpp
+  b2_collide_circle.cpp
+  b2_collide_edge.cpp
+  b2_collide_polygon.cpp
+  b2_collision.cpp
+  b2_distance.cpp
+  b2_dynamic_tree.cpp
+  b2_edge_shape.cpp
+  b2_polygon_shape.cpp
+  b2_time_of_impact.cpp
+  b2_block_allocator.cpp
+  b2_draw.cpp
+  b2_math.cpp
+  b2_settings.cpp
+  b2_stack_allocator.cpp
+  b2_timer.cpp
+  b2_body.cpp
+  b2_chain_circle_contact.cpp
+  b2_chain_polygon_contact.cpp
+  b2_circle_contact.cpp
+  b2_contact.cpp
+  b2_contact_manager.cpp
+  b2_contact_solver.cpp
+  b2_distance_joint.cpp
+  b2_edge_circle_contact.cpp
+  b2_edge_polygon_contact.cpp
+  b2_fixture.cpp
+  b2_friction_joint.cpp
+  b2_gear_joint.cpp
+  b2_island.cpp
+  b2_joint.cpp
+  b2_motor_joint.cpp
+  b2_mouse_joint.cpp
+  b2_polygon_circle_contact.cpp
+  b2_polygon_contact.cpp
+  b2_prismatic_joint.cpp
+  b2_pulley_joint.cpp
+  b2_revolute_joint.cpp
+  b2_weld_joint.cpp
+  b2_wheel_joint.cpp
+  b2_world.cpp
+  b2_world_callbacks.cpp
+  b2_rope.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/box2d-build/bin/Debug/box2d.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/box2d-build/bin/Debug/box2d.exp
+  box2d.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\box2d-build\bin\Debug\box2d.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/src/SFML/System/CMakeLists.txt
+  Clock.cpp
+  Err.cpp
+  Lock.cpp
+  Mutex.cpp
+  Sleep.cpp
+  String.cpp
+  Thread.cpp
+  ThreadLocal.cpp
+  Time.cpp
+  FileInputStream.cpp
+  MemoryInputStream.cpp
+  ClockImpl.cpp
+  MutexImpl.cpp
+  SleepImpl.cpp
+  ThreadImpl.cpp
+  ThreadLocalImpl.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-system-d.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-system-d.exp
+  sfml-system.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\sfml-build\lib\Debug\sfml-system-d-2.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/src/SFML/Window/CMakeLists.txt
+  Clipboard.cpp
+  Context.cpp
+  Cursor.cpp
+  GlContext.cpp
+  GlResource.cpp
+  Joystick.cpp
+  JoystickManager.cpp
+  Keyboard.cpp
+  Mouse.cpp
+  Touch.cpp
+  Sensor.cpp
+  SensorManager.cpp
+  VideoMode.cpp
+  Vulkan.cpp
+  Window.cpp
+  WindowBase.cpp
+  WindowImpl.cpp
+  CursorImpl.cpp
+  ClipboardImpl.cpp
+  InputImpl.cpp
+  JoystickImpl.cpp
+  SensorImpl.cpp
+  VideoModeImpl.cpp
+  VulkanImplWin32.cpp
+  WindowImplWin32.cpp
+  WglContext.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-window-d.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-window-d.exp
+  sfml-window.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\sfml-build\lib\Debug\sfml-window-d-2.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/src/SFML/Graphics/CMakeLists.txt
+  BlendMode.cpp
+  Color.cpp
+  Font.cpp
+  Glsl.cpp
+  GLCheck.cpp
+  GLExtensions.cpp
+  Image.cpp
+  ImageLoader.cpp
+  RenderStates.cpp
+  RenderTexture.cpp
+  RenderTarget.cpp
+  RenderWindow.cpp
+  Shader.cpp
+  Texture.cpp
+  TextureSaver.cpp
+  Transform.cpp
+  Transformable.cpp
+  View.cpp
+  Vertex.cpp
+  Shape.cpp
+  CircleShape.cpp
+  RectangleShape.cpp
+  ConvexShape.cpp
+  Sprite.cpp
+  Text.cpp
+  VertexArray.cpp
+  VertexBuffer.cpp
+  RenderTextureImpl.cpp
+  RenderTextureImplFBO.cpp
+  RenderTextureImplDefault.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-graphics-d.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-graphics-d.exp
+  sfml-graphics.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\sfml-build\lib\Debug\sfml-graphics-d-2.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/src/SFML/Network/CMakeLists.txt
+  Ftp.cpp
+  Http.cpp
+  IpAddress.cpp
+  Packet.cpp
+  Socket.cpp
+  SocketSelector.cpp
+  TcpListener.cpp
+  TcpSocket.cpp
+  UdpSocket.cpp
+  SocketImpl.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-network-d.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-network-d.exp
+  sfml-network.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\sfml-build\lib\Debug\sfml-network-d-2.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/spdlog-src/CMakeLists.txt
+  spdlog.cpp
+  stdout_sinks.cpp
+  color_sinks.cpp
+  file_sinks.cpp
+  async.cpp
+  cfg.cpp
+  bundled_fmtlib_format.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/spdlog-build/Debug/spdlogd.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/spdlog-build/Debug/spdlogd.exp
+  spdlog.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\spdlog-build\Debug\spdlogd.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/CMakeLists.txt
+  cmake_pch.cxx
+C:\Users\janki\Repos\InteractiveStreams\build\CMakeFiles\InteractiveStreams.dir\cmake_pch.cxx(1,1): error C1041: cannot open program database 'C:\Users\janki\Repos\InteractiveStreams\build\InteractiveStreams.dir\Debug\vc143.pdb'; if multiple CL.EXE write to the same .PDB file, please use /FS [C:\Users\janki\Repos\InteractiveStreams\build\InteractiveStreams.vcxproj]
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/src/SFML/Audio/CMakeLists.txt
+  ALCheck.cpp
+  AlResource.cpp
+  AudioDevice.cpp
+  Listener.cpp
+  Music.cpp
+  Sound.cpp
+  SoundBuffer.cpp
+  SoundBufferRecorder.cpp
+  InputSoundFile.cpp
+  OutputSoundFile.cpp
+  SoundRecorder.cpp
+  SoundSource.cpp
+  SoundStream.cpp
+  SoundFileFactory.cpp
+  SoundFileReaderFlac.cpp
+  SoundFileReaderMp3.cpp
+  SoundFileReaderOgg.cpp
+  SoundFileReaderWav.cpp
+  SoundFileWriterFlac.cpp
+  SoundFileWriterOgg.cpp
+  SoundFileWriterWav.cpp
+     Creating library C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-audio-d.lib and object C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-build/lib/Debug/sfml-audio-d.exp
+  sfml-audio.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\sfml-build\lib\Debug\sfml-audio-d-2.dll
+  Building Custom Rule C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/src/SFML/Main/CMakeLists.txt
+  MainWin32.cpp
+  sfml-main.vcxproj -> C:\Users\janki\Repos\InteractiveStreams\build\_deps\sfml-build\lib\Debug\sfml-main-d.lib

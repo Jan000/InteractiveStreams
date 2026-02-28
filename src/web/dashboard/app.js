@@ -103,9 +103,10 @@ async function sendChatMessage(username, text) {
 }
 
 function appendChatMessage(sender, text, outgoing = false) {
+    const color = PLAYER_COLORS[sender] || 'var(--accent)';
     const div = document.createElement('div');
     div.className = `chat-msg ${outgoing ? 'outgoing' : ''}`;
-    div.innerHTML = `<span class="chat-sender">${escapeHtml(sender)}:</span> <span class="chat-text">${escapeHtml(text)}</span>`;
+    div.innerHTML = `<span class="chat-sender" style="color:${color}">${escapeHtml(sender)}:</span> <span class="chat-text">${escapeHtml(text)}</span>`;
     el.chatMessages.appendChild(div);
     el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
 
@@ -288,22 +289,130 @@ el.gameSelector.addEventListener('change', (e) => {
 el.btnShutdown.addEventListener('click', shutdownServer);
 
 // ─── Chat controls ───────────────────────────────────────────────────────
+const PLAYER_COLORS = {
+    'Player1': '#58a6ff',
+    'Player2': '#3fb950',
+    'Player3': '#d29922',
+    'Player4': '#bc8cff'
+};
+
+let activePlayer = 'Player1';
+let autoPlayInterval = null;
+
+function setActivePlayer(name) {
+    activePlayer = name;
+    el.chatUsername.value = name;
+    el.chatUsername.style.color = PLAYER_COLORS[name] || 'var(--accent)';
+
+    // Update tab styling
+    document.querySelectorAll('.player-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.player === name);
+    });
+}
+
+// Player tab clicks
+document.querySelectorAll('.player-tab[data-player]').forEach(tab => {
+    tab.addEventListener('click', () => {
+        setActivePlayer(tab.dataset.player);
+    });
+});
+
+// Add custom player
+document.getElementById('btn-add-player').addEventListener('click', () => {
+    const name = prompt('Enter player name:');
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim().substring(0, 20);
+
+    // Check if tab already exists
+    if (document.querySelector(`.player-tab[data-player="${cleanName}"]`)) {
+        setActivePlayer(cleanName);
+        return;
+    }
+
+    // Generate random color
+    const hue = Math.floor(Math.random() * 360);
+    const color = `hsl(${hue}, 70%, 60%)`;
+    PLAYER_COLORS[cleanName] = color;
+
+    // Create new tab
+    const btn = document.createElement('button');
+    btn.className = 'player-tab';
+    btn.dataset.player = cleanName;
+    btn.style.setProperty('--tab-color', color);
+    btn.innerHTML = `<span class="tab-dot" style="background:${color}"></span>${escapeHtml(cleanName)}`;
+    btn.addEventListener('click', () => setActivePlayer(cleanName));
+
+    // Insert before the "+" button
+    const addBtn = document.getElementById('btn-add-player');
+    addBtn.parentNode.insertBefore(btn, addBtn);
+
+    setActivePlayer(cleanName);
+});
+
 el.btnSendChat.addEventListener('click', () => {
-    sendChatMessage(el.chatUsername.value || 'TestUser', el.chatInput.value);
+    sendChatMessage(el.chatUsername.value || activePlayer, el.chatInput.value);
 });
 
 el.chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
-        sendChatMessage(el.chatUsername.value || 'TestUser', el.chatInput.value);
+        sendChatMessage(el.chatUsername.value || activePlayer, el.chatInput.value);
     }
 });
 
 // Quick-command buttons
 document.querySelectorAll('.chat-quick').forEach(btn => {
     btn.addEventListener('click', () => {
-        sendChatMessage(el.chatUsername.value || 'TestUser', btn.dataset.cmd);
+        sendChatMessage(el.chatUsername.value || activePlayer, btn.dataset.cmd);
     });
+});
+
+// ─── Bulk actions ────────────────────────────────────────────────────
+function getAllPlayerNames() {
+    return Array.from(document.querySelectorAll('.player-tab[data-player]'))
+        .map(t => t.dataset.player);
+}
+
+document.getElementById('btn-join-all').addEventListener('click', async () => {
+    const players = getAllPlayerNames();
+    for (const p of players) {
+        await sendChatMessage(p, '!join');
+        await new Promise(r => setTimeout(r, 100));
+    }
+});
+
+const RANDOM_CMDS = ['!left', '!right', '!jump', '!attack', '!special', '!dash', '!block'];
+
+document.getElementById('btn-random-actions').addEventListener('click', async () => {
+    const players = getAllPlayerNames();
+    for (const p of players) {
+        const cmd = RANDOM_CMDS[Math.floor(Math.random() * RANDOM_CMDS.length)];
+        await sendChatMessage(p, cmd);
+        await new Promise(r => setTimeout(r, 50));
+    }
+});
+
+document.getElementById('btn-auto-play').addEventListener('click', () => {
+    const statusEl = document.getElementById('auto-play-status');
+    if (autoPlayInterval) {
+        clearInterval(autoPlayInterval);
+        autoPlayInterval = null;
+        statusEl.textContent = 'OFF';
+        statusEl.style.color = '';
+    } else {
+        statusEl.textContent = 'ON';
+        statusEl.style.color = 'var(--green)';
+        autoPlayInterval = setInterval(async () => {
+            const players = getAllPlayerNames();
+            // Each tick, 1-3 random players perform a random action
+            const count = Math.min(players.length, 1 + Math.floor(Math.random() * 3));
+            const shuffled = [...players].sort(() => Math.random() - 0.5);
+            for (let i = 0; i < count; i++) {
+                const cmd = RANDOM_CMDS[Math.floor(Math.random() * RANDOM_CMDS.length)];
+                await sendChatMessage(shuffled[i], cmd);
+            }
+        }, 500);
+    }
 });
 
 // ─── Initialize ──────────────────────────────────────────────────────────

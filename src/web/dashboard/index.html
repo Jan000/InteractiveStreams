@@ -102,20 +102,40 @@
             </div>
         </section>
 
-        <!-- ─── Local Chat (Test) Section ────────────────────────────── -->
+        <!-- ─── Local Chat (Multi-Player Test) Section ─────────────────── -->
         <section class="card full-width" id="card-chat">
             <div class="card-header">
                 <h2>💬 Local Chat (Test)</h2>
-                <span class="badge badge-blue">Local</span>
+                <span class="badge badge-blue">Multi-Player</span>
             </div>
             <div class="card-body">
                 <div class="chat-container">
+                    <!-- Player Selector Tabs -->
+                    <div class="player-tabs" id="player-tabs">
+                        <button class="player-tab active" data-player="Player1" style="--tab-color:#58a6ff">
+                            <span class="tab-dot" style="background:#58a6ff"></span>Player1
+                        </button>
+                        <button class="player-tab" data-player="Player2" style="--tab-color:#3fb950">
+                            <span class="tab-dot" style="background:#3fb950"></span>Player2
+                        </button>
+                        <button class="player-tab" data-player="Player3" style="--tab-color:#d29922">
+                            <span class="tab-dot" style="background:#d29922"></span>Player3
+                        </button>
+                        <button class="player-tab" data-player="Player4" style="--tab-color:#bc8cff">
+                            <span class="tab-dot" style="background:#bc8cff"></span>Player4
+                        </button>
+                        <button class="player-tab add-player-tab" id="btn-add-player" title="Add custom player">+</button>
+                    </div>
+
                     <div id="chat-messages" class="chat-messages">
-                        <div class="chat-hint">Send chat commands to test locally. Example: <code>!join</code>, <code>!attack</code></div>
+                        <div class="chat-hint">
+                            Select a player tab above, then use the buttons below to control them.<br>
+                            Tip: Click <strong>Join All</strong> to quickly join all preset players!
+                        </div>
                     </div>
                     <div class="chat-input-row">
                         <input type="text" id="chat-username" class="chat-username-input"
-                               value="TestUser" placeholder="Username" spellcheck="false">
+                               value="Player1" placeholder="Username" spellcheck="false" readonly>
                         <input type="text" id="chat-input" class="chat-text-input"
                                placeholder="Type a chat command (e.g. !join)" spellcheck="false"
                                autocomplete="off">
@@ -130,6 +150,17 @@
                         <button class="btn btn-sm chat-quick" data-cmd="!special">!special</button>
                         <button class="btn btn-sm chat-quick" data-cmd="!dash">!dash</button>
                         <button class="btn btn-sm chat-quick" data-cmd="!block">!block</button>
+                    </div>
+                    <div class="chat-bulk-buttons">
+                        <button class="btn btn-sm btn-bulk" id="btn-join-all" title="All preset players type !join">
+                            👥 Join All
+                        </button>
+                        <button class="btn btn-sm btn-bulk" id="btn-random-actions" title="Send random commands for all players">
+                            🎲 Random Actions
+                        </button>
+                        <button class="btn btn-sm btn-bulk" id="btn-auto-play" title="Toggle auto-play: bots send random commands">
+                            🤖 Auto-Play: <span id="auto-play-status">OFF</span>
+                        </button>
                     </div>
                 </div>
             </div>

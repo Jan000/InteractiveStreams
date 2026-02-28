@@ -1,0 +1,25 @@
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_CXX_STANDARD="20"
+
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26200.
+-- The C compiler identification is MSVC 19.44.35223.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Check size of void*
+-- Check size of void* - done
+-- Found OpenGL: opengl32
+-- Found OpenAL: C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/extlibs/libs-msvc-universal/x64/openal32.lib
+-- Found VORBIS: C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/extlibs/libs-msvc-universal/x64/vorbisenc.lib;C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/extlibs/libs-msvc-universal/x64/vorbisfile.lib;C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/extlibs/libs-msvc-universal/x64/vorbis.lib;C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/extlibs/libs-msvc-universal/x64/ogg.lib
+-- Found FLAC: C:/Users/janki/Repos/InteractiveStreams/build/_deps/sfml-src/extlibs/libs-msvc-universal/x64/flac.lib
+-- Using the multi-header code from C:/Users/janki/Repos/InteractiveStreams/build/_deps/json-src/include/
