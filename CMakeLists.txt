@@ -5,6 +5,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ─── Speed: FetchContent soll nicht bei jedem Configure Git befragen ─────────
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+
+# ─── Speed: MSVC – parallele Kompilierung (/MP) + Warnings aus Deps ──────────
+if(MSVC)
+    add_compile_options(/MP)  # Alle CPU-Kerne nutzen
+    # spdlog / SFML nutzen stdext::checked_array_iterator – in MSVC 2022 deprecated.
+    # In unserem Code kein Problem: das warning kommt aus Drittcode.
+    add_compile_options(/wd4996)
+endif()
+
 # Options
 option(IS_BUILD_TESTS "Build tests" OFF)
 option(IS_USE_SYSTEM_LIBS "Use system-installed libraries instead of FetchContent" OFF)
@@ -49,7 +60,10 @@ FetchContent_Declare(
     GIT_TAG        v1.13.0
 )
 
+# Suppress deprecation warnings from older CMakeLists in dependencies
+set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sfml box2d json httplib spdlog)
+set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
 
 # ─── Source files ─────────────────────────────────────────────────────────────
 set(CORE_SOURCES
@@ -121,6 +135,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     httplib::httplib
     spdlog::spdlog
 )
+
+# ─── Speed: Precompiled Header ────────────────────────────────────────────────
+# Alle schweren Headers (SFML, Box2D, nlohmann/json, spdlog, STL) werden einmal
+# vorkompiliert. Das spart bei inkrementellen Builds mehrere Sekunden pro TU.
+target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 # Copy assets to build directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

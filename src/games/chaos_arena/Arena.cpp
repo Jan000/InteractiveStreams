@@ -128,11 +128,6 @@ void Arena::update(double dt) {
 void Arena::render(sf::RenderTarget& target, float ppm) {
     auto size = target.getSize();
 
-    // Background
-    sf::RectangleShape bg(sf::Vector2f(static_cast<float>(size.x), static_cast<float>(size.y)));
-    bg.setFillColor(m_bgColor);
-    target.draw(bg);
-
     // Grid overlay for visual depth
     sf::Color gridColor(255, 255, 255, static_cast<sf::Uint8>(m_gridAlpha * 255));
     float gridSpacing = 2.0f * ppm;
@@ -171,9 +166,26 @@ void Arena::render(sf::RenderTarget& target, float ppm) {
 
         // Subtle outline/glow
         rect.setOutlineThickness(1.0f);
-        rect.setOutlineColor(sf::Color(fillColor.r + 30, fillColor.g + 30, fillColor.b + 40, 180));
+        rect.setOutlineColor(sf::Color(
+            static_cast<sf::Uint8>(std::min(255, fillColor.r + 30)),
+            static_cast<sf::Uint8>(std::min(255, fillColor.g + 30)),
+            static_cast<sf::Uint8>(std::min(255, fillColor.b + 40)),
+            180));
 
         target.draw(rect);
+
+        // Bright top edge highlight for platforms (not boundary walls)
+        if (plat.size.y < 2.0f) {
+            sf::RectangleShape topEdge(sf::Vector2f(plat.size.x * ppm, 2.0f));
+            topEdge.setOrigin(plat.size.x * ppm / 2, plat.size.y * ppm / 2);
+            topEdge.setPosition(offsetX + plat.position.x * ppm, offsetY + plat.position.y * ppm);
+            topEdge.setFillColor(sf::Color(
+                static_cast<sf::Uint8>(std::min(255, fillColor.r + 60)),
+                static_cast<sf::Uint8>(std::min(255, fillColor.g + 60)),
+                static_cast<sf::Uint8>(std::min(255, fillColor.b + 80)),
+                220));
+            target.draw(topEdge);
+        }
     }
 }
 

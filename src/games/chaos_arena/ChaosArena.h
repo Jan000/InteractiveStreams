@@ -7,7 +7,10 @@
 #include "games/chaos_arena/ParticleSystem.h"
 #include "games/chaos_arena/Projectile.h"
 #include "games/chaos_arena/PowerUp.h"
+#include "rendering/Background.h"
+#include "rendering/PostProcessing.h"
 
+#include <SFML/Graphics/Font.hpp>
 #include <vector>
 #include <unordered_map>
 #include <deque>
@@ -100,6 +103,12 @@ private:
     std::unique_ptr<PhysicsWorld>   m_physics;
     std::unique_ptr<Arena>          m_arena;
     std::unique_ptr<ParticleSystem> m_particles;
+
+    // Rendering helpers
+    rendering::Background      m_background;
+    rendering::PostProcessing  m_postProcessing;
+    sf::Font                   m_font;
+    bool                       m_fontLoaded = false;
 
     // Timing
     double m_countdownTimer    = 0.0;

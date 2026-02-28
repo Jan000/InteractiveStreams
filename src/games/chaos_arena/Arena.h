@@ -55,7 +55,7 @@ private:
 
     // Visual
     sf::Color m_bgColor{20, 20, 35};
-    float m_gridAlpha = 0.1f;
+    float m_gridAlpha = 0.08f;
 };
 
 } // namespace is::games::chaos_arena
