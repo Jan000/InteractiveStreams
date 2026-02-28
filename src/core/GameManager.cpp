@@ -25,23 +25,18 @@ void GameManager::loadGame(const std::string& name) {
 }
 
 void GameManager::requestSwitch(const std::string& gameName, SwitchMode mode) {
-    if (mode == SwitchMode::Immediate) {
-        // Immediate: perform the switch now
-        loadGame(gameName);
-        // Clear any pending switch
-        std::lock_guard<std::mutex> lock(m_switchMutex);
-        m_hasPending = false;
-        m_pendingGame.clear();
-    } else {
-        // Deferred: queue the switch for the main loop
-        std::lock_guard<std::mutex> lock(m_switchMutex);
-        m_hasPending  = true;
-        m_pendingGame = gameName;
-        m_pendingMode = mode;
+    // Always queue the switch – the main loop will execute it via
+    // checkPendingSwitch().  This is critical because web-API threads must
+    // never call loadGame() directly (the main loop may be mid-render).
+    std::lock_guard<std::mutex> lock(m_switchMutex);
+    m_hasPending  = true;
+    m_pendingGame = gameName;
+    m_pendingMode = mode;
 
-        const char* modeStr = (mode == SwitchMode::AfterRound) ? "after round" : "after game";
-        spdlog::info("Game switch to '{}' queued ({}).", gameName, modeStr);
-    }
+    const char* modeStr = "immediate";
+    if (mode == SwitchMode::AfterRound)     modeStr = "after round";
+    else if (mode == SwitchMode::AfterGame) modeStr = "after game";
+    spdlog::info("Game switch to '{}' queued ({}).", gameName, modeStr);
 }
 
 void GameManager::cancelPendingSwitch() {
@@ -57,11 +52,15 @@ void GameManager::checkPendingSwitch() {
     std::string gameName;
     {
         std::lock_guard<std::mutex> lock(m_switchMutex);
-        if (!m_hasPending || !m_activeGame) return;
+        if (!m_hasPending) return;
 
         bool shouldSwitch = false;
 
-        if (m_pendingMode == SwitchMode::AfterRound) {
+        if (m_pendingMode == SwitchMode::Immediate) {
+            shouldSwitch = true;  // execute on the very next main-loop tick
+        } else if (!m_activeGame) {
+            shouldSwitch = true;  // no game loaded – switch immediately
+        } else if (m_pendingMode == SwitchMode::AfterRound) {
             shouldSwitch = m_activeGame->isRoundComplete();
         } else if (m_pendingMode == SwitchMode::AfterGame) {
             shouldSwitch = m_activeGame->isGameOver();
@@ -74,7 +73,7 @@ void GameManager::checkPendingSwitch() {
         m_pendingGame.clear();
     }
 
-    // Perform the switch outside the lock
+    // Perform the switch outside the lock (always on the main thread)
     spdlog::info("Deferred game switch executing: loading '{}'.", gameName);
     loadGame(gameName);
 }
