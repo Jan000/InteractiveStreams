@@ -89,6 +89,8 @@ set(GAME_SOURCES
     src/games/chaos_arena/ParticleSystem.cpp
     src/games/chaos_arena/Projectile.cpp
     src/games/chaos_arena/PowerUp.cpp
+    src/games/color_conquest/ColorConquest.cpp
+    src/games/color_conquest/Grid.cpp
 )
 
 set(PLATFORM_SOURCES

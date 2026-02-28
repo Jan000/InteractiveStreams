@@ -20,6 +20,8 @@ set(TEST_SOURCES
     test_PhysicsWorld.cpp
     test_GameRegistry.cpp
     test_LocalPlatform.cpp
+    test_Grid.cpp
+    test_ColorConquest.cpp
 )
 
 # ─── Tested source files (no main.cpp) ───────────────────────────────────────
@@ -29,6 +31,7 @@ set(TESTED_SOURCES
     ${CMAKE_SOURCE_DIR}/src/games/GameRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/games/chaos_arena/PhysicsWorld.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/local/LocalPlatform.cpp
+    ${CMAKE_SOURCE_DIR}/src/games/color_conquest/Grid.cpp
 )
 
 add_executable(InteractiveStreams_Tests

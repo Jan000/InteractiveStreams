@@ -11,6 +11,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - [Features](#-features)
 - [Architektur](#-architektur)
 - [Erstes Spiel: Chaos Arena](#-erstes-spiel-chaos-arena)
+- [Zweites Spiel: Color Conquest](#-zweites-spiel-color-conquest)
 - [Technologie-Stack](#-technologie-stack)
 - [Projektstruktur](#-projektstruktur)
 - [Build-Anleitung](#-build-anleitung)
@@ -126,6 +127,58 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - Zerstörbare Blöcke (50 HP)
 - Todeszone unter der Arena (Fall-Tod)
 - Wände und Decke als Begrenzung
+
+---
+
+## 🗺 Zweites Spiel: Color Conquest
+
+**Color Conquest** ist ein territoriales Eroberungsspiel, konzipiert für **500+ gleichzeitige Spieler**.
+
+### Warum ein zweites Spiel?
+
+Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Draw-Calls pro Spieler. Dadurch ist es auf ~40-60 Spieler limitiert. Color Conquest wurde von Grund auf für massive Spielerzahlen entworfen:
+
+- **O(1) pro Chat-Nachricht** – Hash-Map-basierte Spieler-Zuordnung
+- **O(Grid) pro Update-Tick** – Nur die 960 Zellen (40×24) werden verarbeitet, nicht die Spieleranzahl
+- **Keine Physik-Engine** – Kein Box2D, keine dynamischen Bodies
+- **Minimale Draw-Calls** – Grid-basiertes Rendering
+
+### Spielablauf
+
+1. **Lobby** – Zuschauer wählen ein Team mit `!join red/blue/green/yellow` (oder `!join` für Auto-Zuweisung)
+2. **Runden** – 30 Runden à 8 Sekunden Abstimmungszeit
+3. **Abstimmung** – Teammitglieder stimmen über die Expansionsrichtung ab (`!up`, `!down`, `!left`, `!right`)
+4. **Expansion** – Die Mehrheitsentscheidung jedes Teams wird ausgeführt, Grenzzellen werden erobert
+5. **Spielende** – Das Team mit den meisten Zellen nach 30 Runden gewinnt
+
+### Teams
+
+| Team | Farbe | Startposition |
+|------|-------|---------------|
+| Red | 🔴 Rot | Oben links |
+| Blue | 🔵 Blau | Oben rechts |
+| Green | 🟢 Grün | Unten links |
+| Yellow | 🟡 Gelb | Unten rechts |
+
+### Chat-Befehle
+
+| Befehl | Aliase | Beschreibung |
+|--------|--------|-------------|
+| `!join [team]` | `!play` | Team beitreten (red/blue/green/yellow oder auto) |
+| `!up` | `!u`, `!w`, `!north` | Für Expansion nach oben stimmen |
+| `!down` | `!d`, `!s`, `!south` | Für Expansion nach unten stimmen |
+| `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
+| `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
+| `!emote [text]` | — | Team-Emote senden |
+
+### Skalierbarkeit
+
+| Spieleranzahl | Chaos Arena | Color Conquest |
+|--------------|-------------|----------------|
+| 20 | ✅ Optimal | ✅ Funktioniert |
+| 50 | ⚠️ Grenzwertig | ✅ Kein Problem |
+| 200 | ❌ Nicht möglich | ✅ Kein Problem |
+| 1000+ | ❌ Nicht möglich | ✅ Kein Problem |
 
 ---
 
