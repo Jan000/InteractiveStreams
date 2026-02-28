@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InteractiveStreams – Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>🎮 InteractiveStreams</h1>
+            <span id="version" class="badge">v0.1.0</span>
+        </div>
+        <div class="header-right">
+            <span id="status-indicator" class="status-dot offline"></span>
+            <span id="status-text">Offline</span>
+            <button id="btn-shutdown" class="btn btn-danger" title="Shutdown server">⏻</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- ─── Overview Section ─────────────────────────────────────── -->
+        <section class="dashboard-grid">
+            <!-- Game Status Card -->
+            <div class="card" id="card-game">
+                <div class="card-header">
+                    <h2>🎯 Active Game</h2>
+                    <select id="game-selector" class="select-sm">
+                        <option value="chaos_arena">Chaos Arena</option>
+                    </select>
+                </div>
+                <div class="card-body">
+                    <div class="stat-grid">
+                        <div class="stat">
+                            <span class="stat-value" id="game-phase">—</span>
+                            <span class="stat-label">Phase</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="game-round">—</span>
+                            <span class="stat-label">Round</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="game-players">—</span>
+                            <span class="stat-label">Players</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="game-particles">—</span>
+                            <span class="stat-label">Particles</span>
+                        </div>
+                    </div>
+                    <div class="timer-bar">
+                        <div class="timer-fill" id="round-timer"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Streaming Card -->
+            <div class="card" id="card-streaming">
+                <div class="card-header">
+                    <h2>📡 Streaming</h2>
+                    <span id="stream-status" class="badge badge-red">Offline</span>
+                </div>
+                <div class="card-body">
+                    <div class="stat-grid">
+                        <div class="stat">
+                            <span class="stat-value" id="stream-fps">0</span>
+                            <span class="stat-label">FPS</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="stream-frames">0</span>
+                            <span class="stat-label">Frames</span>
+                        </div>
+                    </div>
+                    <div id="stream-targets" class="target-list"></div>
+                </div>
+            </div>
+
+            <!-- Platforms Card -->
+            <div class="card" id="card-platforms">
+                <div class="card-header">
+                    <h2>💬 Platforms</h2>
+                </div>
+                <div class="card-body" id="platforms-list">
+                    <!-- Dynamically filled -->
+                </div>
+            </div>
+
+            <!-- Commands Card -->
+            <div class="card" id="card-commands">
+                <div class="card-header">
+                    <h2>⌨️ Chat Commands</h2>
+                </div>
+                <div class="card-body">
+                    <table class="commands-table" id="commands-table">
+                        <thead>
+                            <tr><th>Command</th><th>Description</th><th>Aliases</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─── Players Section ──────────────────────────────────────── -->
+        <section class="card full-width" id="card-players">
+            <div class="card-header">
+                <h2>👥 Players</h2>
+                <span id="player-count-badge" class="badge">0</span>
+            </div>
+            <div class="card-body">
+                <table class="players-table" id="players-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Health</th>
+                            <th>Kills</th>
+                            <th>Deaths</th>
+                            <th>Score</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ─── Leaderboard Section ──────────────────────────────────── -->
+        <section class="card full-width" id="card-leaderboard">
+            <div class="card-header">
+                <h2>🏆 Leaderboard</h2>
+            </div>
+            <div class="card-body">
+                <table class="leaderboard-table" id="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Kills</th>
+                            <th>Wins</th>
+                            <th>Score</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>InteractiveStreams v0.1.0 | Admin Dashboard | <span id="last-update">—</span></p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+{
+    "application": {
+        "name": "InteractiveStreams",
+        "version": "0.1.0",
+        "target_fps": 60,
+        "default_game": "chaos_arena"
+    },
+    "rendering": {
+        "width": 1920,
+        "height": 1080,
+        "title": "InteractiveStreams – Chaos Arena",
+        "antialiasing": 4
+    },
+    "streaming": {
+        "ffmpeg_path": "ffmpeg",
+        "fps": 30,
+        "bitrate_kbps": 4500,
+        "preset": "fast",
+        "codec": "libx264",
+        "output_url": "",
+        "targets": [
+            {
+                "name": "Twitch Primary",
+                "platform": "twitch",
+                "url": "rtmp://live.twitch.tv/app",
+                "stream_key": "",
+                "enabled": false
+            },
+            {
+                "name": "YouTube Primary",
+                "platform": "youtube",
+                "url": "rtmp://a.rtmp.youtube.com/live2",
+                "stream_key": "",
+                "enabled": false
+            }
+        ]
+    },
+    "platforms": {
+        "twitch": {
+            "enabled": false,
+            "oauth_token": "",
+            "bot_username": "InteractiveStreamsBot",
+            "channel": "",
+            "server": "irc.chat.twitch.tv",
+            "port": 6667
+        },
+        "youtube": {
+            "enabled": false,
+            "api_key": "",
+            "live_chat_id": "",
+            "channel_id": "",
+            "poll_interval": 2000
+        }
+    },
+    "web": {
+        "port": 8080,
+        "enabled": true
+    },
+    "games": {
+        "chaos_arena": {
+            "max_players": 20,
+            "min_players": 2,
+            "round_duration": 120,
+            "max_rounds": 5,
+            "lobby_duration": 30,
+            "power_up_interval": 10
+        }
+    }
+}

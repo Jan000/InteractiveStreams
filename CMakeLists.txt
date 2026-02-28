@@ -1,0 +1,152 @@
+cmake_minimum_required(VERSION 3.20)
+project(InteractiveStreams VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Options
+option(IS_BUILD_TESTS "Build tests" OFF)
+option(IS_USE_SYSTEM_LIBS "Use system-installed libraries instead of FetchContent" OFF)
+
+# ─── Dependencies via FetchContent ────────────────────────────────────────────
+include(FetchContent)
+
+# SFML 2.6 – Rendering & Window
+FetchContent_Declare(
+    sfml
+    GIT_REPOSITORY https://github.com/SFML/SFML.git
+    GIT_TAG        2.6.1
+)
+
+# Box2D – Physics
+FetchContent_Declare(
+    box2d
+    GIT_REPOSITORY https://github.com/erincatto/box2d.git
+    GIT_TAG        v2.4.1
+)
+set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
+set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+
+# nlohmann/json – JSON handling
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+)
+
+# cpp-httplib – Embedded HTTP server for admin dashboard
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.15.3
+)
+
+# spdlog – Logging
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.13.0
+)
+
+FetchContent_MakeAvailable(sfml box2d json httplib spdlog)
+
+# ─── Source files ─────────────────────────────────────────────────────────────
+set(CORE_SOURCES
+    src/core/Application.cpp
+    src/core/Config.cpp
+    src/core/GameManager.cpp
+    src/core/Logger.cpp
+)
+
+set(GAME_SOURCES
+    src/games/GameRegistry.cpp
+    src/games/chaos_arena/ChaosArena.cpp
+    src/games/chaos_arena/Player.cpp
+    src/games/chaos_arena/Arena.cpp
+    src/games/chaos_arena/PhysicsWorld.cpp
+    src/games/chaos_arena/ParticleSystem.cpp
+    src/games/chaos_arena/Projectile.cpp
+    src/games/chaos_arena/PowerUp.cpp
+)
+
+set(PLATFORM_SOURCES
+    src/platform/PlatformManager.cpp
+    src/platform/twitch/TwitchPlatform.cpp
+    src/platform/youtube/YoutubePlatform.cpp
+)
+
+set(RENDERING_SOURCES
+    src/rendering/Renderer.cpp
+    src/rendering/Camera.cpp
+    src/rendering/ParticleRenderer.cpp
+    src/rendering/UIOverlay.cpp
+    src/rendering/Background.cpp
+    src/rendering/PostProcessing.cpp
+)
+
+set(STREAMING_SOURCES
+    src/streaming/StreamEncoder.cpp
+    src/streaming/StreamOutput.cpp
+)
+
+set(WEB_SOURCES
+    src/web/WebServer.cpp
+    src/web/ApiRoutes.cpp
+)
+
+# ─── Main executable ─────────────────────────────────────────────────────────
+add_executable(${PROJECT_NAME}
+    src/main.cpp
+    ${CORE_SOURCES}
+    ${GAME_SOURCES}
+    ${PLATFORM_SOURCES}
+    ${RENDERING_SOURCES}
+    ${STREAMING_SOURCES}
+    ${WEB_SOURCES}
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    sfml-graphics
+    sfml-window
+    sfml-system
+    sfml-network
+    box2d
+    nlohmann_json::nlohmann_json
+    httplib::httplib
+    spdlog::spdlog
+)
+
+# Copy assets to build directory
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+)
+
+# Copy web dashboard to build directory
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/src/web/dashboard $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
+)
+
+# Copy config to build directory
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/config $<TARGET_FILE_DIR:${PROJECT_NAME}>/config
+)
+
+# ─── Tests ────────────────────────────────────────────────────────────────────
+if(IS_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
+# ─── Install ──────────────────────────────────────────────────────────────────
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(DIRECTORY assets/ DESTINATION bin/assets)
+install(DIRECTORY src/web/dashboard/ DESTINATION bin/dashboard)
+install(DIRECTORY config/ DESTINATION bin/config)
