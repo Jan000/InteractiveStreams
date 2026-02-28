@@ -102,6 +102,39 @@
             </div>
         </section>
 
+        <!-- ─── Local Chat (Test) Section ────────────────────────────── -->
+        <section class="card full-width" id="card-chat">
+            <div class="card-header">
+                <h2>💬 Local Chat (Test)</h2>
+                <span class="badge badge-blue">Local</span>
+            </div>
+            <div class="card-body">
+                <div class="chat-container">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="chat-hint">Send chat commands to test locally. Example: <code>!join</code>, <code>!attack</code></div>
+                    </div>
+                    <div class="chat-input-row">
+                        <input type="text" id="chat-username" class="chat-username-input"
+                               value="TestUser" placeholder="Username" spellcheck="false">
+                        <input type="text" id="chat-input" class="chat-text-input"
+                               placeholder="Type a chat command (e.g. !join)" spellcheck="false"
+                               autocomplete="off">
+                        <button id="btn-send-chat" class="btn btn-accent">Send</button>
+                    </div>
+                    <div class="chat-quick-buttons">
+                        <button class="btn btn-sm chat-quick" data-cmd="!join">!join</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!left">!left</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!right">!right</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!jump">!jump</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!attack">!attack</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!special">!special</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!dash">!dash</button>
+                        <button class="btn btn-sm chat-quick" data-cmd="!block">!block</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ─── Players Section ──────────────────────────────────────── -->
         <section class="card full-width" id="card-players">
             <div class="card-header">

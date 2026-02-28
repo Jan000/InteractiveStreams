@@ -216,3 +216,31 @@ Befehle in `ChaosArena::onChatMessage()`:
 6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
 7. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake).
 8. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
+
+---
+
+## Lokales Testen
+
+### Local Platform (`src/platform/local/LocalPlatform.h`)
+Die `LocalPlatform` ist standardmäßig aktiviert und bietet drei Wege, Chat-Nachrichten lokal zu injizieren:
+
+1. **Web-Dashboard**: `POST /api/chat` mit `{"username": "...", "text": "..."}`
+   - Das Dashboard hat ein integriertes Chat-UI mit Quick-Buttons
+2. **Konsolen-Input**: Direkteingabe im Terminal (optional, per Config steuerbar)
+   - Format: `!befehl` oder `[username] !befehl`
+3. **REST API**: Programmatisch via curl oder HTTP-Client
+
+### Lokale Vorschau
+- Der `Renderer` erstellt automatisch ein SFML-Fenster als lokale Vorschau
+- Das Fenster zeigt exakt den gleichen Frame, der an FFmpeg gestreamt wird
+- Auto-Skalierung bei Fenstergrößenänderung
+- Schließen des Fensters = Shutdown
+
+### Test-Workflow
+```
+1. Anwendung starten
+2. SFML-Fenster zeigt Live-Vorschau
+3. http://localhost:8080 öffnen
+4. Im Dashboard "Local Chat" Befehle eingeben (!join, !attack, etc.)
+5. ODER: Im Terminal direkt Befehle tippen
+```

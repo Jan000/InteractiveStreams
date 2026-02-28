@@ -1,4 +1,5 @@
 #include "platform/PlatformManager.h"
+#include "platform/local/LocalPlatform.h"
 #include "platform/twitch/TwitchPlatform.h"
 #include "platform/youtube/YoutubePlatform.h"
 
@@ -10,6 +11,14 @@ PlatformManager::PlatformManager(core::Config& config)
     : m_config(config)
 {
     // Auto-register built-in platforms
+
+    // Local test platform (always registered, auto-enabled)
+    auto local = std::make_unique<LocalPlatform>();
+    if (config.raw().contains("platforms") && config.raw()["platforms"].contains("local")) {
+        local->configure(config.raw()["platforms"]["local"]);
+    }
+    registerPlatform(std::move(local));
+
     auto twitch = std::make_unique<TwitchPlatform>();
     if (config.raw().contains("platforms") && config.raw()["platforms"].contains("twitch")) {
         twitch->configure(config.raw()["platforms"]["twitch"]);
@@ -36,7 +45,9 @@ void PlatformManager::registerPlatform(std::unique_ptr<IPlatform> platform) {
 
 void PlatformManager::connectAll() {
     for (auto& platform : m_platforms) {
-        bool enabled = m_config.get<bool>("platforms." + platform->id() + ".enabled", false);
+        // Local platform defaults to enabled (for testing)
+        bool defaultEnabled = (platform->id() == "local");
+        bool enabled = m_config.get<bool>("platforms." + platform->id() + ".enabled", defaultEnabled);
         if (enabled) {
             spdlog::info("Connecting to {}...", platform->displayName());
             if (platform->connect()) {

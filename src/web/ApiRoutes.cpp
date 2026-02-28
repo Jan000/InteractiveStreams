@@ -3,6 +3,7 @@
 #include "core/GameManager.h"
 #include "core/Config.h"
 #include "platform/PlatformManager.h"
+#include "platform/local/LocalPlatform.h"
 #include "streaming/StreamEncoder.h"
 #include "streaming/StreamOutput.h"
 
@@ -141,7 +142,42 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         j["targets"] = app.streamOutput().getStatus();
         res.set_content(j.dump(2), "application/json");
     });
+    // ──────── Local Chat (Test) ───────────────────────────────────────────
+    server.Post("/api/chat", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string username = body.value("username", "dashboard");
+            std::string text = body.value("text", "");
+            if (text.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"Empty message"})", "application/json");
+                return;
+            }
+            auto* local = dynamic_cast<platform::LocalPlatform*>(
+                app.platformManager().getPlatform("local"));
+            if (local) {
+                local->injectMessage(username, text);
+                res.set_content(R"({"success":true})", "application/json");
+            } else {
+                res.status = 404;
+                res.set_content(R"({"error":"Local platform not found"})", "application/json");
+            }
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
 
+    server.Get("/api/chat/log", [&app](const httplib::Request&, httplib::Response& res) {
+        auto* local = dynamic_cast<platform::LocalPlatform*>(
+            app.platformManager().getPlatform("local"));
+        if (local) {
+            nlohmann::json j = local->getMessageLog();
+            res.set_content(j.dump(), "application/json");
+        } else {
+            res.set_content("[]", "application/json");
+        }
+    });
     // ──────── Shutdown ───────────────────────────────────────────────────────
     server.Post("/api/shutdown", [&app](const httplib::Request&, httplib::Response& res) {
         spdlog::warn("[API] Shutdown requested via web dashboard.");

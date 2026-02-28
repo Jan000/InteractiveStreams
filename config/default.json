@@ -36,6 +36,10 @@
         ]
     },
     "platforms": {
+        "local": {
+            "enabled": true,
+            "console_input": true
+        },
         "twitch": {
             "enabled": false,
             "oauth_token": "",

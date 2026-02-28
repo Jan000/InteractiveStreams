@@ -43,6 +43,10 @@ const el = {
     lastUpdate:      document.getElementById('last-update'),
     gameSelector:    document.getElementById('game-selector'),
     btnShutdown:     document.getElementById('btn-shutdown'),
+    chatMessages:    document.getElementById('chat-messages'),
+    chatInput:       document.getElementById('chat-input'),
+    chatUsername:    document.getElementById('chat-username'),
+    btnSendChat:     document.getElementById('btn-send-chat'),
 };
 
 // ─── API Calls ───────────────────────────────────────────────────────────
@@ -77,6 +81,37 @@ async function shutdownServer() {
         await fetch(`${API_BASE}/api/shutdown`, { method: 'POST' });
     } catch (e) {
         console.error('Shutdown request failed:', e);
+    }
+}
+
+async function sendChatMessage(username, text) {
+    if (!text.trim()) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, text })
+        });
+        if (res.ok) {
+            appendChatMessage(username, text, false);
+            el.chatInput.value = '';
+            el.chatInput.focus();
+        }
+    } catch (e) {
+        console.error('Failed to send chat message:', e);
+    }
+}
+
+function appendChatMessage(sender, text, outgoing = false) {
+    const div = document.createElement('div');
+    div.className = `chat-msg ${outgoing ? 'outgoing' : ''}`;
+    div.innerHTML = `<span class="chat-sender">${escapeHtml(sender)}:</span> <span class="chat-text">${escapeHtml(text)}</span>`;
+    el.chatMessages.appendChild(div);
+    el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+
+    // Keep max 200 messages
+    while (el.chatMessages.children.length > 201) {
+        el.chatMessages.removeChild(el.chatMessages.children[1]); // keep hint
     }
 }
 
@@ -251,6 +286,25 @@ el.gameSelector.addEventListener('change', (e) => {
 });
 
 el.btnShutdown.addEventListener('click', shutdownServer);
+
+// ─── Chat controls ───────────────────────────────────────────────────────
+el.btnSendChat.addEventListener('click', () => {
+    sendChatMessage(el.chatUsername.value || 'TestUser', el.chatInput.value);
+});
+
+el.chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        sendChatMessage(el.chatUsername.value || 'TestUser', el.chatInput.value);
+    }
+});
+
+// Quick-command buttons
+document.querySelectorAll('.chat-quick').forEach(btn => {
+    btn.addEventListener('click', () => {
+        sendChatMessage(el.chatUsername.value || 'TestUser', btn.dataset.cmd);
+    });
+});
 
 // ─── Initialize ──────────────────────────────────────────────────────────
 fetchStatus();

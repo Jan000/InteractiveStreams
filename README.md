@@ -180,6 +180,8 @@ InteractiveStreams/
 │   │   ├── IPlatform.h         # Plattform-Interface (abstrakt)
 │   │   ├── ChatMessage.h       # Chat-Nachricht Struktur
 │   │   ├── PlatformManager.h/cpp # Plattform-Verwaltung
+│   │   ├── local/
+│   │   │   └── LocalPlatform.h/cpp   # Lokale Test-Plattform
 │   │   ├── twitch/
 │   │   │   └── TwitchPlatform.h/cpp  # Twitch IRC Integration
 │   │   └── youtube/
@@ -323,6 +325,8 @@ Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` 
 | POST | `/api/platforms/disconnect` | Plattform trennen |
 | GET | `/api/config` | Konfiguration (Secrets redaktiert) |
 | GET | `/api/streaming` | Streaming-Status |
+| POST | `/api/chat` | Lokale Chat-Nachricht senden `{"username":"...","text":"..."}` |
+| GET | `/api/chat/log` | Ausgehende Nachrichten-Log |
 | POST | `/api/shutdown` | Server herunterfahren |
 
 ---
@@ -341,6 +345,46 @@ Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` 
 | `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
 | `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
 | `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+
+---
+
+## 🖥️ Lokales Testen
+
+InteractiveStreams enthält eine **Local Platform** für Tests ohne Twitch/YouTube-Verbindung:
+
+### Lokale Vorschau
+Beim Start öffnet sich automatisch ein **SFML-Vorschaufenster** mit der gerenderten Spielgrafik. Das Fenster skaliert sich automatisch und zeigt exakt den gleichen Output, der später an die Streaming-Plattformen gesendet wird.
+
+### Chat über Web-Dashboard
+1. Starte die Anwendung
+2. Öffne `http://localhost:8080` im Browser
+3. Nutze den Bereich **“Local Chat (Test)”** unten im Dashboard:
+   - Wähle einen Benutzernamen (Standard: `TestUser`)
+   - Tippe Chat-Befehle ein (z.B. `!join`)
+   - Nutze Quick-Buttons für häufige Befehle
+4. Die Nachrichten werden direkt ins Spiel injiziert
+
+### Chat über Konsole
+Wenn `console_input` aktiviert ist (Standard: `true`), kannst du auch direkt in der Konsole/Terminal Befehle eingeben:
+
+```
+!join              → Als Benutzer "console" beitreten
+[Alice] !join      → Als Benutzer "Alice" beitreten
+[Bob] !attack      → Als "Bob" angreifen
+```
+
+### Chat über REST API
+```bash
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"username": "TestUser", "text": "!join"}'
+```
+
+**Weitere API-Endpunkte für lokales Testen:**
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| POST | `/api/chat` | Nachricht injizieren `{"username": "...", "text": "..."}` |
+| GET | `/api/chat/log` | Ausgehende Nachrichten-Log abrufen |
 
 ---
 
@@ -413,9 +457,11 @@ public:
 - [x] Chaos Arena Spiel mit Box2D-Physik
 - [x] Partikel-System mit vielfältigen Effekten
 - [x] Plattform-Interface mit Twitch- und YouTube-Integration
+- [x] Lokale Test-Plattform (Dashboard-Chat, Konsolen-Input, REST API)
+- [x] SFML-Lokale-Vorschau (Fenster mit Auto-Skalierung)
 - [x] SFML-Renderer mit Offscreen-Rendering
 - [x] FFmpeg-Streaming-Pipeline
-- [x] Web-Admin-Dashboard mit REST API
+- [x] Web-Admin-Dashboard mit REST API und Chat-UI
 - [x] JSON-basierte Konfiguration
 
 ### Phase 2 – Polish (geplant)
