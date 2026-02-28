@@ -5,14 +5,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ─── Speed: FetchContent soll nicht bei jedem Configure Git befragen ─────────
+# ─── Speed: FetchContent – kein Git-Update-Check für bereits gecachte Deps ───
+# Verhindert langsame Netzwerk-Abfragen bei jedem cmake --preset.
+# Neu klonen: 'build/_deps/*-subbuild' löschen und cmake --preset erneut aufrufen.
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 # ─── Speed: MSVC – parallele Kompilierung (/MP) + Warnings aus Deps ──────────
+# /FS ist bei /MP zwingend erforderlich: verhindert C1041-Fehler wenn mehrere
+# cl.exe-Prozesse gleichzeitig in dieselbe .pdb-Datei schreiben wollen.
 if(MSVC)
-    add_compile_options(/MP)  # Alle CPU-Kerne nutzen
-    # spdlog / SFML nutzen stdext::checked_array_iterator – in MSVC 2022 deprecated.
-    # In unserem Code kein Problem: das warning kommt aus Drittcode.
+    add_compile_options(/MP /FS)
     add_compile_options(/wd4996)
 endif()
 
@@ -28,6 +30,7 @@ FetchContent_Declare(
     sfml
     GIT_REPOSITORY https://github.com/SFML/SFML.git
     GIT_TAG        2.6.1
+    GIT_SHALLOW    TRUE
 )
 
 # Box2D – Physics
@@ -35,6 +38,7 @@ FetchContent_Declare(
     box2d
     GIT_REPOSITORY https://github.com/erincatto/box2d.git
     GIT_TAG        v2.4.1
+    GIT_SHALLOW    TRUE
 )
 set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
 set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
@@ -44,6 +48,7 @@ FetchContent_Declare(
     json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.11.3
+    GIT_SHALLOW    TRUE
 )
 
 # cpp-httplib – Embedded HTTP server for admin dashboard
@@ -51,6 +56,7 @@ FetchContent_Declare(
     httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG        v0.15.3
+    GIT_SHALLOW    TRUE
 )
 
 # spdlog – Logging
@@ -58,6 +64,7 @@ FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG        v1.13.0
+    GIT_SHALLOW    TRUE
 )
 
 # Suppress deprecation warnings from older CMakeLists in dependencies
