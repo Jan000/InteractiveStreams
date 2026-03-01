@@ -1,11 +1,9 @@
 #include "core/Application.h"
 #include "core/Config.h"
-#include "core/GameManager.h"
+#include "core/ChannelManager.h"
+#include "core/StreamManager.h"
 #include "core/Logger.h"
-#include "platform/PlatformManager.h"
 #include "rendering/Renderer.h"
-#include "streaming/StreamEncoder.h"
-#include "streaming/StreamOutput.h"
 #include "web/WebServer.h"
 
 #include <SFML/Graphics.hpp>
@@ -21,15 +19,14 @@ Application* Application::s_instance = nullptr;
 struct Application::Impl {
     bool                                       running = false;
     std::unique_ptr<Config>                    config;
-    std::unique_ptr<GameManager>               gameManager;
-    std::unique_ptr<platform::PlatformManager> platformManager;
+    std::unique_ptr<ChannelManager>            channelManager;
+    std::unique_ptr<StreamManager>             streamManager;
     std::unique_ptr<rendering::Renderer>       renderer;
-    std::unique_ptr<streaming::StreamEncoder>  streamEncoder;
-    std::unique_ptr<streaming::StreamOutput>   streamOutput;
     std::unique_ptr<web::WebServer>            webServer;
 
-    int    targetFps    = 60;
+    int    targetFps      = 60;
     double fixedDeltaTime = 1.0 / 60.0;
+    std::string previewStreamId;
 };
 
 Application::Application(int argc, char* argv[])
@@ -37,15 +34,12 @@ Application::Application(int argc, char* argv[])
 {
     s_instance = this;
 
-    // Initialize logger first
     Logger::init();
-    spdlog::info("InteractiveStreams v{}.{}.{} starting...", 0, 1, 0);
+    spdlog::info("InteractiveStreams v{}.{}.{} starting...", 0, 2, 0);
 
-    // Load configuration
     std::string configPath = "config/default.json";
-    if (argc > 1) {
-        configPath = argv[1];
-    }
+    if (argc > 1) configPath = argv[1];
+
     m_impl->config = std::make_unique<Config>(configPath);
     m_impl->targetFps = m_impl->config->get<int>("application.target_fps", 60);
     m_impl->fixedDeltaTime = 1.0 / static_cast<double>(m_impl->targetFps);
@@ -57,40 +51,48 @@ Application::~Application() {
 
 void Application::initialize() {
     spdlog::info("Initializing subsystems...");
-
     auto& cfg = *m_impl->config;
 
-    // Rendering
-    int width  = cfg.get<int>("rendering.width", 1080);
-    int height = cfg.get<int>("rendering.height", 1920);
-    m_impl->renderer = std::make_unique<rendering::Renderer>(width, height,
+    // ── Channel manager (replaces PlatformManager) ───────────────────────
+    m_impl->channelManager = std::make_unique<ChannelManager>();
+    if (cfg.raw().contains("channels") && cfg.raw()["channels"].is_array()) {
+        m_impl->channelManager->loadFromJson(cfg.raw()["channels"]);
+    }
+    m_impl->channelManager->connectAllEnabled();
+
+    // ── Stream manager (replaces single GameManager+Renderer+Encoder) ────
+    m_impl->streamManager = std::make_unique<StreamManager>();
+    if (cfg.raw().contains("streams") && cfg.raw()["streams"].is_array()) {
+        m_impl->streamManager->loadFromJson(cfg.raw()["streams"]);
+    }
+
+    // Ensure at least one stream exists
+    if (m_impl->streamManager->count() == 0) {
+        StreamConfig def;
+        def.id         = "default";
+        def.name       = "Main Stream";
+        def.channelIds = {"local"};
+        def.fixedGame  = cfg.get<std::string>("application.default_game", "chaos_arena");
+        m_impl->streamManager->addStream(def);
+    }
+
+    // ── Preview renderer ─────────────────────────────────────────────────
+    auto streams = m_impl->streamManager->allStreams();
+    auto* first  = streams.empty() ? nullptr : streams[0];
+    int prevW    = first ? first->width()  : 1080;
+    int prevH    = first ? first->height() : 1920;
+    m_impl->renderer = std::make_unique<rendering::Renderer>(prevW, prevH,
         cfg.get<std::string>("rendering.title", "InteractiveStreams"));
+    if (first) m_impl->previewStreamId = first->config().id;
 
-    // Platform manager (chat connections)
-    m_impl->platformManager = std::make_unique<platform::PlatformManager>(cfg);
-
-    // Game manager
-    m_impl->gameManager = std::make_unique<GameManager>();
-
-    // Streaming
-    m_impl->streamEncoder = std::make_unique<streaming::StreamEncoder>(cfg);
-    m_impl->streamOutput  = std::make_unique<streaming::StreamOutput>(cfg);
-
-    // Web dashboard
+    // ── Web dashboard ────────────────────────────────────────────────────
     int webPort = cfg.get<int>("web.port", 8080);
     m_impl->webServer = std::make_unique<web::WebServer>(webPort, *this);
-
-    // Start web server in background
     m_impl->webServer->start();
 
-    // Connect to enabled platforms
-    m_impl->platformManager->connectAll();
-
-    // Load the default game
-    std::string defaultGame = cfg.get<std::string>("application.default_game", "chaos_arena");
-    m_impl->gameManager->loadGame(defaultGame);
-
-    spdlog::info("All subsystems initialized successfully.");
+    spdlog::info("All subsystems initialised ({} stream(s), {} channel(s)).",
+        m_impl->streamManager->count(),
+        m_impl->channelManager->getAllChannels().size());
 }
 
 int Application::run() {
@@ -118,40 +120,48 @@ void Application::mainLoop() {
         auto currentTime = clock::now();
         double frameTime = std::chrono::duration<double>(currentTime - previousTime).count();
         previousTime = currentTime;
-
-        // Cap frame time to avoid spiral of death
         if (frameTime > 0.25) frameTime = 0.25;
         accumulator += frameTime;
 
-        // Process platform messages (chat)
-        auto messages = m_impl->platformManager->pollMessages();
-        for (auto& msg : messages) {
-            m_impl->gameManager->handleChatMessage(msg);
-        }
+        // Poll ALL channel messages once per frame
+        auto allMessages = m_impl->channelManager->pollAllMessages();
 
-        // Fixed-timestep physics/game update
+        // Fixed-timestep update
         while (accumulator >= dt) {
-            m_impl->gameManager->update(dt);
+            for (auto* stream : m_impl->streamManager->allStreams()) {
+                // Route messages to this stream's subscribed channels
+                auto msgs = ChannelManager::filterByChannels(
+                    allMessages, stream->config().channelIds);
+                for (const auto& msg : msgs)
+                    stream->handleChatMessage(msg);
+                stream->update(dt);
+            }
             accumulator -= dt;
+            allMessages.clear(); // process only once
         }
 
-        // Check for deferred game switch (after round/game end)
-        m_impl->gameManager->checkPendingSwitch();
-
-        // Render
+        // Render & encode every stream
         double alpha = accumulator / dt;
-        m_impl->renderer->beginFrame();
-        m_impl->gameManager->render(m_impl->renderer->getRenderTarget(), alpha);
-        m_impl->renderer->endFrame();
+        for (auto* stream : m_impl->streamManager->allStreams()) {
+            stream->render(alpha);
+            stream->encodeFrame();
+        }
 
-        // Encode frame for streaming
-        m_impl->streamEncoder->encodeFrame(m_impl->renderer->getFrameBuffer());
+        // Preview: show selected stream in the SFML window
+        auto* previewStream = m_impl->streamManager->getStream(m_impl->previewStreamId);
+        if (!previewStream) {
+            auto all = m_impl->streamManager->allStreams();
+            if (!all.empty()) previewStream = all[0];
+        }
+        if (previewStream) {
+            m_impl->renderer->displayPreview(
+                previewStream->renderTexture().getTexture(),
+                previewStream->width(), previewStream->height());
+        }
 
-        // Handle window events (for local preview)
+        // Handle window events
         m_impl->renderer->processEvents([this](const sf::Event& event) {
-            if (event.type == sf::Event::Closed) {
-                requestShutdown();
-            }
+            if (event.type == sf::Event::Closed) requestShutdown();
         });
     }
 }
@@ -163,22 +173,18 @@ void Application::requestShutdown() {
 
 void Application::shutdown() {
     spdlog::info("Shutting down...");
-    m_impl->webServer->stop();
-    m_impl->platformManager->disconnectAll();
-    m_impl->streamEncoder->stop();
+    if (m_impl->webServer)      m_impl->webServer->stop();
+    if (m_impl->channelManager) m_impl->channelManager->disconnectAll();
+    for (auto* s : m_impl->streamManager->allStreams()) s->stopStreaming();
     spdlog::info("Shutdown complete.");
 }
 
-Config&                       Application::config()          { return *m_impl->config; }
-GameManager&                  Application::gameManager()     { return *m_impl->gameManager; }
-platform::PlatformManager&    Application::platformManager() { return *m_impl->platformManager; }
-rendering::Renderer&          Application::renderer()        { return *m_impl->renderer; }
-streaming::StreamEncoder&     Application::streamEncoder()   { return *m_impl->streamEncoder; }
-streaming::StreamOutput&      Application::streamOutput()    { return *m_impl->streamOutput; }
-web::WebServer&               Application::webServer()       { return *m_impl->webServer; }
+Config&               Application::config()         { return *m_impl->config; }
+ChannelManager&       Application::channelManager() { return *m_impl->channelManager; }
+StreamManager&        Application::streamManager()  { return *m_impl->streamManager; }
+rendering::Renderer&  Application::renderer()       { return *m_impl->renderer; }
+web::WebServer&       Application::webServer()      { return *m_impl->webServer; }
 
-Application& Application::instance() {
-    return *s_instance;
-}
+Application& Application::instance() { return *s_instance; }
 
 } // namespace is::core

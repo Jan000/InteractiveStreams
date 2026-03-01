@@ -25,8 +25,11 @@ public:
     /// Save current configuration to file.
     void save() const;
 
-    /// Get the raw JSON object.
+    /// Get the raw JSON object (read-only).
     const nlohmann::json& raw() const { return m_data; }
+
+    /// Get the raw JSON object (mutable – for web-API bulk edits).
+    nlohmann::json& rawMut() { return m_data; }
 
 private:
     /// Navigate into the JSON using a dotted key and return a pointer (or nullptr).

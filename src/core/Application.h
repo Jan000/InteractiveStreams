@@ -6,22 +6,14 @@
 namespace is::core {
 
 class Config;
-class GameManager;
+class ChannelManager;
+class StreamManager;
 class Logger;
 
 }
 
-namespace is::platform {
-class PlatformManager;
-}
-
 namespace is::rendering {
 class Renderer;
-}
-
-namespace is::streaming {
-class StreamEncoder;
-class StreamOutput;
 }
 
 namespace is::web {
@@ -31,6 +23,8 @@ class WebServer;
 namespace is::core {
 
 /// Main application class – bootstraps and owns all subsystems.
+/// In multi-stream mode it manages multiple game/render/encode pipelines
+/// via StreamManager, and multiple chat platform connections via ChannelManager.
 class Application {
 public:
     Application(int argc, char* argv[]);
@@ -46,13 +40,11 @@ public:
     void requestShutdown();
 
     // Subsystem accessors
-    Config&                       config();
-    GameManager&                  gameManager();
-    platform::PlatformManager&    platformManager();
-    rendering::Renderer&          renderer();
-    streaming::StreamEncoder&     streamEncoder();
-    streaming::StreamOutput&      streamOutput();
-    web::WebServer&               webServer();
+    Config&               config();
+    ChannelManager&       channelManager();
+    StreamManager&        streamManager();
+    rendering::Renderer&  renderer();
+    web::WebServer&       webServer();
 
     static Application& instance();
 

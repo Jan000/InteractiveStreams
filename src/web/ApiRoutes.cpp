@@ -1,244 +1,310 @@
 #include "web/ApiRoutes.h"
 #include "core/Application.h"
-#include "core/GameManager.h"
 #include "core/Config.h"
+#include "core/ChannelManager.h"
+#include "core/StreamManager.h"
+#include "core/StreamInstance.h"
 #include "games/GameRegistry.h"
-#include "platform/PlatformManager.h"
-#include "platform/local/LocalPlatform.h"
-#include "streaming/StreamEncoder.h"
-#include "streaming/StreamOutput.h"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 namespace is::web {
 
+// Helper: extract first regex capture from path
+static std::string pathParam(const httplib::Request& req, size_t idx = 1) {
+    if (idx < req.matches.size()) return std::string(req.matches[idx]);
+    return "";
+}
+
 void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
-    // ──────── System Status ──────────────────────────────────────────────────
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  System
+    // ══════════════════════════════════════════════════════════════════════
+
     server.Get("/api/status", [&app](const httplib::Request&, httplib::Response& res) {
-        nlohmann::json status;
-        status["version"] = "0.1.0";
-        status["uptime"] = 0; // TODO: Track uptime
+        nlohmann::json s;
+        s["version"]  = "0.2.0";
+        s["streams"]  = app.streamManager().getStatus();
+        s["channels"] = app.channelManager().getStatus();
 
-        // Game info
-        auto* game = app.gameManager().activeGame();
-        if (game) {
-            status["game"]["id"] = game->id();
-            status["game"]["name"] = game->displayName();
-            status["game"]["state"] = game->getState();
-            status["game"]["commands"] = game->getCommands();
-            status["game"]["isRoundComplete"] = game->isRoundComplete();
-            status["game"]["isGameOver"] = game->isGameOver();
-        }
-
-        // Pending game switch
-        if (app.gameManager().hasPendingSwitch()) {
-            status["pendingSwitch"]["game"] = app.gameManager().pendingGameName();
-            int mode = static_cast<int>(app.gameManager().pendingSwitchMode());
-            status["pendingSwitch"]["mode"] = mode == 1 ? "after_round" : "after_game";
-        }
-
-        // Platforms
-        status["platforms"] = app.platformManager().getStatus();
-
-        // Streaming
-        status["streaming"]["encoding"] = app.streamEncoder().isRunning();
-        status["streaming"]["fps"] = app.streamEncoder().getFps();
-        status["streaming"]["frames"] = app.streamEncoder().getFrameCount();
-        status["streaming"]["targets"] = app.streamOutput().getStatus();
-
-        res.set_content(status.dump(2), "application/json");
-    });
-
-    // ──────── Game Management ────────────────────────────────────────────────
-    server.Get("/api/games", [&app](const httplib::Request&, httplib::Response& res) {
-        auto gameNames = app.gameManager().availableGames();
-        nlohmann::json j = nlohmann::json::array();
-        for (const auto& name : gameNames) {
-            // Create a temporary instance to get metadata
-            auto temp = games::GameRegistry::instance().create(name);
-            if (temp) {
-                j.push_back({
-                    {"id", temp->id()},
-                    {"name", temp->displayName()},
-                    {"description", temp->description()}
+        // Available games
+        nlohmann::json gamesArr = nlohmann::json::array();
+        for (const auto& name : games::GameRegistry::instance().list()) {
+            auto tmp = games::GameRegistry::instance().create(name);
+            if (tmp) {
+                gamesArr.push_back({
+                    {"id",          tmp->id()},
+                    {"name",        tmp->displayName()},
+                    {"description", tmp->description()}
                 });
-            } else {
-                j.push_back({{"id", name}, {"name", name}, {"description", ""}});
             }
         }
-        res.set_content(j.dump(2), "application/json");
+        s["games"] = gamesArr;
+
+        res.set_content(s.dump(2), "application/json");
     });
 
-    server.Post("/api/games/load", [&app](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = nlohmann::json::parse(req.body);
-            std::string gameName = body["game"];
-            app.gameManager().requestSwitch(gameName, core::SwitchMode::Immediate);
-            res.set_content(R"({"success":true})", "application/json");
-        } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        }
-    });
-
-    server.Post("/api/games/switch", [&app](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = nlohmann::json::parse(req.body);
-            std::string gameName = body["game"];
-            std::string modeStr  = body.value("mode", "immediate");
-
-            core::SwitchMode mode = core::SwitchMode::Immediate;
-            if (modeStr == "after_round")     mode = core::SwitchMode::AfterRound;
-            else if (modeStr == "after_game") mode = core::SwitchMode::AfterGame;
-
-            app.gameManager().requestSwitch(gameName, mode);
-
-            nlohmann::json resp;
-            resp["success"] = true;
-            resp["game"]    = gameName;
-            resp["mode"]    = modeStr;
-            resp["pending"] = (mode != core::SwitchMode::Immediate);
-            res.set_content(resp.dump(), "application/json");
-        } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        }
-    });
-
-    server.Post("/api/games/cancel-switch", [&app](const httplib::Request&, httplib::Response& res) {
-        app.gameManager().cancelPendingSwitch();
-        res.set_content(R"({"success":true})", "application/json");
-    });
-
-    server.Get("/api/games/state", [&app](const httplib::Request&, httplib::Response& res) {
-        auto* game = app.gameManager().activeGame();
-        if (game) {
-            res.set_content(game->getState().dump(2), "application/json");
-        } else {
-            res.status = 404;
-            res.set_content(R"({"error":"No active game"})", "application/json");
-        }
-    });
-
-    // ──────── Platform Management ────────────────────────────────────────────
-    server.Get("/api/platforms", [&app](const httplib::Request&, httplib::Response& res) {
-        res.set_content(app.platformManager().getStatus().dump(2), "application/json");
-    });
-
-    server.Post("/api/platforms/connect", [&app](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = nlohmann::json::parse(req.body);
-            std::string platformId = body["platform"];
-            auto* platform = app.platformManager().getPlatform(platformId);
-            if (platform) {
-                platform->connect();
-                res.set_content(R"({"success":true})", "application/json");
-            } else {
-                res.status = 404;
-                res.set_content(R"({"error":"Platform not found"})", "application/json");
-            }
-        } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        }
-    });
-
-    server.Post("/api/platforms/disconnect", [&app](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = nlohmann::json::parse(req.body);
-            std::string platformId = body["platform"];
-            auto* platform = app.platformManager().getPlatform(platformId);
-            if (platform) {
-                platform->disconnect();
-                res.set_content(R"({"success":true})", "application/json");
-            } else {
-                res.status = 404;
-                res.set_content(R"({"error":"Platform not found"})", "application/json");
-            }
-        } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        }
-    });
-
-    // ──────── Configuration ──────────────────────────────────────────────────
-    server.Get("/api/config", [&app](const httplib::Request&, httplib::Response& res) {
-        // Return config but redact sensitive fields
-        auto config = app.config().raw();
-        // Redact tokens/keys
-        if (config.contains("platforms")) {
-            for (auto& [key, val] : config["platforms"].items()) {
-                if (val.contains("oauth_token")) val["oauth_token"] = "***";
-                if (val.contains("api_key")) val["api_key"] = "***";
-                if (val.contains("stream_key")) val["stream_key"] = "***";
-            }
-        }
-        if (config.contains("streaming") && config["streaming"].contains("targets")) {
-            for (auto& t : config["streaming"]["targets"]) {
-                if (t.contains("stream_key")) t["stream_key"] = "***";
-            }
-        }
-        res.set_content(config.dump(2), "application/json");
-    });
-
-    // ──────── Streaming ──────────────────────────────────────────────────────
-    server.Get("/api/streaming", [&app](const httplib::Request&, httplib::Response& res) {
-        nlohmann::json j;
-        j["encoding"] = app.streamEncoder().isRunning();
-        j["fps"] = app.streamEncoder().getFps();
-        j["frames"] = app.streamEncoder().getFrameCount();
-        j["targets"] = app.streamOutput().getStatus();
-        res.set_content(j.dump(2), "application/json");
-    });
-    // ──────── Local Chat (Test) ───────────────────────────────────────────
-    server.Post("/api/chat", [&app](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = nlohmann::json::parse(req.body);
-            std::string username = body.value("username", "dashboard");
-            std::string text = body.value("text", "");
-            if (text.empty()) {
-                res.status = 400;
-                res.set_content(R"({"error":"Empty message"})", "application/json");
-                return;
-            }
-            auto* local = dynamic_cast<platform::LocalPlatform*>(
-                app.platformManager().getPlatform("local"));
-            if (local) {
-                local->injectMessage(username, text);
-                res.set_content(R"({"success":true})", "application/json");
-            } else {
-                res.status = 404;
-                res.set_content(R"({"error":"Local platform not found"})", "application/json");
-            }
-        } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
-        }
-    });
-
-    server.Get("/api/chat/log", [&app](const httplib::Request&, httplib::Response& res) {
-        auto* local = dynamic_cast<platform::LocalPlatform*>(
-            app.platformManager().getPlatform("local"));
-        if (local) {
-            nlohmann::json j = local->getMessageLog();
-            res.set_content(j.dump(), "application/json");
-        } else {
-            res.set_content("[]", "application/json");
-        }
-    });
-    // ──────── Shutdown ───────────────────────────────────────────────────────
     server.Post("/api/shutdown", [&app](const httplib::Request&, httplib::Response& res) {
         spdlog::warn("[API] Shutdown requested via web dashboard.");
         app.requestShutdown();
         res.set_content(R"({"success":true,"message":"Shutting down..."})", "application/json");
     });
 
-    // ──────── CORS headers ───────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+    //  Channels  (CRUD + connect/disconnect)
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Get("/api/channels", [&app](const httplib::Request&, httplib::Response& res) {
+        res.set_content(app.channelManager().getStatus().dump(2), "application/json");
+    });
+
+    server.Post("/api/channels", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            core::ChannelConfig cfg;
+            cfg.id       = body.value("id", "");
+            cfg.platform = body.value("platform", "");
+            cfg.name     = body.value("name", cfg.platform);
+            cfg.enabled  = body.value("enabled", false);
+            if (body.contains("settings")) cfg.settings = body["settings"];
+
+            std::string id = app.channelManager().addChannel(cfg);
+            res.set_content(nlohmann::json({{"success",true},{"id",id}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Put(R"(/api/channels/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string id = pathParam(req);
+            auto body = nlohmann::json::parse(req.body);
+            core::ChannelConfig cfg;
+            cfg.platform = body.value("platform", "");
+            cfg.name     = body.value("name", "");
+            cfg.enabled  = body.value("enabled", false);
+            if (body.contains("settings")) cfg.settings = body["settings"];
+
+            app.channelManager().updateChannel(id, cfg);
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Delete(R"(/api/channels/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.channelManager().removeChannel(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post(R"(/api/channels/([^/]+)/connect)", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.channelManager().connectChannel(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post(R"(/api/channels/([^/]+)/disconnect)", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.channelManager().disconnectChannel(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Streams  (CRUD + start/stop + game switch)
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Get("/api/streams", [&app](const httplib::Request&, httplib::Response& res) {
+        res.set_content(app.streamManager().getStatus().dump(2), "application/json");
+    });
+
+    server.Post("/api/streams", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            auto cfg  = core::StreamInstance::configFromJson(body);
+            std::string id = app.streamManager().addStream(cfg);
+            res.set_content(nlohmann::json({{"success",true},{"id",id}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Put(R"(/api/streams/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string id = pathParam(req);
+            auto body = nlohmann::json::parse(req.body);
+            auto cfg  = core::StreamInstance::configFromJson(body);
+            cfg.id = id;  // preserve the path-param ID
+            app.streamManager().updateStream(id, cfg);
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Delete(R"(/api/streams/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.streamManager().removeStream(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // Start / stop streaming (FFmpeg encoding)
+    server.Post(R"(/api/streams/([^/]+)/start)", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.streamManager().startStreaming(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post(R"(/api/streams/([^/]+)/stop)", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.streamManager().stopStreaming(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // Switch the game running on a specific stream
+    server.Post(R"(/api/streams/([^/]+)/game)", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string id = pathParam(req);
+            auto body = nlohmann::json::parse(req.body);
+            std::string gameName = body.at("game");
+            std::string modeStr  = body.value("mode", "immediate");
+
+            core::SwitchMode mode = core::SwitchMode::Immediate;
+            if (modeStr == "after_round")     mode = core::SwitchMode::AfterRound;
+            else if (modeStr == "after_game") mode = core::SwitchMode::AfterGame;
+
+            auto* stream = app.streamManager().getStream(id);
+            if (!stream) {
+                res.status = 404;
+                res.set_content(R"({"error":"Stream not found"})", "application/json");
+                return;
+            }
+            stream->gameManager().requestSwitch(gameName, mode);
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Post(R"(/api/streams/([^/]+)/cancel-switch)", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto* stream = app.streamManager().getStream(pathParam(req));
+        if (!stream) {
+            res.status = 404;
+            res.set_content(R"({"error":"Stream not found"})", "application/json");
+            return;
+        }
+        stream->gameManager().cancelPendingSwitch();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Games
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Get("/api/games", [](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& name : games::GameRegistry::instance().list()) {
+            auto tmp = games::GameRegistry::instance().create(name);
+            if (tmp) {
+                arr.push_back({
+                    {"id",          tmp->id()},
+                    {"name",        tmp->displayName()},
+                    {"description", tmp->description()}
+                });
+            }
+        }
+        res.set_content(arr.dump(2), "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Settings  (read / write / save)
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Get("/api/settings", [&app](const httplib::Request&, httplib::Response& res) {
+        auto cfg = app.config().raw();  // copy
+        // Redact secrets
+        if (cfg.contains("channels")) {
+            for (auto& ch : cfg["channels"]) {
+                if (ch.contains("settings")) {
+                    auto& s = ch["settings"];
+                    if (s.contains("oauth_token")) s["oauth_token"] = "***";
+                    if (s.contains("api_key"))     s["api_key"]     = "***";
+                    if (s.contains("stream_key"))  s["stream_key"]  = "***";
+                }
+            }
+        }
+        if (cfg.contains("streams")) {
+            for (auto& st : cfg["streams"]) {
+                if (st.contains("stream_key")) st["stream_key"] = "***";
+            }
+        }
+        res.set_content(cfg.dump(2), "application/json");
+    });
+
+    server.Put("/api/settings", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            // Merge top-level keys into config
+            for (auto it = body.begin(); it != body.end(); ++it) {
+                app.config().rawMut()[it.key()] = it.value();
+            }
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Post("/api/config/save", [&app](const httplib::Request&, httplib::Response& res) {
+        // Synchronise runtime state back to config JSON, then save to disk
+        app.config().rawMut()["channels"] = app.channelManager().toJson();
+        app.config().rawMut()["streams"]  = app.streamManager().toJson();
+        app.config().save();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Local Chat (Test)
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Post("/api/chat", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string username = body.value("username", "dashboard");
+            std::string text     = body.value("text", "");
+            if (text.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"Empty message"})", "application/json");
+                return;
+            }
+            app.channelManager().injectLocalMessage(username, text);
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Get("/api/chat/log", [&app](const httplib::Request&, httplib::Response& res) {
+        auto log = app.channelManager().getLocalMessageLog();
+        nlohmann::json j = log;
+        res.set_content(j.dump(), "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  CORS
+    // ══════════════════════════════════════════════════════════════════════
+
     server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
         {"Access-Control-Allow-Headers", "Content-Type"}
+    });
+
+    // Handle OPTIONS pre-flight
+    server.Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content("", "text/plain");
     });
 
     spdlog::info("[API] Routes registered.");

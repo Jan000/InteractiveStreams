@@ -27,12 +27,15 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 
 ### Kernfunktionen
 - **Vollautomatisches Streaming** – Rendert Grafik und streamt via FFmpeg (RTMP) an Twitch, YouTube und weitere Plattformen
+- **Multi-Stream** – Mehrere unabhängige Streams gleichzeitig, jeder mit eigenem Spiel, eigener Auflösung und eigenem RTMP-Ziel
+- **Multi-Channel** – Mehrere YouTube/Twitch-Kanäle gleichzeitig verbindbar, flexibel den Streams zuweisbar
+- **Game-Modi** – Fixed (festes Spiel), Vote (Zuschauer-Abstimmung), Random (zufälliges nächstes Spiel) pro Stream
+- **Desktop & Mobile** – Wählbare Auflösung pro Stream: 1080×1920 (Mobile/Vertikal) oder 1920×1080 (Desktop)
 - **Chat-basierte Steuerung** – Zuschauer steuern ihre Spielfiguren über Chat-Befehle
 - **Modulare Spielarchitektur** – Neue Spiele als eigenständige Module hinzufügbar
-- **Modulare Plattformintegration** – Einfach neue Streaming-/Chat-Plattformen integrierbar
-- **Web-Admin-Dashboard** – Vollständiges Verwaltungs-Dashboard im Browser
+- **Web-Admin-Dashboard** – Vollständiges Verwaltungs-Dashboard mit Tabs für Streams, Channels, Settings und Chat-Test
+- **Alle Einstellungen via Web** – Kein manuelles Bearbeiten von Konfigurationsdateien nötig
 - **Plattformunabhängig** – Läuft auf Windows, Linux und macOS
-- **Server-fähig** – Konzipiert für headless Server-Betrieb
 
 ### Grafik & Physik
 - **Box2D-Physik** – Realistische Physik-Simulation mit Kollisionen und Knockback
@@ -52,48 +55,40 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 ## 🏗 Architektur
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Application                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐  │
-│  │  Config   │ │  Logger  │ │  Game    │ │   Platform    │  │
-│  │  Manager  │ │          │ │  Manager │ │   Manager     │  │
-│  └──────────┘ └──────────┘ └────┬─────┘ └───────┬───────┘  │
-│                                  │               │           │
-│  ┌──────────────────────────────┐│  ┌────────────┴────────┐ │
-│  │        Game Registry         ││  │  IPlatform          │ │
-│  │  ┌─────────────────────┐    ││  │  ├── Twitch (IRC)    │ │
-│  │  │   IGame Interface   │    ││  │  ├── YouTube (API)   │ │
-│  │  │  ┌───────────────┐  │    ││  │  └── ... (erweiterb.)│ │
-│  │  │  │ Chaos Arena   │  │◄───┘│  └─────────────────────┘ │
-│  │  │  │ (Box2D)       │  │     │                           │
-│  │  │  ├───────────────┤  │     │  ┌─────────────────────┐  │
-│  │  │  │ Color         │  │     │  │     Renderer        │  │
-│  │  │  │ Conquest      │  │     │  │  ┌───────────────┐  │  │
-│  │  │  │ (Grid-based)  │  │     │  │  │ SFML Window   │  │  │
-│  │  │  ├───────────────┤  │     │  │  │ RenderTexture │  │  │
-│  │  │  │ ... weitere   │  │     │  │  └───────┬───────┘  │  │
-│  │  │  └───────────────┘  │     │  └──────────┼──────────┘  │
-│  │  └─────────────────────┘     │             │              │
-│  └──────────────────────────────┘             │              │
-│                                    ┌──────────▼──────────┐   │
-│  ┌──────────────────────┐          │  Stream Encoder     │   │
-│  │    Web Server        │          │  (FFmpeg Pipeline)   │   │
-│  │  ┌────────────────┐  │          │  ┌───────────────┐  │   │
-│  │  │ REST API       │  │          │  │ RTMP Output   │  │   │
-│  │  │ Dashboard HTML │  │          │  │ ├── Twitch    │  │   │
-│  │  └────────────────┘  │          │  │ └── YouTube   │  │   │
-│  └──────────────────────┘          │  └───────────────┘  │   │
-│                                    └─────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Application                               │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────┐ ┌───────────────┐  │
+│  │  Config   │ │  Logger  │ │   Channel    │ │    Stream     │  │
+│  │  Manager  │ │          │ │   Manager    │ │    Manager    │  │
+│  └──────────┘ └──────────┘ └──────┬───────┘ └───────┬───────┘  │
+│                                    │                  │          │
+│                      ┌─────────────┤     ┌────────────┤          │
+│                      │             │     │            │          │
+│               ┌──────▼──────┐      │  ┌──▼────────────▼──┐      │
+│               │  IPlatform  │      │  │ StreamInstance    │      │
+│               ├─ Local      │      │  │ ┌──────────────┐ │      │
+│               ├─ Twitch     │      │  │ │ GameManager  │ │      │
+│               ├─ YouTube    │      │  │ │ RenderTexture│ │      │
+│               └─────────────┘      │  │ │ StreamEncoder│ │      │
+│                                    │  │ └──────────────┘ │      │
+│  ┌──────────────────────┐          │  │ (one per stream) │      │
+│  │    Web Server        │          │  └──────────────────┘      │
+│  │  ┌────────────────┐  │          │                             │
+│  │  │ REST API       │  │          │  ┌──────────────────┐      │
+│  │  │ Dashboard      │  │          │  │ StreamInstance 2 │      │
+│  │  └────────────────┘  │          │  │ (...)            │      │
+│  └──────────────────────┘          │  └──────────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Design-Prinzipien
 
 1. **Modularität** – Jedes Subsystem (Spiele, Plattformen, Rendering, Streaming) ist unabhängig und über Interfaces entkoppelt
 2. **Plugin-Architektur** – Spiele registrieren sich automatisch über das `REGISTER_GAME` Makro
-3. **Fixed-Timestep** – Physik-Updates mit konstantem Zeitschritt (60 Hz), entkoppelt von Framerate
-4. **Thread-Sicherheit** – Plattform-Kommunikation in eigenen Threads mit Message-Queues
-5. **Konfigurierbar** – Alle Parameter über JSON-Konfigurationsdateien steuerbar
+3. **Multi-Stream-Isolation** – Jeder Stream hat eigene GameManager-, RenderTexture- und StreamEncoder-Instanz
+4. **Fixed-Timestep** – Physik-Updates mit konstantem Zeitschritt (60 Hz), entkoppelt von Framerate
+5. **Thread-Sicherheit** – Plattform-Kommunikation in eigenen Threads mit Message-Queues; Web-API-Änderungen über Mutex geschützt
+6. **Web-First-Konfiguration** – Alle Einstellungen über das Web-Dashboard steuerbar, kein manuelles Bearbeiten von Dateien nötig
 
 ---
 
@@ -217,7 +212,10 @@ InteractiveStreams/
 │   ├── core/                   # Kern-Framework
 │   │   ├── Application.h/cpp   # Hauptanwendung, besitzt alle Subsysteme
 │   │   ├── Config.h/cpp        # JSON-Konfigurationsmanager
-│   │   ├── GameManager.h/cpp   # Spiel-Verwaltung
+│   │   ├── ChannelManager.h/cpp # Multi-Channel-Verwaltung (Twitch, YouTube, Local)
+│   │   ├── StreamManager.h/cpp  # Multi-Stream-Verwaltung (CRUD)
+│   │   ├── StreamInstance.h/cpp # Einzelne Stream-Instanz (Game + Render + Encode)
+│   │   ├── GameManager.h/cpp   # Spiel-Verwaltung pro Stream
 │   │   └── Logger.h/cpp        # Logging (spdlog)
 │   ├── games/                  # Spiele-Module
 │   │   ├── IGame.h             # Spiel-Interface (abstrakt)
@@ -320,49 +318,78 @@ cmake --build build -j$(nproc)
 
 ## ⚙️ Konfiguration
 
-Die Konfiguration erfolgt über `config/default.json`. Wichtige Einstellungen:
+Die Konfiguration erfolgt primär über das **Web-Dashboard** (`http://localhost:8080`). Die zugrunde liegende Datei ist `config/default.json`, die aber nicht manuell bearbeitet werden muss.
 
-### Streaming aktivieren
+### Channels (Kanäle)
 
-```json
-{
-    "streaming": {
-        "output_url": "rtmp://live.twitch.tv/app/DEIN_STREAM_KEY",
-        "fps": 30,
-        "bitrate_kbps": 4500
-    }
-}
-```
-
-### Twitch-Chat verbinden
+Kanäle werden im Dashboard unter dem Tab **Channels** verwaltet. Beispiel-JSON:
 
 ```json
 {
-    "platforms": {
-        "twitch": {
-            "enabled": true,
-            "oauth_token": "DEIN_OAUTH_TOKEN",
-            "bot_username": "DeinBotName",
-            "channel": "dein_kanal"
+    "channels": [
+        {
+            "id": "local",
+            "platform": "local",
+            "name": "Local Test",
+            "enabled": true
+        },
+        {
+            "id": "twitch-1",
+            "platform": "twitch",
+            "name": "My Twitch Channel",
+            "enabled": false,
+            "settings": {
+                "oauth_token": "...",
+                "bot_username": "...",
+                "channel": "dein_kanal"
+            }
+        },
+        {
+            "id": "youtube-1",
+            "platform": "youtube",
+            "name": "My YouTube Channel",
+            "enabled": false,
+            "settings": {
+                "api_key": "...",
+                "live_chat_id": "...",
+                "channel_id": "..."
+            }
         }
-    }
+    ]
 }
 ```
 
-### YouTube-Chat verbinden
+### Streams
+
+Streams werden im Dashboard unter dem Tab **Streams** verwaltet. Jeder Stream hat eigenen Game-Modus, Auflösung und RTMP-Ziel:
 
 ```json
 {
-    "platforms": {
-        "youtube": {
-            "enabled": true,
-            "api_key": "DEIN_API_KEY",
-            "live_chat_id": "DEINE_CHAT_ID",
-            "channel_id": "DEINE_CHANNEL_ID"
+    "streams": [
+        {
+            "id": "default",
+            "name": "Main Stream",
+            "resolution": "mobile",
+            "game_mode": "vote",
+            "fixed_game": "chaos_arena",
+            "channels": ["local", "twitch-1"],
+            "streaming": {
+                "enabled": false,
+                "output_url": "rtmp://live.twitch.tv/app/STREAM_KEY",
+                "fps": 30,
+                "bitrate_kbps": 4500
+            }
         }
-    }
+    ]
 }
 ```
+
+### Einstellungen über das Dashboard ändern
+
+1. Öffne `http://localhost:8080`
+2. Navigiere zum gewünschten Tab (Streams, Channels, Settings)
+3. Ändere die Einstellungen
+4. Klicke auf **Save Config** um die Änderungen dauerhaft zu speichern
 
 ---
 
@@ -370,46 +397,64 @@ Die Konfiguration erfolgt über `config/default.json`. Wichtige Einstellungen:
 
 Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` erreichbar.
 
+### Dashboard-Tabs
+
+| Tab | Beschreibung |
+|-----|-------------|
+| **Streams** | Alle aktiven Streams verwalten – Spiel wechseln, Game-Modus setzen, Streaming starten/stoppen |
+| **Channels** | Chat-Kanäle (Twitch, YouTube, Local) hinzufügen, verbinden, konfigurieren |
+| **Settings** | Anwendungseinstellungen (FPS, Port), Spiel-Konfigurationen |
+| **Chat Test** | Lokale Chat-Nachrichten injizieren mit Quick-Buttons und Multi-Player-Test |
+
 ### Dashboard-Features
-- **Echtzeit-Status** – Spielphase, Rundenzähler, Spieleranzahl (dynamisch pro Spiel)
-- **Spiel-Wechsel** – Zwischen Spielen wechseln: sofort, nach Runde oder nach Spiel
-- **Spieler-/Team-Übersicht** – Chaos Arena: HP, Kills, Score; Color Conquest: Team-Gebiete
-- **Leaderboard** – Dynamische Rangliste passend zum aktiven Spiel
-- **Plattform-Status** – Verbindungsstatus aller Chat-Plattformen
-- **Streaming-Monitoring** – FPS, Frames, Ziel-Endpunkte
-- **Dynamische Quick-Buttons** – Kontextabhängige Befehle je nach aktivem Spiel
-- **Remote-Steuerung** – Spiel wechseln, Server herunterfahren
-
-### Spiel-Wechsel über Dashboard
-
-Das Dashboard bietet drei Modi zum Wechseln des aktiven Spiels:
-
-| Modus | Beschreibung |
-|-------|--------------|
-| ⚡ **Sofort** | Wechsel erfolgt unmittelbar (unterbricht laufendes Spiel) |
-| ⏳ **Nach Runde** | Wechsel nach Abschluss der aktuellen Runde |
-| 🏁 **Nach Spiel** | Wechsel nach dem vollständigen Game Over |
-
-Ein ausstehender Wechsel wird als gelbes Banner im Dashboard angezeigt und kann jederzeit abgebrochen werden.
+- **Multi-Stream-Verwaltung** – Streams erstellen, konfigurieren und löschen
+- **Multi-Channel-Verwaltung** – Kanäle hinzufügen, verbinden und trennen
+- **Game-Modus pro Stream** – Fixed, Vote oder Random auswählbar
+- **Auflösung pro Stream** – Mobile (1080×1920) oder Desktop (1920×1080)
+- **Spiel-Wechsel pro Stream** – Sofort, nach Runde oder nach Spiel
+- **Streaming-Steuerung** – Start/Stop pro Stream mit individuellem RTMP-Ziel
+- **Config-Persistenz** – "Save Config" speichert den aktuellen Zustand auf Disk
+- **Server-Shutdown** – Graceful Shutdown über das Dashboard
 
 ### REST API Endpunkte
 
+#### Status & System
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|-------------|
-| GET | `/api/status` | Gesamtstatus (Spiel, Plattformen, Streaming) |
-| GET | `/api/games` | Liste verfügbarer Spiele (id, name, description) |
-| POST | `/api/games/load` | Spiel sofort laden `{"game": "chaos_arena"}` |
-| POST | `/api/games/switch` | Spiel wechseln `{"game": "...", "mode": "immediate/after_round/after_game"}` |
-| POST | `/api/games/cancel-switch` | Ausstehenden Spielwechsel abbrechen |
-| GET | `/api/games/state` | Aktueller Spielzustand |
-| GET | `/api/platforms` | Plattform-Status |
-| POST | `/api/platforms/connect` | Plattform verbinden |
-| POST | `/api/platforms/disconnect` | Plattform trennen |
-| GET | `/api/config` | Konfiguration (Secrets redaktiert) |
-| GET | `/api/streaming` | Streaming-Status |
-| POST | `/api/chat` | Lokale Chat-Nachricht senden `{"username":"...","text":"..."}` |
-| GET | `/api/chat/log` | Ausgehende Nachrichten-Log |
+| GET | `/api/status` | Gesamtstatus (Streams, Channels, verfügbare Spiele) |
 | POST | `/api/shutdown` | Server herunterfahren |
+
+#### Channels
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/channels` | Alle Kanäle auflisten |
+| POST | `/api/channels` | Neuen Kanal erstellen |
+| PUT | `/api/channels/:id` | Kanal aktualisieren |
+| DELETE | `/api/channels/:id` | Kanal löschen |
+| POST | `/api/channels/:id/connect` | Kanal verbinden |
+| POST | `/api/channels/:id/disconnect` | Kanal trennen |
+
+#### Streams
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/streams` | Alle Streams auflisten |
+| POST | `/api/streams` | Neuen Stream erstellen |
+| PUT | `/api/streams/:id` | Stream aktualisieren |
+| DELETE | `/api/streams/:id` | Stream löschen |
+| POST | `/api/streams/:id/start` | Streaming starten |
+| POST | `/api/streams/:id/stop` | Streaming stoppen |
+| POST | `/api/streams/:id/game` | Spiel wechseln `{"game": "...", "mode": "immediate/after_round/after_game"}` |
+| POST | `/api/streams/:id/cancel-switch` | Ausstehenden Spielwechsel abbrechen |
+
+#### Einstellungen & Sonstiges
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/games` | Verfügbare Spiele auflisten |
+| GET | `/api/settings` | Einstellungen abrufen (Secrets redaktiert) |
+| PUT | `/api/settings` | Einstellungen aktualisieren |
+| POST | `/api/config/save` | Laufzeit-Zustand in Config speichern |
+| POST | `/api/chat` | Lokale Chat-Nachricht senden |
+| GET | `/api/chat/log` | Nachrichten-Log abrufen |
 
 ---
 
@@ -545,7 +590,7 @@ public:
 
 ## 🗺 Roadmap
 
-### Phase 1 – Foundation (aktuell) ✅
+### Phase 1 – Foundation ✅
 - [x] Projekt-Setup mit CMake und FetchContent
 - [x] Kern-Architektur (Application, Config, Logger, GameManager)
 - [x] Spiel-Interface und Registry mit Auto-Registrierung
@@ -562,13 +607,25 @@ public:
 ### Phase 1.5 – Multi-Game & Switching ✅
 - [x] Color Conquest als zweites Spiel (500+ Spieler)
 - [x] Spielwechsel über Web-Dashboard (sofort / nach Runde / nach Spiel)
-- [x] REST API für Spielwechsel (`/api/games/switch`, `/api/games/cancel-switch`)
+- [x] REST API für Spielwechsel
 - [x] Thread-sicherer deferred Spielwechsel mit Mutex
 - [x] Dynamisches Dashboard (spielabhängige Stats, Quick-Buttons, Detail-Ansicht)
 - [x] IGame-Interface erweitert (`isRoundComplete()`, `isGameOver()`)
 - [x] 66+ Unit-Tests mit doctest
 
-### Phase 2 – Polish (geplant)
+### Phase 2 – Multi-Stream & Multi-Channel (aktuell) ✅
+- [x] ChannelManager für mehrere Plattform-Kanäle gleichzeitig
+- [x] StreamManager + StreamInstance für mehrere unabhängige Streams
+- [x] Game-Modi pro Stream: Fixed, Vote, Random
+- [x] Zuschauer-Abstimmung mit Vote-Overlay
+- [x] Auflösung pro Stream: Mobile (1080×1920) / Desktop (1920×1080)
+- [x] Neues tabbed Web-Dashboard (Streams, Channels, Settings, Chat Test)
+- [x] Vollständige REST API für CRUD von Streams und Channels
+- [x] Config-Persistenz über Web-Dashboard (Save Config)
+- [x] Lazy RenderTexture-Initialisierung (Thread-Safety)
+- [x] Message-Routing: Channels → Streams mit Filter
+
+### Phase 3 – Polish (geplant)
 - [ ] Font-Rendering für Spielernamen und HUD-Text
 - [ ] GLSL-Shader für Bloom, CRT-Effekt, Chromatic Aberration
 - [ ] Sound-System (Hintergrundmusik, SFX)
@@ -576,18 +633,17 @@ public:
 - [ ] Verbesserte Arena-Generierung (prozedural)
 - [ ] Chat-Feedback (Bestätigungen an Zuschauer senden)
 
-### Phase 3 – Content
+### Phase 4 – Content
 - [ ] Weiteres Spiel: Marble Race
 - [ ] Weiteres Spiel: Quiz Battle
 - [ ] Weiteres Spiel: Tower Defense
 - [ ] Skin-/Cosmetic-System
 - [ ] Persistente Datenbank für Leaderboards
 
-### Phase 4 – Production
+### Phase 5 – Production
 - [ ] Docker-Container für Server-Deployment
 - [ ] CI/CD Pipeline
 - [ ] Headless-Modus (ohne Fenster)
-- [ ] Multi-Stream-Output (gleichzeitig an mehrere Plattformen)
 - [ ] Authentifizierung für Web-Dashboard
 - [ ] Metrics & Monitoring (Prometheus/Grafana)
 

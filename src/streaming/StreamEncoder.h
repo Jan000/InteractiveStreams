@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/Config.h"
 #include <SFML/Graphics.hpp>
 #include <string>
 #include <vector>
@@ -9,12 +8,31 @@
 #include <mutex>
 #include <condition_variable>
 
+namespace is::core { class Config; }
+
 namespace is::streaming {
+
+/// Direct settings for creating a StreamEncoder without a Config object.
+struct EncoderSettings {
+    std::string ffmpegPath = "ffmpeg";
+    std::string outputUrl;
+    int         width      = 1080;
+    int         height     = 1920;
+    int         fps        = 30;
+    int         bitrate    = 4500;  // kbps
+    std::string preset     = "fast";
+    std::string codec      = "libx264";
+};
 
 /// Encodes rendered frames and pipes them to FFmpeg for RTMP streaming.
 class StreamEncoder {
 public:
+    /// Construct from a Config object (legacy / single-stream path).
     explicit StreamEncoder(core::Config& config);
+
+    /// Construct from explicit settings (multi-stream path).
+    explicit StreamEncoder(const EncoderSettings& settings);
+
     ~StreamEncoder();
 
     /// Start the encoding pipeline.
@@ -37,8 +55,6 @@ public:
 
 private:
     void encoderThread();
-
-    core::Config& m_config;
 
     // FFmpeg process
     FILE*         m_pipe     = nullptr;

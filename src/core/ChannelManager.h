@@ -1,0 +1,94 @@
+#pragma once
+
+#include "platform/IPlatform.h"
+#include "platform/ChatMessage.h"
+
+#include <memory>
+#include <vector>
+#include <string>
+#include <mutex>
+#include <nlohmann/json.hpp>
+
+namespace is::core {
+
+/// Configuration for a single chat channel (platform connection).
+struct ChannelConfig {
+    std::string id;
+    std::string platform;   ///< "local", "twitch", "youtube"
+    std::string name;       ///< Display name
+    bool enabled = false;
+    nlohmann::json settings; ///< Platform-specific settings
+};
+
+/// Manages multiple platform channel connections.
+/// Replaces the old PlatformManager by supporting multiple instances of
+/// the same platform type (e.g. two Twitch channels simultaneously).
+class ChannelManager {
+public:
+    ChannelManager();
+    ~ChannelManager();
+
+    // ── Channel CRUD ─────────────────────────────────────────────────────
+
+    /// Add a channel. Returns the (possibly generated) channel ID.
+    std::string addChannel(const ChannelConfig& cfg);
+
+    /// Update an existing channel by ID.
+    void updateChannel(const std::string& id, const ChannelConfig& cfg);
+
+    /// Remove a channel by ID (cannot remove "local").
+    void removeChannel(const std::string& id);
+
+    /// Get a channel config by ID (nullptr if not found).
+    const ChannelConfig* getChannelConfig(const std::string& id) const;
+
+    /// Get all channel configs.
+    std::vector<ChannelConfig> getAllChannels() const;
+
+    // ── Connection management ────────────────────────────────────────────
+
+    void connectChannel(const std::string& id);
+    void disconnectChannel(const std::string& id);
+    void connectAllEnabled();
+    void disconnectAll();
+
+    // ── Message polling ──────────────────────────────────────────────────
+
+    /// Poll messages from all connected channels. Each message's channelId
+    /// is overwritten with the channel manager entry ID.
+    std::vector<platform::ChatMessage> pollAllMessages();
+
+    /// Filter a message list to only those from the given channel IDs.
+    static std::vector<platform::ChatMessage> filterByChannels(
+        const std::vector<platform::ChatMessage>& messages,
+        const std::vector<std::string>& channelIds);
+
+    // ── Local test helper ────────────────────────────────────────────────
+
+    void injectLocalMessage(const std::string& username, const std::string& text);
+    std::vector<std::string> getLocalMessageLog() const;
+
+    // ── Platform access ──────────────────────────────────────────────────
+
+    platform::IPlatform* getPlatform(const std::string& channelId);
+
+    // ── Status / serialisation ───────────────────────────────────────────
+
+    nlohmann::json getStatus() const;
+    void loadFromJson(const nlohmann::json& arr);
+    nlohmann::json toJson() const;
+
+private:
+    std::unique_ptr<platform::IPlatform> createPlatform(const std::string& platformType);
+    void ensureLocalChannel();
+
+    struct ChannelEntry {
+        ChannelConfig config;
+        std::unique_ptr<platform::IPlatform> platform;
+    };
+
+    mutable std::mutex m_mutex;
+    std::vector<std::unique_ptr<ChannelEntry>> m_channels;
+};
+
+} // namespace is::core

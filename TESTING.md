@@ -53,10 +53,10 @@ cmake --build build --config Debug
 ```
 
 > Beim Start passieren automatisch:
-> - SFML-Fenster öffnet sich (1080×1920 Live-Vorschau, 9:16 vertikal)
+> - SFML-Fenster öffnet sich (Live-Vorschau des ersten Streams)
 > - Web-Dashboard wird auf **http://localhost:8080** gestartet
-> - „Local"-Plattform verbindet sich (Konsoleneingabe aktiv)
-> - Das in `config/default.json` unter `default_game` konfigurierte Spiel wird geladen (Standard: Chaos Arena)
+> - „Local“-Kanal verbindet sich automatisch
+> - Der Default-Stream wird mit dem konfigurierten Game-Modus geladen
 
 ---
 
@@ -137,36 +137,37 @@ Das System unterstützt **Laufzeit-Spielwechsel** über drei Modi:
 ### Über das Dashboard
 
 1. Öffne http://localhost:8080
-2. Im Bereich **„Spiel wechseln“** oben:
-   - Wähle das Zielspiel aus dem Dropdown (z.B. „Color Conquest“)
+2. Im **Streams**-Tab:
+   - Wähle einen Stream aus (z.B. „default“)
+   - Wähle das Zielspiel aus dem Dropdown
    - Wähle den Wechsel-Modus:
      - ⚡ **Sofort** – Wechsel erfolgt unmittelbar
      - ⏳ **Nach Runde** – Wechsel nach Abschluss der aktuellen Runde
      - 🏁 **Nach Spiel** – Wechsel nach Game Over
-   - Klicke **„Wechseln“**
-3. Bei verzögertem Wechsel erscheint ein **gelbes Banner** mit dem ausstehenden Wechsel
-4. Zum Abbrechen: Klicke **„Abbrechen“** im Banner
+   - Klicke **„Switch“**
+3. Der Game-Modus (Fixed/Vote/Random) kann pro Stream gewählt werden
+4. Die Auflösung (Mobile/Desktop) kann pro Stream geändert werden
 
 ### Über REST-API
 
 ```powershell
-# Sofort wechseln
-curl -X POST http://localhost:8080/api/games/switch `
+# Sofort wechseln (Stream-ID "default")
+curl -X POST http://localhost:8080/api/streams/default/game `
      -H "Content-Type: application/json" `
      -d '{"game":"color_conquest","mode":"immediate"}'
 
 # Nach aktueller Runde wechseln
-curl -X POST http://localhost:8080/api/games/switch `
+curl -X POST http://localhost:8080/api/streams/default/game `
      -H "Content-Type: application/json" `
      -d '{"game":"chaos_arena","mode":"after_round"}'
 
 # Nach Spielende wechseln
-curl -X POST http://localhost:8080/api/games/switch `
+curl -X POST http://localhost:8080/api/streams/default/game `
      -H "Content-Type: application/json" `
      -d '{"game":"color_conquest","mode":"after_game"}'
 
 # Ausstehenden Wechsel abbrechen
-curl -X POST http://localhost:8080/api/games/cancel-switch
+curl -X POST http://localhost:8080/api/streams/default/cancel-switch
 ```
 
 ### Was du testen solltest
@@ -218,36 +219,39 @@ curl -X POST http://localhost:8080/api/chat `
 
 ### Spielstatus abfragen
 ```powershell
-# Vollständiger System-Status (enthält pendingSwitch-Info)
+# Vollständiger System-Status (Streams, Channels, Games)
 curl http://localhost:8080/api/status
-
-# Nur Spielstatus
-curl http://localhost:8080/api/games/state
 
 # Verfügbare Spiele auflisten
 curl http://localhost:8080/api/games
 
+# Alle Streams auflisten
+curl http://localhost:8080/api/streams
+
+# Alle Kanäle auflisten
+curl http://localhost:8080/api/channels
+
 # Chat-Log abrufen
 curl http://localhost:8080/api/chat/log
 
-# Verfügbare Plattformen
-curl http://localhost:8080/api/platforms
+# Einstellungen abrufen
+curl http://localhost:8080/api/settings
 ```
 
 ### Spiel wechseln
 ```powershell
-# Sofort zu Color Conquest wechseln
-curl -X POST http://localhost:8080/api/games/switch `
+# Sofort zu Color Conquest wechseln (default-Stream)
+curl -X POST http://localhost:8080/api/streams/default/game `
      -H "Content-Type: application/json" `
      -d '{"game":"color_conquest","mode":"immediate"}'
 
 # Nach Runde zurück zu Chaos Arena
-curl -X POST http://localhost:8080/api/games/switch `
+curl -X POST http://localhost:8080/api/streams/default/game `
      -H "Content-Type: application/json" `
      -d '{"game":"chaos_arena","mode":"after_round"}'
 
 # Ausstehenden Wechsel abbrechen
-curl -X POST http://localhost:8080/api/games/cancel-switch
+curl -X POST http://localhost:8080/api/streams/default/cancel-switch
 ```
 
 ### PowerShell-Skript: Mehrere Spieler automatisch joinen

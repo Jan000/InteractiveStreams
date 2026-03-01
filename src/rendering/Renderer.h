@@ -42,6 +42,9 @@ public:
     /// Update the window title.
     void setWindowTitle(const std::string& title);
 
+    /// Display an external texture in the preview window (for multi-stream).
+    void displayPreview(const sf::Texture& texture, int sourceWidth, int sourceHeight);
+
 private:
     int m_width;
     int m_height;

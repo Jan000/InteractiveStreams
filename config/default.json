@@ -1,65 +1,67 @@
 {
     "application": {
         "name": "InteractiveStreams",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "target_fps": 60,
         "default_game": "chaos_arena"
-    },
-    "rendering": {
-        "width": 1080,
-        "height": 1920,
-        "title": "InteractiveStreams",
-        "antialiasing": 4
-    },
-    "streaming": {
-        "ffmpeg_path": "ffmpeg",
-        "fps": 30,
-        "bitrate_kbps": 4500,
-        "preset": "fast",
-        "codec": "libx264",
-        "output_url": "",
-        "targets": [
-            {
-                "name": "Twitch Primary",
-                "platform": "twitch",
-                "url": "rtmp://live.twitch.tv/app",
-                "stream_key": "",
-                "enabled": false
-            },
-            {
-                "name": "YouTube Primary",
-                "platform": "youtube",
-                "url": "rtmp://a.rtmp.youtube.com/live2",
-                "stream_key": "",
-                "enabled": false
-            }
-        ]
-    },
-    "platforms": {
-        "local": {
-            "enabled": true,
-            "console_input": true
-        },
-        "twitch": {
-            "enabled": false,
-            "oauth_token": "",
-            "bot_username": "InteractiveStreamsBot",
-            "channel": "",
-            "server": "irc.chat.twitch.tv",
-            "port": 6667
-        },
-        "youtube": {
-            "enabled": false,
-            "api_key": "",
-            "live_chat_id": "",
-            "channel_id": "",
-            "poll_interval": 2000
-        }
     },
     "web": {
         "port": 8080,
         "enabled": true
     },
+    "channels": [
+        {
+            "id": "local",
+            "platform": "local",
+            "name": "Local (Test)",
+            "enabled": true,
+            "settings": {
+                "console_input": true
+            }
+        },
+        {
+            "id": "twitch-1",
+            "platform": "twitch",
+            "name": "Twitch Channel",
+            "enabled": false,
+            "settings": {
+                "oauth_token": "",
+                "bot_username": "InteractiveStreamsBot",
+                "channel": "",
+                "server": "irc.chat.twitch.tv",
+                "port": 6667
+            }
+        },
+        {
+            "id": "youtube-1",
+            "platform": "youtube",
+            "name": "YouTube Channel",
+            "enabled": false,
+            "settings": {
+                "api_key": "",
+                "live_chat_id": "",
+                "channel_id": "",
+                "poll_interval": 2000
+            }
+        }
+    ],
+    "streams": [
+        {
+            "id": "default",
+            "name": "Main Stream",
+            "resolution": "mobile",
+            "game_mode": "fixed",
+            "fixed_game": "chaos_arena",
+            "channel_ids": ["local"],
+            "stream_url": "",
+            "stream_key": "",
+            "enabled": true,
+            "fps": 30,
+            "bitrate_kbps": 4500,
+            "preset": "fast",
+            "codec": "libx264"
+        }
+    ],
     "games": {
         "chaos_arena": {
             "max_players": 20,

@@ -78,6 +78,9 @@ set(CORE_SOURCES
     src/core/Config.cpp
     src/core/GameManager.cpp
     src/core/Logger.cpp
+    src/core/ChannelManager.cpp
+    src/core/StreamInstance.cpp
+    src/core/StreamManager.cpp
 )
 
 set(GAME_SOURCES

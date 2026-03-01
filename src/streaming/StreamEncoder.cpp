@@ -1,4 +1,5 @@
 #include "streaming/StreamEncoder.h"
+#include "core/Config.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <sstream>
@@ -11,7 +12,6 @@
 namespace is::streaming {
 
 StreamEncoder::StreamEncoder(core::Config& config)
-    : m_config(config)
 {
     m_ffmpegPath = config.get<std::string>("streaming.ffmpeg_path", "ffmpeg");
     m_outputUrl  = config.get<std::string>("streaming.output_url", "");
@@ -23,6 +23,23 @@ StreamEncoder::StreamEncoder(core::Config& config)
     m_codec      = config.get<std::string>("streaming.codec", "libx264");
 
     m_frameBuffer.resize(m_width * m_height * 4);  // RGBA
+
+    spdlog::info("[StreamEncoder] Configured: {}x{} @ {} fps, {} kbps, codec: {}",
+        m_width, m_height, m_fps, m_bitrate, m_codec);
+}
+
+StreamEncoder::StreamEncoder(const EncoderSettings& s)
+{
+    m_ffmpegPath = s.ffmpegPath;
+    m_outputUrl  = s.outputUrl;
+    m_width      = s.width;
+    m_height     = s.height;
+    m_fps        = s.fps;
+    m_bitrate    = s.bitrate;
+    m_preset     = s.preset;
+    m_codec      = s.codec;
+
+    m_frameBuffer.resize(m_width * m_height * 4);
 
     spdlog::info("[StreamEncoder] Configured: {}x{} @ {} fps, {} kbps, codec: {}",
         m_width, m_height, m_fps, m_bitrate, m_codec);

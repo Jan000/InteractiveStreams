@@ -114,4 +114,25 @@ void Renderer::setWindowTitle(const std::string& title) {
     }
 }
 
+void Renderer::displayPreview(const sf::Texture& texture,
+                               int sourceWidth, int sourceHeight) {
+    if (!m_window.isOpen()) return;
+
+    m_window.clear();
+
+    sf::Sprite sprite(texture);
+    auto ws = m_window.getSize();
+    float scaleX = static_cast<float>(ws.x) / sourceWidth;
+    float scaleY = static_cast<float>(ws.y) / sourceHeight;
+    float scale  = std::min(scaleX, scaleY);
+
+    sprite.setScale(scale, scale);
+    sprite.setPosition(
+        (ws.x - sourceWidth  * scale) / 2.0f,
+        (ws.y - sourceHeight * scale) / 2.0f);
+
+    m_window.draw(sprite);
+    m_window.display();
+}
+
 } // namespace is::rendering
