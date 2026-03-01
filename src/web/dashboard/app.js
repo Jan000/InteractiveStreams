@@ -199,14 +199,11 @@ function updateDashboard(data) {
         const state = data.game.state || {};
         const phase = state.phase ?? 0;
 
-        // Update selector to highlight active game
-        if (el.gameSelector.value !== gameId) {
-            el.gameSelector.value = gameId;
-        }
-
-        // Detect game change and update UI
+        // Detect game change and update UI (only sync selector on actual switch,
+        // never during a normal poll – otherwise the user can't pick a target)
         if (gameId !== currentGameId) {
             currentGameId = gameId;
+            el.gameSelector.value = gameId;
             updateQuickButtons(gameId);
         }
 
