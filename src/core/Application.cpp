@@ -60,6 +60,11 @@ void Application::initialize() {
     }
     m_impl->channelManager->connectAllEnabled();
 
+    // ── Preview renderer (must be created BEFORE streams, because
+    //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
+    m_impl->renderer = std::make_unique<rendering::Renderer>(1080, 1920,
+        cfg.get<std::string>("rendering.title", "InteractiveStreams"));
+
     // ── Stream manager (replaces single GameManager+Renderer+Encoder) ────
     m_impl->streamManager = std::make_unique<StreamManager>();
     if (cfg.raw().contains("streams") && cfg.raw()["streams"].is_array()) {
@@ -76,14 +81,9 @@ void Application::initialize() {
         m_impl->streamManager->addStream(def);
     }
 
-    // ── Preview renderer ─────────────────────────────────────────────────
+    // Set preview to the first stream
     auto streams = m_impl->streamManager->allStreams();
-    auto* first  = streams.empty() ? nullptr : streams[0];
-    int prevW    = first ? first->width()  : 1080;
-    int prevH    = first ? first->height() : 1920;
-    m_impl->renderer = std::make_unique<rendering::Renderer>(prevW, prevH,
-        cfg.get<std::string>("rendering.title", "InteractiveStreams"));
-    if (first) m_impl->previewStreamId = first->config().id;
+    if (!streams.empty()) m_impl->previewStreamId = streams[0]->config().id;
 
     // ── Web dashboard ────────────────────────────────────────────────────
     int webPort = cfg.get<int>("web.port", 8080);
