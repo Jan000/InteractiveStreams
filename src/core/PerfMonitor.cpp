@@ -90,29 +90,63 @@ nlohmann::json PerfMonitor::getAverages(int seconds) const {
 
     double avgFps = 0, avgFt = 0, avgCpu = 0;
     size_t avgMem = 0;
+
+    double minFps = samples[0].fps, maxFps = samples[0].fps;
+    double minFt  = samples[0].frameTimeMs, maxFt = samples[0].frameTimeMs;
+    size_t minMem = samples[0].memoryMB, maxMem = samples[0].memoryMB;
+
+    std::vector<double> fpsVals, ftVals;
+    fpsVals.reserve(samples.size());
+    ftVals.reserve(samples.size());
+
     for (const auto& s : samples) {
         avgFps += s.fps;
         avgFt += s.frameTimeMs;
         avgCpu += s.cpuPercent;
         avgMem += s.memoryMB;
+
+        if (s.fps < minFps) minFps = s.fps;
+        if (s.fps > maxFps) maxFps = s.fps;
+        if (s.frameTimeMs < minFt) minFt = s.frameTimeMs;
+        if (s.frameTimeMs > maxFt) maxFt = s.frameTimeMs;
+        if (s.memoryMB < minMem) minMem = s.memoryMB;
+        if (s.memoryMB > maxMem) maxMem = s.memoryMB;
+
+        fpsVals.push_back(s.fps);
+        ftVals.push_back(s.frameTimeMs);
     }
     double n = static_cast<double>(samples.size());
 
-    double peakMem = 0;
-    for (const auto& s : samples) {
-        if (s.memoryMB > peakMem) peakMem = static_cast<double>(s.memoryMB);
-    }
+    // Median (sort copies, pick middle)
+    std::sort(fpsVals.begin(), fpsVals.end());
+    std::sort(ftVals.begin(), ftVals.end());
+    size_t mid = fpsVals.size() / 2;
+    double medianFps = (fpsVals.size() % 2 == 0)
+        ? (fpsVals[mid - 1] + fpsVals[mid]) / 2.0
+        : fpsVals[mid];
+    double medianFt = (ftVals.size() % 2 == 0)
+        ? (ftVals[mid - 1] + ftVals[mid]) / 2.0
+        : ftVals[mid];
 
     return {
-        {"avgFps", static_cast<int>(avgFps / n)},
-        {"avgFrameTime", static_cast<int>(avgFt / n * 10) / 10.0},
-        {"avgMemory", avgMem / samples.size()},
-        {"peakMemory", static_cast<int>(peakMem)},
-        {"cpuPercent", static_cast<int>(avgCpu / n)},
-        {"activeStreams", samples.back().activeStreams},
-        {"activeChannels", samples.back().activeChannels},
-        {"totalPlayers", samples.back().totalPlayers},
-        {"sampleCount", samples.size()}
+        {"avgFps",          static_cast<int>(avgFps / n * 10) / 10.0},
+        {"avgFrameTime",    static_cast<int>(avgFt / n * 10) / 10.0},
+        {"avgMemory",       avgMem / samples.size()},
+        {"peakMemory",      static_cast<int>(maxMem)},
+        {"cpuPercent",      static_cast<int>(avgCpu / n)},
+        {"activeStreams",   samples.back().activeStreams},
+        {"activeChannels",  samples.back().activeChannels},
+        {"totalPlayers",    samples.back().totalPlayers},
+        {"sampleCount",     samples.size()},
+        // Extended stats
+        {"minFps",          static_cast<int>(minFps * 10) / 10.0},
+        {"maxFps",          static_cast<int>(maxFps * 10) / 10.0},
+        {"medianFps",       static_cast<int>(medianFps * 10) / 10.0},
+        {"minFrameTime",    static_cast<int>(minFt * 10) / 10.0},
+        {"maxFrameTime",    static_cast<int>(maxFt * 10) / 10.0},
+        {"medianFrameTime", static_cast<int>(medianFt * 10) / 10.0},
+        {"minMemory",       static_cast<int>(minMem)},
+        {"maxMemory",       static_cast<int>(maxMem)}
     };
 }
 

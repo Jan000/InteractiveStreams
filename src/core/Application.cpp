@@ -160,16 +160,18 @@ void Application::mainLoop() {
             stream->encodeFrame();
         }
 
-        // Preview: show selected stream in the SFML window
-        auto* previewStream = m_impl->streamManager->getStream(m_impl->previewStreamId);
-        if (!previewStream) {
-            auto all = m_impl->streamManager->allStreams();
-            if (!all.empty()) previewStream = all[0];
-        }
-        if (previewStream) {
-            m_impl->renderer->displayPreview(
-                previewStream->renderTexture().getTexture(),
-                previewStream->width(), previewStream->height());
+        // Preview: show selected stream in the SFML window (skip in headless)
+        if (!m_impl->renderer->isHeadless()) {
+            auto* previewStream = m_impl->streamManager->getStream(m_impl->previewStreamId);
+            if (!previewStream) {
+                auto all = m_impl->streamManager->allStreams();
+                if (!all.empty()) previewStream = all[0];
+            }
+            if (previewStream) {
+                m_impl->renderer->displayPreview(
+                    previewStream->renderTexture().getTexture(),
+                    previewStream->width(), previewStream->height());
+            }
         }
 
         // Record performance sample (lightweight – no getState())
@@ -183,10 +185,7 @@ void Application::mainLoop() {
                 if (s->isStreaming()) nStreams++;
                 nPlayers += s->stats().uniqueViewerCount();
             }
-            auto chStatus = m_impl->channelManager->getStatus();
-            for (const auto& ch : chStatus) {
-                if (ch.value("connected", false)) nChannels++;
-            }
+            nChannels = m_impl->channelManager->connectedChannelCount();
             m_impl->perfMonitor->recordSample(fps, ftMs, nStreams, nChannels, nPlayers);
         }
 

@@ -45,30 +45,44 @@ function StatCard({
   value,
   unit,
   color,
+  details,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   unit?: string;
   color?: string;
+  details?: { label: string; value: string | number }[];
 }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className={`rounded-md p-2 bg-${color ?? "primary"}/10`}>
-          <Icon className={`size-5 text-${color ?? "primary"}`} />
+      <CardContent className="flex flex-col gap-2 p-4">
+        <div className="flex items-center gap-3">
+          <div className={`rounded-md p-2 bg-${color ?? "primary"}/10`}>
+            <Icon className={`size-5 text-${color ?? "primary"}`} />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="text-lg font-bold">
+              {value}
+              {unit && (
+                <span className="text-xs font-normal text-muted-foreground ml-1">
+                  {unit}
+                </span>
+              )}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-lg font-bold">
-            {value}
-            {unit && (
-              <span className="text-xs font-normal text-muted-foreground ml-1">
-                {unit}
-              </span>
-            )}
-          </p>
-        </div>
+        {details && details.length > 0 && (
+          <div className="grid grid-cols-3 gap-1 pt-1 border-t border-border/40">
+            {details.map((d) => (
+              <div key={d.label} className="text-center">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{d.label}</p>
+                <p className="text-xs font-semibold">{d.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -93,7 +107,7 @@ export default function PerformancePage() {
   const fetchData = useCallback(async () => {
     try {
       const [p, h] = await Promise.all([
-        api.getPerf(60),
+        api.getPerf(Number(range)),
         api.getPerfHistory(Number(range)),
       ]);
       setPerf(p);
@@ -170,6 +184,11 @@ export default function PerformancePage() {
           label="Avg FPS"
           value={perf?.avgFps != null ? perf.avgFps.toFixed(1) : "—"}
           color="green-500"
+          details={perf ? [
+            { label: "Min", value: perf.minFps?.toFixed(1) ?? "—" },
+            { label: "Median", value: perf.medianFps?.toFixed(1) ?? "—" },
+            { label: "Max", value: perf.maxFps?.toFixed(1) ?? "—" },
+          ] : undefined}
         />
         <StatCard
           icon={Cpu}
@@ -177,13 +196,23 @@ export default function PerformancePage() {
           value={perf?.avgFrameTime != null ? perf.avgFrameTime.toFixed(2) : "—"}
           unit="ms"
           color="blue-500"
+          details={perf ? [
+            { label: "Min", value: `${perf.minFrameTime?.toFixed(1) ?? "—"}ms` },
+            { label: "Median", value: `${perf.medianFrameTime?.toFixed(1) ?? "—"}ms` },
+            { label: "Max", value: `${perf.maxFrameTime?.toFixed(1) ?? "—"}ms` },
+          ] : undefined}
         />
         <StatCard
           icon={HardDrive}
           label="Memory"
           value={perf?.avgMemory != null ? perf.avgMemory.toFixed(1) : "—"}
-          unit={`MB (peak: ${perf?.peakMemory != null ? perf.peakMemory.toFixed(0) : "—"})`}
+          unit="MB"
           color="purple-500"
+          details={perf ? [
+            { label: "Min", value: `${perf.minMemory ?? "—"} MB` },
+            { label: "Peak", value: `${perf.peakMemory?.toFixed(0) ?? "—"} MB` },
+            { label: "Max", value: `${perf.maxMemory ?? "—"} MB` },
+          ] : undefined}
         />
         <StatCard
           icon={Users}

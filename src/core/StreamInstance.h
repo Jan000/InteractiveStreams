@@ -169,7 +169,7 @@ private:
     mutable std::mutex     m_jpegMutex;
     std::vector<uint8_t>   m_jpegBuffer;
     int                    m_jpegFrameCounter  = 0;
-    int                    m_jpegFrameInterval = 6;  // encode JPEG every Nth frame (~10fps at 60fps)
+    int                    m_jpegFrameInterval = 30; // encode JPEG every Nth frame (~2fps at 60fps)
 
     // Vote state
     struct VoteState {

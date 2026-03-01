@@ -50,6 +50,9 @@ public:
     /// Toggle headless mode at runtime (open/close preview window).
     void setHeadless(bool headless);
 
+    /// Query current headless state.
+    bool isHeadless() const { return m_headless; }
+
 private:
     int m_width;
     int m_height;

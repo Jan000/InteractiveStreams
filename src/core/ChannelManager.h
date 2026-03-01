@@ -84,6 +84,9 @@ public:
     // ── Status / serialisation ───────────────────────────────────────────
 
     nlohmann::json getStatus() const;
+
+    /// Lightweight: number of currently connected channels (no JSON alloc).
+    int connectedChannelCount() const;
     void loadFromJson(const nlohmann::json& arr);
     nlohmann::json toJson() const;
 

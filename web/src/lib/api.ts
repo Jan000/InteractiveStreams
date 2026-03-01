@@ -109,6 +109,15 @@ export interface PerfData {
   activeChannels: number;
   totalPlayers: number;
   samples: PerfSample[];
+  // Extended statistics
+  minFps: number;
+  maxFps: number;
+  medianFps: number;
+  minFrameTime: number;
+  maxFrameTime: number;
+  medianFrameTime: number;
+  minMemory: number;
+  maxMemory: number;
 }
 
 export interface StatsUser {

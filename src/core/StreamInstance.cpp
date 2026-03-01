@@ -1,6 +1,7 @@
 #include "core/StreamInstance.h"
 #include "core/Application.h"
 #include "core/ChannelManager.h"
+#include "rendering/Renderer.h"
 #include "games/GameRegistry.h"
 #include "streaming/StreamEncoder.h"
 
@@ -121,6 +122,19 @@ void StreamInstance::update(double dt) {
 }
 
 void StreamInstance::render(double alpha) {
+    bool encoderRunning = (m_encoder && m_encoder->isRunning());
+    bool windowActive   = !Application::instance().renderer().isHeadless();
+
+    m_jpegFrameCounter++;
+    bool needJpeg = (m_jpegFrameCounter >= m_jpegFrameInterval);
+
+    // Skip the entire GPU render when nothing needs a fresh frame
+    // (headless mode, no encoder, and JPEG preview not yet due).
+    if (!encoderRunning && !windowActive && !needJpeg) {
+        return;
+    }
+    if (needJpeg) m_jpegFrameCounter = 0;
+
     ensureRenderTexture();
     m_renderTexture.clear(sf::Color(15, 15, 25));
 
@@ -137,20 +151,8 @@ void StreamInstance::render(double alpha) {
 
     m_renderTexture.display();
 
-    // Only do the expensive GPU→CPU readback when actually needed:
-    // - Encoder running (needs raw RGBA every frame)
-    // - JPEG preview requested recently (throttled to ~10fps)
-    bool needCapture = (m_encoder && m_encoder->isRunning());
-    bool needJpeg    = false;
-
-    m_jpegFrameCounter++;
-    // Encode JPEG at ~10fps (every 6th frame at 60fps target)
-    if (m_jpegFrameCounter >= m_jpegFrameInterval) {
-        m_jpegFrameCounter = 0;
-        needJpeg = true;
-    }
-
-    if (needCapture || needJpeg) {
+    // GPU→CPU readback: encoder needs it every frame, JPEG periodically
+    if (encoderRunning || needJpeg) {
         m_frameCapture = m_renderTexture.getTexture().copyToImage();
     }
     if (needJpeg) {

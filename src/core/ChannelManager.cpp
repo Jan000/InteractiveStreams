@@ -266,6 +266,15 @@ int ChannelManager::sendMessageToAll(const std::string& text) {
 
 // ── Status / serialisation ───────────────────────────────────────────────────
 
+int ChannelManager::connectedChannelCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int count = 0;
+    for (const auto& e : m_channels) {
+        if (e->platform && e->platform->isConnected()) ++count;
+    }
+    return count;
+}
+
 nlohmann::json ChannelManager::getStatus() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     nlohmann::json arr = nlohmann::json::array();
