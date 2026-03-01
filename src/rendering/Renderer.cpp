@@ -79,6 +79,7 @@ sf::RenderTarget& Renderer::getRenderTarget() {
 }
 
 const sf::Uint8* Renderer::getFrameBuffer() const {
+    if (m_frameCapture.getSize().x == 0) return nullptr;
     return m_frameCapture.getPixelsPtr();
 }
 

@@ -168,7 +168,11 @@ void StreamInstance::render(double alpha) {
 }
 
 void StreamInstance::encodeFrame() {
+    if (m_encoders.empty()) return;
+
     const sf::Uint8* pixels = getFrameBuffer();
+    if (!pixels) return;
+
     bool anyFailed = false;
     for (auto& [chId, enc] : m_encoders) {
         if (enc && enc->isRunning()) {
@@ -188,6 +192,7 @@ void StreamInstance::encodeFrame() {
 }
 
 const sf::Uint8* StreamInstance::getFrameBuffer() const {
+    if (m_frameCapture.getSize().x == 0) return nullptr;
     return m_frameCapture.getPixelsPtr();
 }
 
