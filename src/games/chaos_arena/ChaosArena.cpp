@@ -970,7 +970,7 @@ void ChaosArena::renderPlayers(sf::RenderTarget& target, double alpha) {
             std::string name = player.displayName;
             if (name.length() > 12) name = name.substr(0, 10) + "..";
             nameTag.setString(name);
-            nameTag.setCharacterSize(18);
+            nameTag.setCharacterSize(fs(18));
             nameTag.setFillColor(sf::Color(255, 255, 255, 200));
             auto nBounds = nameTag.getLocalBounds();
             nameTag.setOrigin(nBounds.left + nBounds.width / 2, nBounds.top + nBounds.height);
@@ -1071,7 +1071,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text titleText;
         titleText.setFont(m_font);
         titleText.setString("CHAOS ARENA");
-        titleText.setCharacterSize(28);
+        titleText.setCharacterSize(fs(28));
         titleText.setStyle(sf::Text::Bold);
         titleText.setFillColor(sf::Color(100, 200, 255));
         titleText.setPosition(15, 12);
@@ -1089,7 +1089,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text phaseText;
         phaseText.setFont(m_font);
         phaseText.setString(phaseStr);
-        phaseText.setCharacterSize(26);
+        phaseText.setCharacterSize(fs(26));
         phaseText.setFillColor(sf::Color(255, 220, 100));
         auto pBounds = phaseText.getLocalBounds();
         phaseText.setPosition(size.x / 2.0f - pBounds.width / 2, 14);
@@ -1102,7 +1102,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text infoText;
         infoText.setFont(m_font);
         infoText.setString(infoStr);
-        infoText.setCharacterSize(22);
+        infoText.setCharacterSize(fs(22));
         infoText.setFillColor(sf::Color(180, 180, 200));
         auto iBounds = infoText.getLocalBounds();
         infoText.setPosition(size.x - iBounds.width - 15, 16);
@@ -1119,7 +1119,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text cmdHint;
         cmdHint.setFont(m_font);
         cmdHint.setString("!join  !left  !right  !jump  !attack  !special  !dash  !block");
-        cmdHint.setCharacterSize(20);
+        cmdHint.setCharacterSize(fs(20));
         cmdHint.setFillColor(sf::Color(140, 140, 160));
         auto cBounds = cmdHint.getLocalBounds();
         cmdHint.setPosition(size.x / 2.0f - cBounds.width / 2, size.y - 36.0f);
@@ -1146,7 +1146,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text timerText;
             timerText.setFont(m_font);
             timerText.setString(timeStr);
-            timerText.setCharacterSize(30);
+            timerText.setCharacterSize(fs(30));
             timerText.setStyle(sf::Text::Bold);
             timerText.setFillColor(timerColor);
             auto tBounds = timerText.getLocalBounds();
@@ -1172,7 +1172,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text waitTitle;
             waitTitle.setFont(m_font);
             waitTitle.setString("WAITING FOR PLAYERS");
-            waitTitle.setCharacterSize(32);
+            waitTitle.setCharacterSize(fs(32));
             waitTitle.setStyle(sf::Text::Bold);
             waitTitle.setFillColor(sf::Color(100, 200, 255, static_cast<sf::Uint8>(255 * pulse)));
             auto wBounds = waitTitle.getLocalBounds();
@@ -1183,7 +1183,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text joinText;
             joinText.setFont(m_font);
             joinText.setString(joinStr);
-            joinText.setCharacterSize(22);
+            joinText.setCharacterSize(fs(22));
             joinText.setFillColor(sf::Color(180, 180, 200, static_cast<sf::Uint8>(220 * pulse)));
             auto jBounds = joinText.getLocalBounds();
             joinText.setPosition(size.x / 2.0f - jBounds.width / 2, size.y / 2.0f - 5);
@@ -1194,7 +1194,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text countText;
             countText.setFont(m_font);
             countText.setString(countStr);
-            countText.setCharacterSize(22);
+            countText.setCharacterSize(fs(22));
             countText.setFillColor(sf::Color(255, 220, 100, static_cast<sf::Uint8>(220 * pulse)));
             auto cBounds = countText.getLocalBounds();
             countText.setPosition(size.x / 2.0f - cBounds.width / 2, size.y / 2.0f + 22);
@@ -1219,7 +1219,7 @@ void ChaosArena::renderKillFeed(sf::RenderTarget& target) {
             sf::Text feedText;
             feedText.setFont(m_font);
             feedText.setString(feedStr);
-            feedText.setCharacterSize(18);
+            feedText.setCharacterSize(fs(18));
             feedText.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(220 * alpha)));
             feedText.setPosition(static_cast<float>(size.x) - 445, y + 4);
             target.draw(feedText);
@@ -1249,7 +1249,7 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
         sf::Text header;
         header.setFont(m_font);
         header.setString("LEADERBOARD");
-        header.setCharacterSize(18);
+        header.setCharacterSize(fs(18));
         header.setStyle(sf::Text::Bold);
         header.setFillColor(sf::Color(100, 200, 255));
         header.setPosition(16, 74);
@@ -1283,7 +1283,7 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
             std::string nameStr = std::to_string(rank) + ". " + e.name;
             if (nameStr.length() > 16) nameStr = nameStr.substr(0, 14) + "..";
             nameText.setString(nameStr);
-            nameText.setCharacterSize(18);
+            nameText.setCharacterSize(fs(18));
             nameText.setFillColor(e.alive ? sf::Color(220, 220, 230) : sf::Color(100, 100, 100));
             nameText.setPosition(26, y + 2);
             target.draw(nameText);
@@ -1291,7 +1291,7 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
             sf::Text scoreText;
             scoreText.setFont(m_font);
             scoreText.setString(std::to_string(e.score));
-            scoreText.setCharacterSize(18);
+            scoreText.setCharacterSize(fs(18));
             scoreText.setFillColor(sf::Color(255, 220, 100));
             auto sBounds = scoreText.getLocalBounds();
             scoreText.setPosition(panelWidth - sBounds.width - 15, y + 2);
@@ -1334,7 +1334,7 @@ void ChaosArena::renderCountdown(sf::RenderTarget& target) {
         sf::Text countText;
         countText.setFont(m_font);
         countText.setString(std::to_string(countdown));
-        countText.setCharacterSize(80);
+        countText.setCharacterSize(fs(80));
         countText.setStyle(sf::Text::Bold);
         countText.setFillColor(sf::Color(255, 220, 100, static_cast<sf::Uint8>(255 * pulse)));
         auto cBounds = countText.getLocalBounds();

@@ -90,6 +90,13 @@ void StreamInstance::update(double dt) {
         m_lastGameId = currentGameId;
         m_infoMessageTimer = 0.0; // Reset info timer on game change
 
+        if (game) {
+            // Apply per-game font scale
+            auto scaleIt = m_config.gameFontScales.find(currentGameId);
+            float scale = (scaleIt != m_config.gameFontScales.end()) ? scaleIt->second : 1.0f;
+            game->setFontScale(scale);
+        }
+
         // Update stream description if per-game description is set
         if (!currentGameId.empty()) {
             auto descIt = m_config.gameDescriptions.find(currentGameId);
@@ -240,6 +247,12 @@ void StreamInstance::handleVoteCommand(const std::string& userId,
     if (!m_voteState.active) return;
     if (!games::GameRegistry::instance().has(gameName)) return;
 
+    // Reject vote for games exceeding player limit
+    auto limitIt = m_config.gamePlayerLimits.find(gameName);
+    if (limitIt != m_config.gamePlayerLimits.end() && limitIt->second > 0) {
+        if (m_stats.uniqueViewerCount() > limitIt->second) return;
+    }
+
     // Remove previous vote
     auto prev = m_voteState.userVotes.find(userId);
     if (prev != m_voteState.userVotes.end()) {
@@ -296,6 +309,10 @@ void StreamInstance::renderVoteOverlay() {
     if (!m_fontLoaded) return;
     float w = static_cast<float>(width());
     float h = static_cast<float>(height());
+    float vfs = m_config.voteOverlayFontScale;
+    auto fs = [vfs](int base) -> unsigned int {
+        return static_cast<unsigned int>(std::max(1.0f, base * vfs));
+    };
 
     // Dim background
     sf::RectangleShape overlay(sf::Vector2f(w, h));
@@ -306,7 +323,7 @@ void StreamInstance::renderVoteOverlay() {
     sf::Text title;
     title.setFont(m_font);
     title.setString("VOTE FOR NEXT GAME!");
-    title.setCharacterSize(36);
+    title.setCharacterSize(fs(36));
     title.setFillColor(sf::Color(255, 215, 0));
     title.setStyle(sf::Text::Bold);
     auto tb = title.getLocalBounds();
@@ -318,7 +335,7 @@ void StreamInstance::renderVoteOverlay() {
     sf::Text timer;
     timer.setFont(m_font);
     timer.setString("Time: " + std::to_string(static_cast<int>(remaining)) + "s");
-    timer.setCharacterSize(24);
+    timer.setCharacterSize(fs(24));
     timer.setFillColor(sf::Color(200, 200, 200));
     auto tmb = timer.getLocalBounds();
     timer.setPosition((w - tmb.width) / 2.0f, h * 0.22f);
@@ -328,14 +345,24 @@ void StreamInstance::renderVoteOverlay() {
     sf::Text instr;
     instr.setFont(m_font);
     instr.setString("Type !vote <game_id> in chat");
-    instr.setCharacterSize(18);
+    instr.setCharacterSize(fs(18));
     instr.setFillColor(sf::Color(150, 150, 150));
     auto ib = instr.getLocalBounds();
     instr.setPosition((w - ib.width) / 2.0f, h * 0.27f);
     m_renderTexture.draw(instr);
 
-    // Game cards
-    auto gameIds   = getAvailableGameIds();
+    // Game cards – filter by player limit
+    auto allGameIds = getAvailableGameIds();
+    int viewers = m_stats.uniqueViewerCount();
+    std::vector<std::string> gameIds;
+    for (const auto& gid : allGameIds) {
+        auto limitIt = m_config.gamePlayerLimits.find(gid);
+        if (limitIt != m_config.gamePlayerLimits.end() && limitIt->second > 0) {
+            if (viewers > limitIt->second) continue; // too many viewers
+        }
+        gameIds.push_back(gid);
+    }
+
     float y        = h * 0.35f;
     float cardH    = 60.0f;
     float cardW    = w * 0.7f;
@@ -359,7 +386,7 @@ void StreamInstance::renderVoteOverlay() {
         sf::Text nameT;
         nameT.setFont(m_font);
         nameT.setString(dispName);
-        nameT.setCharacterSize(20);
+        nameT.setCharacterSize(fs(20));
         nameT.setFillColor(sf::Color::White);
         nameT.setPosition(cardX + 15.0f, y + 8.0f);
         m_renderTexture.draw(nameT);
@@ -367,7 +394,7 @@ void StreamInstance::renderVoteOverlay() {
         sf::Text voteT;
         voteT.setFont(m_font);
         voteT.setString(std::to_string(votes) + " votes");
-        voteT.setCharacterSize(16);
+        voteT.setCharacterSize(fs(16));
         voteT.setFillColor(sf::Color(88, 166, 255));
         voteT.setPosition(cardX + 15.0f, y + 34.0f);
         m_renderTexture.draw(voteT);
@@ -375,7 +402,7 @@ void StreamInstance::renderVoteOverlay() {
         sf::Text idT;
         idT.setFont(m_font);
         idT.setString("!vote " + gid);
-        idT.setCharacterSize(14);
+        idT.setCharacterSize(fs(14));
         idT.setFillColor(sf::Color(120, 120, 140));
         auto idb = idT.getLocalBounds();
         idT.setPosition(cardX + cardW - idb.width - 15.0f, y + 20.0f);
@@ -389,75 +416,99 @@ void StreamInstance::renderVoteOverlay() {
 
 void StreamInstance::updateScoreboardCache() {
     auto& db = Application::instance().playerDatabase();
-    m_scoreboardCache = db.getTopAllTime(5);
+    m_scoreboardCache       = db.getTopAllTime(m_config.scoreboardTopN);
+    m_scoreboardRecentCache = db.getTopRecent(m_config.scoreboardTopN,
+                                              m_config.scoreboardRecentHours);
 }
 
 void StreamInstance::renderGlobalScoreboard() {
-    if (!m_fontLoaded || m_scoreboardCache.empty()) return;
+    if (!m_fontLoaded) return;
+    if (m_scoreboardCache.empty() && m_scoreboardRecentCache.empty()) return;
 
     float w = static_cast<float>(width());
-    float h = static_cast<float>(height());
 
-    // Panel in top-right corner
-    float panelW = w * 0.30f;
-    float lineH  = 32.0f;
-    float headerH = 38.0f;
+    int baseFontSize = m_config.scoreboardFontSize;
+    int headerFontSize = baseFontSize + 2;
+    float lineH  = baseFontSize * 1.6f;
+    float headerH = headerFontSize * 1.8f;
     float padX   = 12.0f;
     float padY   = 8.0f;
-    int   count  = static_cast<int>(m_scoreboardCache.size());
-    float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
+    float panelW = w * 0.30f;
+
+    // Helper lambda to draw one scoreboard panel
+    auto drawPanel = [&](float panelX, float panelY,
+                         const std::string& title,
+                         const std::vector<ScoreEntry>& entries) -> float {
+        int count = static_cast<int>(entries.size());
+        float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
+
+        // Background
+        sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
+        bg.setPosition(panelX, panelY);
+        bg.setFillColor(sf::Color(10, 10, 20, 180));
+        bg.setOutlineColor(sf::Color(80, 130, 200, 150));
+        bg.setOutlineThickness(1.5f);
+        m_renderTexture.draw(bg);
+
+        // Header
+        sf::Text header;
+        header.setFont(m_font);
+        header.setString(title);
+        header.setCharacterSize(static_cast<unsigned int>(headerFontSize));
+        header.setFillColor(sf::Color(255, 215, 0));
+        header.setStyle(sf::Text::Bold);
+        auto hb = header.getLocalBounds();
+        header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
+        m_renderTexture.draw(header);
+
+        // Entries
+        float y = panelY + padY + headerH;
+        int rank = 1;
+        for (const auto& entry : entries) {
+            std::string line = std::to_string(rank) + ". " + entry.displayName;
+
+            sf::Text nameText;
+            nameText.setFont(m_font);
+            nameText.setString(line);
+            nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
+            nameText.setFillColor(rank == 1 ? sf::Color(255, 215, 0) :
+                                  rank == 2 ? sf::Color(200, 200, 200) :
+                                  rank == 3 ? sf::Color(205, 127, 50) :
+                                              sf::Color(170, 170, 190));
+            nameText.setPosition(panelX + padX, y);
+            m_renderTexture.draw(nameText);
+
+            sf::Text ptsText;
+            ptsText.setFont(m_font);
+            ptsText.setString(std::to_string(entry.points) + " pts");
+            ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
+            ptsText.setFillColor(sf::Color(88, 166, 255));
+            auto pb = ptsText.getLocalBounds();
+            ptsText.setPosition(panelX + panelW - pb.width - padX, y);
+            m_renderTexture.draw(ptsText);
+
+            y += lineH;
+            rank++;
+        }
+        return panelH;
+    };
+
     float panelX = w - panelW - 12.0f;
     float panelY = 12.0f;
 
-    // Background
-    sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
-    bg.setPosition(panelX, panelY);
-    bg.setFillColor(sf::Color(10, 10, 20, 180));
-    bg.setOutlineColor(sf::Color(80, 130, 200, 150));
-    bg.setOutlineThickness(1.5f);
-    m_renderTexture.draw(bg);
+    // Draw ALL TIME scoreboard
+    if (!m_scoreboardCache.empty()) {
+        float h1 = drawPanel(panelX, panelY,
+                             m_config.scoreboardAllTimeTitle,
+                             m_scoreboardCache);
+        panelY += h1 + 8.0f;
+    }
 
-    // Header
-    sf::Text header;
-    header.setFont(m_font);
-    header.setString("SCOREBOARD");
-    header.setCharacterSize(22);
-    header.setFillColor(sf::Color(255, 215, 0));
-    header.setStyle(sf::Text::Bold);
-    auto hb = header.getLocalBounds();
-    header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
-    m_renderTexture.draw(header);
-
-    // Entries
-    float y = panelY + padY + headerH;
-    int rank = 1;
-    for (const auto& entry : m_scoreboardCache) {
-        // Rank + name
-        std::string line = std::to_string(rank) + ". " + entry.displayName;
-
-        sf::Text nameText;
-        nameText.setFont(m_font);
-        nameText.setString(line);
-        nameText.setCharacterSize(20);
-        nameText.setFillColor(rank == 1 ? sf::Color(255, 215, 0) :
-                              rank == 2 ? sf::Color(200, 200, 200) :
-                              rank == 3 ? sf::Color(205, 127, 50) :
-                                          sf::Color(170, 170, 190));
-        nameText.setPosition(panelX + padX, y);
-        m_renderTexture.draw(nameText);
-
-        // Points (right-aligned)
-        sf::Text ptsText;
-        ptsText.setFont(m_font);
-        ptsText.setString(std::to_string(entry.points) + " pts");
-        ptsText.setCharacterSize(20);
-        ptsText.setFillColor(sf::Color(88, 166, 255));
-        auto pb = ptsText.getLocalBounds();
-        ptsText.setPosition(panelX + panelW - pb.width - padX, y);
-        m_renderTexture.draw(ptsText);
-
-        y += lineH;
-        rank++;
+    // Draw RECENT scoreboard below
+    if (!m_scoreboardRecentCache.empty()) {
+        drawPanel(panelX, panelY,
+                  m_config.scoreboardRecentTitle,
+                  m_scoreboardRecentCache);
     }
 }
 
@@ -556,7 +607,22 @@ nlohmann::json StreamInstance::getState() const {
     if (!m_config.gameInfoIntervals.empty())
         s["gameInfoIntervals"] = m_config.gameInfoIntervals;
 
-    // Global scoreboard (top 5)
+    // Per-game font scales
+    if (!m_config.gameFontScales.empty())
+        s["gameFontScales"] = m_config.gameFontScales;
+    // Per-game player limits
+    if (!m_config.gamePlayerLimits.empty())
+        s["gamePlayerLimits"] = m_config.gamePlayerLimits;
+
+    // Scoreboard overlay settings
+    s["scoreboardTopN"]         = m_config.scoreboardTopN;
+    s["scoreboardFontSize"]     = m_config.scoreboardFontSize;
+    s["scoreboardAllTimeTitle"] = m_config.scoreboardAllTimeTitle;
+    s["scoreboardRecentTitle"]  = m_config.scoreboardRecentTitle;
+    s["scoreboardRecentHours"]  = m_config.scoreboardRecentHours;
+    s["voteOverlayFontScale"]   = m_config.voteOverlayFontScale;
+
+    // Global scoreboard (all-time)
     {
         nlohmann::json sb = nlohmann::json::array();
         for (const auto& e : m_scoreboardCache) {
@@ -564,6 +630,15 @@ nlohmann::json StreamInstance::getState() const {
                           {"wins", e.wins}});
         }
         s["scoreboard"] = sb;
+    }
+    // Global scoreboard (recent)
+    {
+        nlohmann::json sb = nlohmann::json::array();
+        for (const auto& e : m_scoreboardRecentCache) {
+            sb.push_back({{"name", e.displayName}, {"points", e.points},
+                          {"wins", e.wins}});
+        }
+        s["scoreboardRecent"] = sb;
     }
 
     // Per-stream statistics
@@ -619,6 +694,23 @@ nlohmann::json StreamInstance::toJson() const {
     if (!m_config.gameInfoIntervals.empty())
         j["game_info_intervals"] = m_config.gameInfoIntervals;
 
+    // Per-game font scales
+    if (!m_config.gameFontScales.empty())
+        j["game_font_scales"] = m_config.gameFontScales;
+    // Per-game player limits
+    if (!m_config.gamePlayerLimits.empty())
+        j["game_player_limits"] = m_config.gamePlayerLimits;
+
+    // Scoreboard settings
+    j["scoreboard_top_n"]          = m_config.scoreboardTopN;
+    j["scoreboard_font_size"]      = m_config.scoreboardFontSize;
+    j["scoreboard_alltime_title"]  = m_config.scoreboardAllTimeTitle;
+    j["scoreboard_recent_title"]   = m_config.scoreboardRecentTitle;
+    j["scoreboard_recent_hours"]   = m_config.scoreboardRecentHours;
+
+    // Vote overlay font scale
+    j["vote_overlay_font_scale"]   = m_config.voteOverlayFontScale;
+
     return j;
 }
 
@@ -665,6 +757,27 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
         for (auto& [k, v] : j["game_info_intervals"].items())
             c.gameInfoIntervals[k] = v.get<int>();
     }
+
+    // Per-game font scales
+    if (j.contains("game_font_scales") && j["game_font_scales"].is_object()) {
+        for (auto& [k, v] : j["game_font_scales"].items())
+            c.gameFontScales[k] = v.get<float>();
+    }
+    // Per-game player limits
+    if (j.contains("game_player_limits") && j["game_player_limits"].is_object()) {
+        for (auto& [k, v] : j["game_player_limits"].items())
+            c.gamePlayerLimits[k] = v.get<int>();
+    }
+
+    // Scoreboard settings
+    c.scoreboardTopN       = j.value("scoreboard_top_n", 5);
+    c.scoreboardFontSize   = j.value("scoreboard_font_size", 20);
+    c.scoreboardAllTimeTitle  = j.value("scoreboard_alltime_title", std::string("ALL TIME"));
+    c.scoreboardRecentTitle   = j.value("scoreboard_recent_title", std::string("LAST 24H"));
+    c.scoreboardRecentHours   = j.value("scoreboard_recent_hours", 24);
+
+    // Vote overlay font scale
+    c.voteOverlayFontScale = j.value("vote_overlay_font_scale", 1.0f);
 
     return c;
 }

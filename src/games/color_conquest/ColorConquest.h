@@ -51,6 +51,7 @@ public:
     bool isGameOver() const override;
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
+    int maxPlayers() const override { return 0; } // unlimited by design
 
 private:
     // ── Command handlers ────────────────────────────────────────
@@ -82,7 +83,10 @@ private:
     sf::Color getTeamColorDark(TeamId team) const;
     std::string getTeamName(TeamId team) const;
     Direction getWinningVote(TeamId team) const;
-
+    /// Scale a font size by the current font scale factor.
+    unsigned int fs(int base) const {
+        return static_cast<unsigned int>(std::max(1.0f, base * m_fontScale));
+    }
     // ── State ─────────────────────────────────────────────────
     Phase           m_phase = Phase::Lobby;
     Grid            m_grid;

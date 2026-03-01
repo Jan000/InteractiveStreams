@@ -65,6 +65,24 @@ struct StreamConfig {
     std::unordered_map<std::string, std::string> gameInfoMessages;
     /// Map: game_id -> interval in seconds (0 = disabled)
     std::unordered_map<std::string, int> gameInfoIntervals;
+
+    // ── Per-game font scale (multiplier, default 1.0) ───────────────────
+    /// Map: game_id -> font scale factor
+    std::unordered_map<std::string, float> gameFontScales;
+
+    // ── Per-game player limits (0 = unlimited) ──────────────────────────
+    /// Map: game_id -> max player count
+    std::unordered_map<std::string, int> gamePlayerLimits;
+
+    // ── Scoreboard overlay settings ─────────────────────────────────────
+    int    scoreboardTopN        = 5;        ///< Entries per scoreboard panel
+    int    scoreboardFontSize    = 20;       ///< Base font size for entries
+    std::string scoreboardAllTimeTitle  = "ALL TIME";
+    std::string scoreboardRecentTitle   = "LAST 24H";
+    int    scoreboardRecentHours = 24;       ///< Time window for recent scoreboard
+
+    // ── Vote overlay font scale ─────────────────────────────────────────
+    float  voteOverlayFontScale  = 1.0f;
 };
 
 /// A single stream instance – encapsulates game, off-screen render target,
@@ -170,6 +188,7 @@ private:
 
     // Global scoreboard overlay (cached from PlayerDatabase)
     std::vector<ScoreEntry> m_scoreboardCache;
+    std::vector<ScoreEntry> m_scoreboardRecentCache;
     double m_scoreboardRefreshTimer = 0.0;
     static constexpr double SCOREBOARD_REFRESH_INTERVAL = 5.0; // seconds
 

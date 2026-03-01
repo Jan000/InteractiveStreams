@@ -102,6 +102,22 @@ export function StreamCard({
   const [gameInfoIntervals, setGameInfoIntervals] = useState<Record<string, number>>(
     stream.gameInfoIntervals ?? {}
   );
+  // Per-game font scales
+  const [gameFontScales, setGameFontScales] = useState<Record<string, number>>(
+    stream.gameFontScales ?? {}
+  );
+  // Per-game player limits
+  const [gamePlayerLimits, setGamePlayerLimits] = useState<Record<string, number>>(
+    stream.gamePlayerLimits ?? {}
+  );
+  // Scoreboard settings
+  const [scoreboardTopN, setScoreboardTopN] = useState(stream.scoreboardTopN ?? 5);
+  const [scoreboardFontSize, setScoreboardFontSize] = useState(stream.scoreboardFontSize ?? 20);
+  const [scoreboardAllTimeTitle, setScoreboardAllTimeTitle] = useState(stream.scoreboardAllTimeTitle ?? "ALL TIME");
+  const [scoreboardRecentTitle, setScoreboardRecentTitle] = useState(stream.scoreboardRecentTitle ?? "LAST 24H");
+  const [scoreboardRecentHours, setScoreboardRecentHours] = useState(stream.scoreboardRecentHours ?? 24);
+  // Vote overlay font scale
+  const [voteOverlayFontScale, setVoteOverlayFontScale] = useState(stream.voteOverlayFontScale ?? 1.0);
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -153,6 +169,14 @@ export function StreamCard({
       setGameDescriptions(stream.gameDescriptions ?? {});
       setGameInfoMessages(stream.gameInfoMessages ?? {});
       setGameInfoIntervals(stream.gameInfoIntervals ?? {});
+      setGameFontScales(stream.gameFontScales ?? {});
+      setGamePlayerLimits(stream.gamePlayerLimits ?? {});
+      setScoreboardTopN(stream.scoreboardTopN ?? 5);
+      setScoreboardFontSize(stream.scoreboardFontSize ?? 20);
+      setScoreboardAllTimeTitle(stream.scoreboardAllTimeTitle ?? "ALL TIME");
+      setScoreboardRecentTitle(stream.scoreboardRecentTitle ?? "LAST 24H");
+      setScoreboardRecentHours(stream.scoreboardRecentHours ?? 24);
+      setVoteOverlayFontScale(stream.voteOverlayFontScale ?? 1.0);
     }
   }, [stream, dirty]);
 
@@ -186,6 +210,14 @@ export function StreamCard({
         game_descriptions: Object.keys(gameDescriptions).length > 0 ? gameDescriptions : undefined,
         game_info_messages: Object.keys(gameInfoMessages).length > 0 ? gameInfoMessages : undefined,
         game_info_intervals: Object.keys(gameInfoIntervals).length > 0 ? gameInfoIntervals : undefined,
+        game_font_scales: Object.keys(gameFontScales).length > 0 ? gameFontScales : undefined,
+        game_player_limits: Object.keys(gamePlayerLimits).length > 0 ? gamePlayerLimits : undefined,
+        scoreboard_top_n: scoreboardTopN,
+        scoreboard_font_size: scoreboardFontSize,
+        scoreboard_alltime_title: scoreboardAllTimeTitle,
+        scoreboard_recent_title: scoreboardRecentTitle,
+        scoreboard_recent_hours: scoreboardRecentHours,
+        vote_overlay_font_scale: voteOverlayFontScale,
       });
       toast.success("Stream updated");
       setDirty(false);
@@ -531,7 +563,7 @@ export function StreamCard({
             <div className="space-y-2 rounded-md border p-3">
               <Label className="text-xs font-semibold">Per-Game Settings</Label>
               <p className="text-[10px] text-muted-foreground">
-                Set per-game stream descriptions and periodic chat info messages.
+                Set per-game descriptions, info messages, font scales, and player limits.
               </p>
               {games.map((g) => (
                 <div key={g.id} className="space-y-1 rounded border p-2">
@@ -584,8 +616,124 @@ export function StreamCard({
                     />
                     <span className="text-[10px] text-muted-foreground">0 = disabled</span>
                   </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[10px] whitespace-nowrap">Font Scale</Label>
+                      <Input
+                        className="h-7 w-20 text-xs"
+                        type="number"
+                        min={0.1}
+                        max={5}
+                        step={0.1}
+                        placeholder="1.0"
+                        value={gameFontScales[g.id] ?? ""}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setGameFontScales((prev) => {
+                            const next = { ...prev };
+                            if (v > 0 && v !== 1.0) next[g.id] = v; else delete next[g.id];
+                            return next;
+                          });
+                          setDirty(true);
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[10px] whitespace-nowrap">Max Players</Label>
+                      <Input
+                        className="h-7 w-20 text-xs"
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={gamePlayerLimits[g.id] ?? ""}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          setGamePlayerLimits((prev) => {
+                            const next = { ...prev };
+                            if (v > 0) next[g.id] = v; else delete next[g.id];
+                            return next;
+                          });
+                          setDirty(true);
+                        }}
+                      />
+                      <span className="text-[10px] text-muted-foreground">0 = unlimited</span>
+                    </div>
+                  </div>
                 </div>
               ))}
+            </div>
+
+            {/* Scoreboard & Overlay Settings */}
+            <div className="space-y-2 rounded-md border p-3">
+              <Label className="text-xs font-semibold">Scoreboard &amp; Overlay</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Configure the dual scoreboard overlay and vote overlay font scale.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">All-Time Title</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    value={scoreboardAllTimeTitle}
+                    onChange={(e) => set(setScoreboardAllTimeTitle)(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">Recent Title</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    value={scoreboardRecentTitle}
+                    onChange={(e) => set(setScoreboardRecentTitle)(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">Entries per panel</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={scoreboardTopN}
+                    onChange={(e) => set(setScoreboardTopN)(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">Font Size</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    type="number"
+                    min={8}
+                    max={48}
+                    value={scoreboardFontSize}
+                    onChange={(e) => set(setScoreboardFontSize)(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">Recent Hours</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    type="number"
+                    min={1}
+                    max={720}
+                    value={scoreboardRecentHours}
+                    onChange={(e) => set(setScoreboardRecentHours)(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-[10px] whitespace-nowrap">Vote Overlay Font Scale</Label>
+                <Input
+                  className="h-7 w-20 text-xs"
+                  type="number"
+                  min={0.1}
+                  max={5}
+                  step={0.1}
+                  value={voteOverlayFontScale}
+                  onChange={(e) => set(setVoteOverlayFontScale)(Number(e.target.value))}
+                />
+              </div>
             </div>
 
             {/* Channels */}

@@ -59,6 +59,7 @@ public:
     bool isGameOver() const override;
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
+    int maxPlayers() const override { return m_maxPlayers; }
 
 private:
     // Chat command handlers
@@ -95,6 +96,11 @@ private:
     void renderKillFeed(sf::RenderTarget& target);
     void renderLeaderboard(sf::RenderTarget& target);
     void renderCountdown(sf::RenderTarget& target);
+
+    /// Scale a font size by the current font scale factor.
+    unsigned int fs(int base) const {
+        return static_cast<unsigned int>(std::max(1.0f, base * m_fontScale));
+    }
 
     // State
     GamePhase                                       m_phase = GamePhase::Lobby;

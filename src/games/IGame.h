@@ -22,6 +22,15 @@ public:
     /// Short description.
     virtual std::string description() const = 0;
 
+    /// Maximum number of players this game supports (0 = unlimited).
+    virtual int maxPlayers() const { return 0; }
+
+    /// Set the font scale factor (default 1.0).
+    virtual void setFontScale(float scale) { m_fontScale = scale; }
+
+    /// Get the current font scale factor.
+    float fontScale() const { return m_fontScale; }
+
     /// Initialize game state. Called once when the game is loaded.
     virtual void initialize() = 0;
 
@@ -50,6 +59,9 @@ public:
 
     /// Get available chat commands as JSON.
     virtual nlohmann::json getCommands() const = 0;
+
+protected:
+    float m_fontScale = 1.0f;
 };
 
 } // namespace is::games

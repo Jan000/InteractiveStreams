@@ -28,8 +28,21 @@ export interface StreamState {
   gameDescriptions?: Record<string, string>;
   gameInfoMessages?: Record<string, string>;
   gameInfoIntervals?: Record<string, number>;
+  // Per-game font scales (multiplier, default 1.0)
+  gameFontScales?: Record<string, number>;
+  // Per-game player limits (0 = unlimited)
+  gamePlayerLimits?: Record<string, number>;
+  // Scoreboard overlay settings
+  scoreboardTopN?: number;
+  scoreboardFontSize?: number;
+  scoreboardAllTimeTitle?: string;
+  scoreboardRecentTitle?: string;
+  scoreboardRecentHours?: number;
+  // Vote overlay font scale
+  voteOverlayFontScale?: number;
   // Live scoreboard data
   scoreboard?: Array<{ name: string; points: number; wins: number }>;
+  scoreboardRecent?: Array<{ name: string; points: number; wins: number }>;
   // Per-stream statistics
   stats?: ChannelStatsData;
   game?: {
