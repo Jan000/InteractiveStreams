@@ -373,7 +373,10 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             app.channelManager().updateChannel(channelId, updated);
             app.persistChannels();
 
-            spdlog::info("[API] Twitch OAuth token stored for channel '{}'", channelId);
+            // Auto-connect the channel so the user doesn't have to click Connect
+            app.channelManager().connectChannel(channelId);
+
+            spdlog::info("[API] Twitch OAuth token stored and connect triggered for channel '{}'", channelId);
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;

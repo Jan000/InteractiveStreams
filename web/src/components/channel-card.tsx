@@ -95,16 +95,24 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
 
       setTwitchAuthLoading(false);
       setTwitchOauth(token);
-      setDirty(true);
 
-      // Also immediately persist the token via the backend endpoint
+      // Save ALL current settings with the new token, then auto-connect
       try {
-        await api.storeTwitchToken(channel.id, token);
-        toast.success("Twitch OAuth token received and saved!");
+        const settings = {
+          channel: twitchChannel,
+          oauth_token: token,
+          bot_username: twitchBot,
+          server: twitchServer,
+          port: twitchPort,
+        };
+        await api.updateChannel(channel.id, { platform, name, enabled, settings });
+        await api.connectChannel(channel.id);
+        toast.success("Twitch authenticated and connected!");
         setDirty(false);
         onRefresh?.();
       } catch {
-        toast.success("Twitch OAuth token received — click Save to persist.");
+        toast.error("Twitch token received — please save and connect manually.");
+        setDirty(true);
       }
     };
 
@@ -113,6 +121,10 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   }, [channel.id, onRefresh]);
 
   const handleTwitchLogin = async () => {
+    if (!twitchChannel.trim()) {
+      toast.error("Please enter your Twitch channel name before logging in.");
+      return;
+    }
     setTwitchAuthLoading(true);
     try {
       const { url } = await api.getTwitchAuthUrl(channel.id);
