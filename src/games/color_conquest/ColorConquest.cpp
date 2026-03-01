@@ -530,8 +530,7 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
 
         // Vote info (during playing)
         if (m_phase == Phase::Playing) {
-            static const char* arrows[] = {"", "\xe2\x86\x91", "\xe2\x86\x93",
-                                           "\xe2\x86\x90", "\xe2\x86\x92"};
+            static const char* arrows[] = {"", "U", "D", "L", "R"};
             std::string voteStr = "Votes:";
             for (int d = 1; d <= 4; d++) {
                 if (td.votes[d] > 0)
@@ -715,9 +714,9 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
     if (total >= MIN_PLAYERS_TO_START) {
         int remaining = static_cast<int>(m_lobbyDuration - m_lobbyTimer);
         if (remaining < 0) remaining = 0;
-        waitStr += " — Starting in " + std::to_string(remaining) + "s";
+        waitStr += "  -  Starting in " + std::to_string(remaining) + "s";
     } else {
-        waitStr += " — Waiting for players...";
+        waitStr += "  -  Waiting for players...";
     }
 
     sf::Text waitTxt;

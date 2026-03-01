@@ -99,4 +99,10 @@ void Renderer::resize(int width, int height) {
     spdlog::info("Renderer resized to {}x{}", width, height);
 }
 
+void Renderer::setWindowTitle(const std::string& title) {
+    if (m_window.isOpen()) {
+        m_window.setTitle(title);
+    }
+}
+
 } // namespace is::rendering

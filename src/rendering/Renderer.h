@@ -39,6 +39,9 @@ public:
     /// Resize the render target (e.g., from web dashboard).
     void resize(int width, int height);
 
+    /// Update the window title.
+    void setWindowTitle(const std::string& title);
+
 private:
     int m_width;
     int m_height;

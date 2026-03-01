@@ -1,5 +1,7 @@
 #include "core/GameManager.h"
+#include "core/Application.h"
 #include "games/GameRegistry.h"
+#include "rendering/Renderer.h"
 #include <spdlog/spdlog.h>
 
 namespace is::core {
@@ -22,6 +24,14 @@ void GameManager::loadGame(const std::string& name) {
     m_activeGameName = name;
     m_activeGame->initialize();
     spdlog::info("Game '{}' loaded and initialized.", name);
+
+    // Update window title to reflect the active game
+    try {
+        auto& app = core::Application::instance();
+        app.renderer().setWindowTitle("InteractiveStreams - " + m_activeGame->displayName());
+    } catch (...) {
+        // Application may not be fully initialized yet
+    }
 }
 
 void GameManager::requestSwitch(const std::string& gameName, SwitchMode mode) {
