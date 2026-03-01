@@ -186,15 +186,14 @@ export default function PerformancePage() {
           <CardDescription>Target: 60 FPS</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="fpsGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="fpsGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                </linearGradient>
+              </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis
                   dataKey="timeLabel"
@@ -213,17 +212,16 @@ export default function PerformancePage() {
                     fontSize: 12,
                   }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="fps"
-                  stroke="#22c55e"
-                  fill="url(#fpsGrad)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+              <Area
+                type="monotone"
+                dataKey="fps"
+                stroke="#22c55e"
+                fill="url(#fpsGrad)"
+                strokeWidth={2}
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
 
@@ -238,98 +236,7 @@ export default function PerformancePage() {
             <CardDescription>Lower is better (target: ~16.7ms)</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis
-                    dataKey="timeLabel"
-                    tick={{ fontSize: 10, fill: "#888" }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis tick={{ fontSize: 10, fill: "#888" }} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#1a1a2e",
-                      border: "1px solid #333",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="frameTimeMs"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Frame Time (ms)"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <HardDrive className="size-4 text-purple-500" />
-              <CardTitle className="text-sm">Memory Usage</CardTitle>
-            </div>
-            <CardDescription>Process working set</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis
-                    dataKey="timeLabel"
-                    tick={{ fontSize: 10, fill: "#888" }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis tick={{ fontSize: 10, fill: "#888" }} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#1a1a2e",
-                      border: "1px solid #333",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="memoryMB"
-                    stroke="#a855f7"
-                    fill="url(#memGrad)"
-                    strokeWidth={2}
-                    dot={false}
-                    name="Memory (MB)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Players + Streams Chart */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <Users className="size-4 text-orange-500" />
-            <CardTitle className="text-sm">Active Players &amp; Streams</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={180}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis
@@ -348,31 +255,116 @@ export default function PerformancePage() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="totalPlayers"
-                  stroke="#f97316"
+                  dataKey="frameTimeMs"
+                  stroke="#3b82f6"
                   strokeWidth={2}
                   dot={false}
-                  name="Players"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="activeStreams"
-                  stroke="#06b6d4"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Streams"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="activeChannels"
-                  stroke="#84cc16"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Channels"
+                  name="Frame Time (ms)"
                 />
               </LineChart>
             </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <HardDrive className="size-4 text-purple-500" />
+              <CardTitle className="text-sm">Memory Usage</CardTitle>
+            </div>
+            <CardDescription>Process working set</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis
+                  dataKey="timeLabel"
+                  tick={{ fontSize: 10, fill: "#888" }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis tick={{ fontSize: 10, fill: "#888" }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#1a1a2e",
+                    border: "1px solid #333",
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="memoryMB"
+                  stroke="#a855f7"
+                  fill="url(#memGrad)"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Memory (MB)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Players + Streams Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Users className="size-4 text-orange-500" />
+            <CardTitle className="text-sm">Active Players &amp; Streams</CardTitle>
           </div>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <XAxis
+                dataKey="timeLabel"
+                tick={{ fontSize: 10, fill: "#888" }}
+                interval="preserveStartEnd"
+              />
+              <YAxis tick={{ fontSize: 10, fill: "#888" }} />
+              <Tooltip
+                contentStyle={{
+                  background: "#1a1a2e",
+                  border: "1px solid #333",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="totalPlayers"
+                stroke="#f97316"
+                strokeWidth={2}
+                dot={false}
+                name="Players"
+              />
+              <Line
+                type="monotone"
+                dataKey="activeStreams"
+                stroke="#06b6d4"
+                strokeWidth={2}
+                dot={false}
+                name="Streams"
+              />
+              <Line
+                type="monotone"
+                dataKey="activeChannels"
+                stroke="#84cc16"
+                strokeWidth={2}
+                dot={false}
+                name="Channels"
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
 

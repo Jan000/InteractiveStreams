@@ -20,33 +20,43 @@ WebServer::~WebServer() {
 
 void WebServer::setupRoutes() {
     // Serve static dashboard files
+    // Next.js is built with trailingSlash: true, so routes generate
+    // <route>/index.html which httplib's mount point serves natively.
     m_server->set_mount_point("/", "dashboard");
 
     // Setup API routes
     ApiRoutes::setup(*m_server, m_app);
 
-    // SPA fallback: for Next.js static-export routes that don't match a physical
-    // file, serve the corresponding .html file (e.g. /channels → channels.html).
-    // This must come after API routes so /api/* is handled first.
+    // SPA fallback: for paths that the mount point can't serve directly,
+    // try serving the .html file or the route/index.html file.
     m_server->set_error_handler([](const httplib::Request& req, httplib::Response& res) {
         if (res.status == 404 && req.method == "GET" &&
             req.path.find("/api/") == std::string::npos) {
-            // Try serving <path>.html from the dashboard directory
             std::string path = req.path;
-            // Strip leading slash
             if (!path.empty() && path[0] == '/') path = path.substr(1);
-            // Strip trailing slash
             if (!path.empty() && path.back() == '/') path.pop_back();
+            if (path.empty()) return;
 
-            if (path.empty()) return;  // root is handled by index.html
-
-            std::string htmlFile = "dashboard/" + path + ".html";
-            std::ifstream file(htmlFile, std::ios::binary);
-            if (file.good()) {
-                std::string content((std::istreambuf_iterator<char>(file)),
+            // Try route/index.html (trailingSlash: true output)
+            std::string indexFile = "dashboard/" + path + "/index.html";
+            std::ifstream f1(indexFile, std::ios::binary);
+            if (f1.good()) {
+                std::string content((std::istreambuf_iterator<char>(f1)),
                                      std::istreambuf_iterator<char>());
                 res.status = 200;
                 res.set_content(content, "text/html");
+                return;
+            }
+
+            // Try route.html (fallback for non-trailingSlash output)
+            std::string htmlFile = "dashboard/" + path + ".html";
+            std::ifstream f2(htmlFile, std::ios::binary);
+            if (f2.good()) {
+                std::string content((std::istreambuf_iterator<char>(f2)),
+                                     std::istreambuf_iterator<char>());
+                res.status = 200;
+                res.set_content(content, "text/html");
+                return;
             }
         }
     });
