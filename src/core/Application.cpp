@@ -62,8 +62,10 @@ void Application::initialize() {
 
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
+    bool headless = cfg.get<bool>("application.headless", false);
     m_impl->renderer = std::make_unique<rendering::Renderer>(1080, 1920,
-        cfg.get<std::string>("rendering.title", "InteractiveStreams"));
+        cfg.get<std::string>("rendering.title", "InteractiveStreams"),
+        headless);
 
     // ── Stream manager (replaces single GameManager+Renderer+Encoder) ────
     m_impl->streamManager = std::make_unique<StreamManager>();

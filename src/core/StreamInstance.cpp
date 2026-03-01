@@ -2,6 +2,7 @@
 #include "games/GameRegistry.h"
 #include "streaming/StreamEncoder.h"
 
+#include <stb_image_write.h>
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <random>
@@ -85,6 +86,7 @@ void StreamInstance::render(double alpha) {
 
     m_renderTexture.display();
     m_frameCapture = m_renderTexture.getTexture().copyToImage();
+    updateJpegBuffer();
 }
 
 void StreamInstance::encodeFrame() {
@@ -95,6 +97,32 @@ void StreamInstance::encodeFrame() {
 
 const sf::Uint8* StreamInstance::getFrameBuffer() const {
     return m_frameCapture.getPixelsPtr();
+}
+
+// ── JPEG encoding for web preview ────────────────────────────────────────────
+
+static void stbiWriteCallback(void* context, void* data, int size) {
+    auto* buf = static_cast<std::vector<uint8_t>*>(context);
+    auto* bytes = static_cast<const uint8_t*>(data);
+    buf->insert(buf->end(), bytes, bytes + size);
+}
+
+void StreamInstance::updateJpegBuffer() {
+    const auto* pixels = m_frameCapture.getPixelsPtr();
+    if (!pixels) return;
+
+    std::vector<uint8_t> buf;
+    buf.reserve(width() * height() / 4); // rough estimate
+    stbi_write_jpg_to_func(stbiWriteCallback, &buf,
+                           width(), height(), 4, pixels, 75);
+
+    std::lock_guard<std::mutex> lock(m_jpegMutex);
+    m_jpegBuffer = std::move(buf);
+}
+
+std::vector<uint8_t> StreamInstance::getJpegFrame() const {
+    std::lock_guard<std::mutex> lock(m_jpegMutex);
+    return m_jpegBuffer;
 }
 
 // ── Game-mode logic ──────────────────────────────────────────────────────────

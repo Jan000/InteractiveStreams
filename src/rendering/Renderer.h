@@ -9,9 +9,11 @@ namespace is::rendering {
 
 /// Main renderer – manages the SFML window and offscreen render target.
 /// The offscreen target is used for streaming; the window is a local preview.
+/// In headless mode the window is not created (for server deployments).
 class Renderer {
 public:
-    Renderer(int width, int height, const std::string& title = "InteractiveStreams");
+    Renderer(int width, int height, const std::string& title = "InteractiveStreams",
+             bool headless = false);
     ~Renderer();
 
     /// Begin a new frame (clear the render target).
@@ -33,7 +35,7 @@ public:
     /// Process window events.
     void processEvents(std::function<void(const sf::Event&)> handler);
 
-    /// Check if the window is still open.
+    /// Check if the window is still open (always true in headless mode).
     bool isOpen() const;
 
     /// Resize the render target (e.g., from web dashboard).

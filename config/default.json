@@ -3,7 +3,8 @@
         "name": "InteractiveStreams",
         "version": "0.2.0",
         "target_fps": 60,
-        "default_game": "chaos_arena"
+        "default_game": "chaos_arena",
+        "headless": false
     },
     "web": {
         "port": 8080,

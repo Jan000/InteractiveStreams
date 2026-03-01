@@ -198,6 +198,25 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         res.set_content(R"({"success":true})", "application/json");
     });
 
+    // JPEG frame snapshot for web live-preview
+    server.Get(R"(/api/streams/([^/]+)/frame)", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto* stream = app.streamManager().getStream(pathParam(req));
+        if (!stream) {
+            res.status = 404;
+            res.set_content(R"({"error":"Stream not found"})", "application/json");
+            return;
+        }
+        auto jpeg = stream->getJpegFrame();
+        if (jpeg.empty()) {
+            res.status = 503;
+            res.set_content(R"({"error":"No frame available"})", "application/json");
+            return;
+        }
+        res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.set_header("Pragma", "no-cache");
+        res.set_content(std::string(jpeg.begin(), jpeg.end()), "image/jpeg");
+    });
+
     // ══════════════════════════════════════════════════════════════════════
     //  Games
     // ══════════════════════════════════════════════════════════════════════

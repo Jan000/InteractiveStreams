@@ -67,10 +67,25 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
+# stb – Header-only image utilities (JPEG encoding for web preview)
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+)
+
 # Suppress deprecation warnings from older CMakeLists in dependencies
 set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sfml box2d json httplib spdlog)
 set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
+
+# stb has no CMakeLists.txt – populate only (no add_subdirectory)
+cmake_policy(SET CMP0169 OLD)
+FetchContent_GetProperties(stb)
+if(NOT stb_POPULATED)
+    FetchContent_Populate(stb)
+endif()
 
 # ─── Source files ─────────────────────────────────────────────────────────────
 set(CORE_SOURCES
@@ -115,6 +130,7 @@ set(RENDERING_SOURCES
 set(STREAMING_SOURCES
     src/streaming/StreamEncoder.cpp
     src/streaming/StreamOutput.cpp
+    src/streaming/stb_impl.cpp
 )
 
 set(WEB_SOURCES
@@ -135,6 +151,7 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -159,11 +176,20 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
 )
 
-# Copy web dashboard to build directory
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/src/web/dashboard $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
-)
+# Copy web dashboard to build directory (Next.js static export)
+# Build with: cd web && bun run build   (produces web/out/)
+# Falls back to legacy dashboard if web/out/ does not exist.
+if(EXISTS ${CMAKE_SOURCE_DIR}/web/out)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/web/out $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
+    )
+else()
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/src/web/dashboard $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
+    )
+endif()
 
 # Copy config to build directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -216,5 +242,9 @@ endif()
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 install(DIRECTORY assets/ DESTINATION bin/assets)
-install(DIRECTORY src/web/dashboard/ DESTINATION bin/dashboard)
+if(EXISTS ${CMAKE_SOURCE_DIR}/web/out/)
+    install(DIRECTORY web/out/ DESTINATION bin/dashboard)
+else()
+    install(DIRECTORY src/web/dashboard/ DESTINATION bin/dashboard)
+endif()
 install(DIRECTORY config/ DESTINATION bin/config)

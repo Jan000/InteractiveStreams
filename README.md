@@ -33,7 +33,8 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Desktop & Mobile** – Wählbare Auflösung pro Stream: 1080×1920 (Mobile/Vertikal) oder 1920×1080 (Desktop)
 - **Chat-basierte Steuerung** – Zuschauer steuern ihre Spielfiguren über Chat-Befehle
 - **Modulare Spielarchitektur** – Neue Spiele als eigenständige Module hinzufügbar
-- **Web-Admin-Dashboard** – Vollständiges Verwaltungs-Dashboard mit Tabs für Streams, Channels, Settings und Chat-Test
+- **Web-Admin-Dashboard** – Next.js + TypeScript + shadcn/ui Dashboard mit Tabs für Streams, Channels, Settings und Chat-Test, inkl. Live-Stream-Vorschau
+- **Headless Mode** – Betrieb ohne GUI-Fenster (für Server-Deployments, z.B. Ubuntu Server)
 - **Alle Einstellungen via Web** – Kein manuelles Bearbeiten von Konfigurationsdateien nötig
 - **Plattformunabhängig** – Läuft auf Windows, Linux und macOS
 
@@ -396,6 +397,34 @@ Streams werden im Dashboard unter dem Tab **Streams** verwaltet. Jeder Stream ha
 ## 🌐 Web-Admin-Dashboard
 
 Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` erreichbar.
+Es basiert auf **Next.js 16 + TypeScript + shadcn/ui** und wird als statischer Export vom C++ HTTP-Server ausgeliefert.
+
+### Live-Stream-Vorschau
+
+Das Dashboard zeigt eine Live-Vorschau des ausgewählten Streams direkt im Browser.
+Frames werden als JPEG über `GET /api/streams/:id/frame` abgerufen und im Canvas gerendert (~10 fps).
+
+### Headless Mode
+
+Für Server-Deployments (z.B. Ubuntu Server ohne Desktop-Umgebung) kann der Headless-Modus aktiviert werden:
+
+```json
+"application": {
+    "headless": true
+}
+```
+
+Im Headless-Modus wird kein SFML-Vorschaufenster erstellt. Die Spielgrafik wird nur über den Stream und die Web-Vorschau ausgegeben.
+Auf Linux ohne X11 wird Xvfb benötigt: `xvfb-run ./InteractiveStreams`
+
+### Dashboard entwickeln
+
+```bash
+cd web
+bun install
+bun run dev          # Startet Next.js Dev-Server auf :3000
+bun run build        # Erzeugt statischen Export in web/out/
+```
 
 ### Dashboard-Tabs
 
@@ -445,6 +474,7 @@ Das integrierte Web-Dashboard ist standardmäßig unter `http://localhost:8080` 
 | POST | `/api/streams/:id/stop` | Streaming stoppen |
 | POST | `/api/streams/:id/game` | Spiel wechseln `{"game": "...", "mode": "immediate/after_round/after_game"}` |
 | POST | `/api/streams/:id/cancel-switch` | Ausstehenden Spielwechsel abbrechen |
+| GET | `/api/streams/:id/frame` | JPEG-Frame-Snapshot für Live-Vorschau |
 
 #### Einstellungen & Sonstiges
 | Methode | Endpunkt | Beschreibung |

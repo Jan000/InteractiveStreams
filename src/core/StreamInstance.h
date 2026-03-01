@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -87,6 +88,9 @@ public:
     int  width()  const { return m_config.width(); }
     int  height() const { return m_config.height(); }
 
+    /// Get the latest frame encoded as JPEG (thread-safe, for web preview).
+    std::vector<uint8_t> getJpegFrame() const;
+
     // ── Streaming control ────────────────────────────────────────────────
 
     bool isStreaming() const;
@@ -105,6 +109,7 @@ private:
     void startNextGameFromVote();
     void startRandomGame();
     void restartCurrentGame();
+    void updateJpegBuffer();
     std::vector<std::string> getAvailableGameIds() const;
 
     StreamConfig                               m_config;
@@ -119,6 +124,10 @@ private:
 
     // Encoding
     std::unique_ptr<streaming::StreamEncoder>  m_encoder;
+
+    // JPEG frame buffer for web preview (thread-safe)
+    mutable std::mutex     m_jpegMutex;
+    std::vector<uint8_t>   m_jpegBuffer;
 
     // Vote state
     struct VoteState {
