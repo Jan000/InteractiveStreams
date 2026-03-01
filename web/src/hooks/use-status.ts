@@ -55,8 +55,15 @@ export function useFrameStream(streamId: string | null, fps = 10) {
           const bitmap = await createImageBitmap(blob);
           const ctx = canvasRef.current?.getContext("2d");
           if (ctx && canvasRef.current) {
-            canvasRef.current.width = bitmap.width;
-            canvasRef.current.height = bitmap.height;
+            // Only reset canvas dimensions when they actually change
+            // (resetting clears the canvas and causes DOM thrashing)
+            if (
+              canvasRef.current.width !== bitmap.width ||
+              canvasRef.current.height !== bitmap.height
+            ) {
+              canvasRef.current.width = bitmap.width;
+              canvasRef.current.height = bitmap.height;
+            }
             ctx.drawImage(bitmap, 0, 0);
             setConnected(true);
           }

@@ -85,8 +85,26 @@ void StreamInstance::render(double alpha) {
     }
 
     m_renderTexture.display();
-    m_frameCapture = m_renderTexture.getTexture().copyToImage();
-    updateJpegBuffer();
+
+    // Only do the expensive GPU→CPU readback when actually needed:
+    // - Encoder running (needs raw RGBA every frame)
+    // - JPEG preview requested recently (throttled to ~10fps)
+    bool needCapture = (m_encoder && m_encoder->isRunning());
+    bool needJpeg    = false;
+
+    m_jpegFrameCounter++;
+    // Encode JPEG at ~10fps (every 6th frame at 60fps target)
+    if (m_jpegFrameCounter >= m_jpegFrameInterval) {
+        m_jpegFrameCounter = 0;
+        needJpeg = true;
+    }
+
+    if (needCapture || needJpeg) {
+        m_frameCapture = m_renderTexture.getTexture().copyToImage();
+    }
+    if (needJpeg) {
+        updateJpegBuffer();
+    }
 }
 
 void StreamInstance::encodeFrame() {
@@ -114,7 +132,7 @@ void StreamInstance::updateJpegBuffer() {
     std::vector<uint8_t> buf;
     buf.reserve(width() * height() / 4); // rough estimate
     stbi_write_jpg_to_func(stbiWriteCallback, &buf,
-                           width(), height(), 4, pixels, 75);
+                           width(), height(), 4, pixels, 50);
 
     std::lock_guard<std::mutex> lock(m_jpegMutex);
     m_jpegBuffer = std::move(buf);
@@ -380,6 +398,16 @@ nlohmann::json StreamInstance::getState() const {
                       m_config.gameMode == GameModeType::Vote   ? "vote"  : "random";
     s["streaming"]  = isStreaming();
     s["channelIds"] = m_config.channelIds;
+
+    // Editable config fields (so the dashboard can show/modify them)
+    s["fixedGame"]  = m_config.fixedGame;
+    s["streamUrl"]  = m_config.streamUrl;
+    s["streamKey"]  = m_config.streamKey;
+    s["fps"]        = m_config.fps;
+    s["bitrate"]    = m_config.bitrate;
+    s["preset"]     = m_config.preset;
+    s["codec"]      = m_config.codec;
+    s["enabled"]    = m_config.enabled;
 
     if (auto* g = m_gameManager->activeGame()) {
         s["game"]["id"]              = g->id();

@@ -13,6 +13,15 @@ export interface StreamState {
   gameMode: "fixed" | "vote" | "random";
   streaming: boolean;
   channelIds: string[];
+  // Editable config fields
+  fixedGame: string;
+  streamUrl: string;
+  streamKey: string;
+  fps: number;
+  bitrate: number;
+  preset: string;
+  codec: string;
+  enabled: boolean;
   game?: {
     id: string;
     name: string;

@@ -188,6 +188,7 @@ export default function StreamsPage() {
               key={s.id}
               stream={s}
               games={data.games}
+              channels={data.channels}
               selected={selectedStream?.id === s.id}
               onSelect={() => setSelectedId(s.id)}
             />

@@ -72,6 +72,7 @@ bool StreamEncoder::start() {
         << " -maxrate " << static_cast<int>(m_bitrate * 1.5) << "k"
         << " -bufsize " << m_bitrate * 2 << "k"
         << " -g " << m_fps * 2  // Keyframe interval
+        << " -tune zerolatency"  // Low-latency encoding for streaming
         << " -f flv"
         << " \"" << m_outputUrl << "\"";
 
