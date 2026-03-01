@@ -426,6 +426,85 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     });
 
     // ══════════════════════════════════════════════════════════════════════
+    //  Statistics (per-stream & per-channel interaction stats)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // All channel stats
+    server.Get("/api/stats/channels", [&app](const httplib::Request&, httplib::Response& res) {
+        res.set_content(app.channelManager().getStatsJson().dump(2), "application/json");
+    });
+
+    // Single channel stats
+    server.Get(R"(/api/stats/channels/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string id = pathParam(req);
+        const auto* stats = app.channelManager().getChannelStats(id);
+        if (!stats) {
+            res.status = 404;
+            res.set_content(R"({"error":"Channel not found"})", "application/json");
+            return;
+        }
+        nlohmann::json j;
+        j["channelId"] = id;
+        j["stats"] = stats->toJson();
+        res.set_content(j.dump(2), "application/json");
+    });
+
+    // All stream stats
+    server.Get("/api/stats/streams", [&app](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json arr = nlohmann::json::array();
+        for (auto* stream : app.streamManager().allStreams()) {
+            nlohmann::json s;
+            s["streamId"]   = stream->config().id;
+            s["streamName"] = stream->config().name;
+            s["stats"]      = stream->stats().toJson();
+            arr.push_back(s);
+        }
+        res.set_content(arr.dump(2), "application/json");
+    });
+
+    // Single stream stats
+    server.Get(R"(/api/stats/streams/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string id = pathParam(req);
+        auto* stream = app.streamManager().getStream(id);
+        if (!stream) {
+            res.status = 404;
+            res.set_content(R"({"error":"Stream not found"})", "application/json");
+            return;
+        }
+        nlohmann::json j;
+        j["streamId"]   = id;
+        j["streamName"] = stream->config().name;
+        j["stats"]      = stream->stats().toJson();
+        res.set_content(j.dump(2), "application/json");
+    });
+
+    // Reset stats for a specific channel
+    server.Post(R"(/api/stats/channels/([^/]+)/reset)", [&app](const httplib::Request& req, httplib::Response& res) {
+        app.channelManager().resetChannelStats(pathParam(req));
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // Reset stats for a specific stream
+    server.Post(R"(/api/stats/streams/([^/]+)/reset)", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto* stream = app.streamManager().getStream(pathParam(req));
+        if (!stream) {
+            res.status = 404;
+            res.set_content(R"({"error":"Stream not found"})", "application/json");
+            return;
+        }
+        stream->resetStats();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // Reset ALL stats (channels + streams)
+    server.Post("/api/stats/reset", [&app](const httplib::Request&, httplib::Response& res) {
+        app.channelManager().resetAllStats();
+        for (auto* stream : app.streamManager().allStreams())
+            stream->resetStats();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
     //  CORS
     // ══════════════════════════════════════════════════════════════════════
 

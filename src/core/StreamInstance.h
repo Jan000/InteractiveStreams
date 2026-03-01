@@ -2,6 +2,7 @@
 
 #include "core/GameManager.h"
 #include "core/PlayerDatabase.h"
+#include "core/ChannelStats.h"
 #include "platform/ChatMessage.h"
 
 #include <SFML/Graphics.hpp>
@@ -104,6 +105,10 @@ public:
     /// Get the latest frame encoded as JPEG (thread-safe, for web preview).
     std::vector<uint8_t> getJpegFrame() const;
 
+    /// Per-stream statistics (viewers, interactions, engagement).
+    const ChannelStats& stats() const { return m_stats; }
+    void resetStats() { m_stats.reset(); }
+
     // ── Streaming control ────────────────────────────────────────────────
 
     bool isStreaming() const;
@@ -171,6 +176,9 @@ private:
     // Periodic info message state
     double m_infoMessageTimer = 0.0;
     std::string m_lastGameId;
+
+    // Per-stream interaction statistics
+    ChannelStats m_stats;
 };
 
 } // namespace is::core

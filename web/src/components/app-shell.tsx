@@ -10,6 +10,7 @@ import {
   Power,
   Trophy,
   Activity,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -26,6 +27,7 @@ import {
 const nav = [
   { href: "/", label: "Streams", icon: MonitorPlay },
   { href: "/channels", label: "Channels", icon: Radio },
+  { href: "/statistics", label: "Statistics", icon: BarChart3 },
   { href: "/scoreboard", label: "Scoreboard", icon: Trophy },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },

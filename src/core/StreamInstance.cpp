@@ -55,6 +55,9 @@ sf::RenderTexture& StreamInstance::renderTexture() {
 // ── Main-loop methods ────────────────────────────────────────────────────────
 
 void StreamInstance::handleChatMessage(const platform::ChatMessage& msg) {
+    // Record per-stream statistics
+    m_stats.recordMessage(msg.userId, msg.displayName);
+
     // Intercept vote commands
     if (m_voteState.active && msg.text.size() >= 5 &&
         msg.text.substr(0, 5) == "!vote") {
@@ -562,6 +565,9 @@ nlohmann::json StreamInstance::getState() const {
         }
         s["scoreboard"] = sb;
     }
+
+    // Per-stream statistics
+    s["stats"] = m_stats.toJson();
 
     if (auto* g = m_gameManager->activeGame()) {
         s["game"]["id"]              = g->id();

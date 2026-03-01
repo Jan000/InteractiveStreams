@@ -30,6 +30,8 @@ export interface StreamState {
   gameInfoIntervals?: Record<string, number>;
   // Live scoreboard data
   scoreboard?: Array<{ name: string; points: number; wins: number }>;
+  // Per-stream statistics
+  stats?: ChannelStatsData;
   game?: {
     id: string;
     name: string;
@@ -94,6 +96,40 @@ export interface PerfData {
   activeChannels: number;
   totalPlayers: number;
   samples: PerfSample[];
+}
+
+export interface StatsUser {
+  userId: string;
+  displayName: string;
+  sessions: number;
+  messages: number;
+  engagementSeconds: number;
+}
+
+export interface ChannelStatsData {
+  uniqueViewers: number;
+  totalInteractions: number;
+  interactionRatio: number;
+  avgEngagementSeconds: number;
+  medianEngagementSeconds: number;
+  totalSessions: number;
+  uptimeSeconds: number;
+  sessionTimeoutSeconds: number;
+  users: StatsUser[];
+}
+
+export interface ChannelStatsEntry {
+  channelId: string;
+  channelName: string;
+  platform: string;
+  connected: boolean;
+  stats: ChannelStatsData;
+}
+
+export interface StreamStatsEntry {
+  streamId: string;
+  streamName: string;
+  stats: ChannelStatsData;
 }
 
 export interface StatusResponse {
@@ -207,6 +243,15 @@ export const api = {
     get<PerfData>(`/api/perf?seconds=${seconds}`),
   getPerfHistory: (seconds = 300) =>
     get<{ samples: PerfSample[] }>(`/api/perf/history?seconds=${seconds}`),
+
+  // Statistics
+  getChannelStats: () => get<ChannelStatsEntry[]>("/api/stats/channels"),
+  getStreamStats: () => get<StreamStatsEntry[]>("/api/stats/streams"),
+  resetChannelStats: (id: string) =>
+    post<{ success: boolean }>(`/api/stats/channels/${id}/reset`),
+  resetStreamStats: (id: string) =>
+    post<{ success: boolean }>(`/api/stats/streams/${id}/reset`),
+  resetAllStats: () => post<{ success: boolean }>("/api/stats/reset"),
 
   // Frame preview URL (not JSON – returns JPEG binary)
   frameUrl: (streamId: string) => `${BASE}/api/streams/${streamId}/frame`,

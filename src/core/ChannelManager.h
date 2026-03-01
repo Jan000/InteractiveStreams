@@ -2,6 +2,7 @@
 
 #include "platform/IPlatform.h"
 #include "platform/ChatMessage.h"
+#include "core/ChannelStats.h"
 
 #include <memory>
 #include <vector>
@@ -86,6 +87,20 @@ public:
     void loadFromJson(const nlohmann::json& arr);
     nlohmann::json toJson() const;
 
+    // ── Statistics ───────────────────────────────────────────────────────
+
+    /// Get stats for a specific channel (nullptr if not found).
+    const ChannelStats* getChannelStats(const std::string& channelId) const;
+
+    /// Get stats JSON for all channels.
+    nlohmann::json getStatsJson() const;
+
+    /// Reset stats for a specific channel.
+    void resetChannelStats(const std::string& channelId);
+
+    /// Reset stats for all channels.
+    void resetAllStats();
+
 private:
     std::unique_ptr<platform::IPlatform> createPlatform(const std::string& platformType);
     void ensureLocalChannel();
@@ -93,6 +108,7 @@ private:
     struct ChannelEntry {
         ChannelConfig config;
         std::unique_ptr<platform::IPlatform> platform;
+        ChannelStats stats;
     };
 
     mutable std::mutex m_mutex;

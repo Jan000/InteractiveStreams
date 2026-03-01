@@ -182,8 +182,11 @@ std::vector<platform::ChatMessage> ChannelManager::pollAllMessages() {
     for (auto& e : m_channels) {
         if (e->platform && e->platform->isConnected()) {
             auto msgs = e->platform->pollMessages();
-            for (auto& m : msgs)
+            for (auto& m : msgs) {
                 m.channelId = e->config.id;   // tag with our channel ID
+                // Record per-channel statistics
+                e->stats.recordMessage(m.userId, m.displayName);
+            }
             all.insert(all.end(),
                 std::make_move_iterator(msgs.begin()),
                 std::make_move_iterator(msgs.end()));
@@ -283,6 +286,7 @@ nlohmann::json ChannelManager::getStatus() const {
         }
         ch["settings"] = settings;
         if (e->platform) ch["details"] = e->platform->getStatus();
+        ch["stats"] = e->stats.toJson();
         arr.push_back(ch);
     }
     return arr;
@@ -319,6 +323,46 @@ nlohmann::json ChannelManager::toJson() const {
         arr.push_back(ch);
     }
     return arr;
+}
+
+// ── Statistics ───────────────────────────────────────────────────────────────
+
+const ChannelStats* ChannelManager::getChannelStats(const std::string& channelId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (const auto& e : m_channels)
+        if (e->config.id == channelId) return &e->stats;
+    return nullptr;
+}
+
+nlohmann::json ChannelManager::getStatsJson() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : m_channels) {
+        nlohmann::json ch;
+        ch["channelId"] = e->config.id;
+        ch["channelName"] = e->config.name;
+        ch["platform"]  = e->config.platform;
+        ch["connected"] = e->platform ? e->platform->isConnected() : false;
+        ch["stats"]     = e->stats.toJson();
+        arr.push_back(ch);
+    }
+    return arr;
+}
+
+void ChannelManager::resetChannelStats(const std::string& channelId) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (auto& e : m_channels) {
+        if (e->config.id == channelId) {
+            e->stats.reset();
+            return;
+        }
+    }
+}
+
+void ChannelManager::resetAllStats() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (auto& e : m_channels)
+        e->stats.reset();
 }
 
 } // namespace is::core
