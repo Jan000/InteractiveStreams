@@ -129,7 +129,7 @@ void StreamInstance::update(double dt) {
 }
 
 void StreamInstance::render(double alpha) {
-    bool encoderRunning = (m_encoder && m_encoder->isRunning());
+    bool encoderRunning = isStreaming();
     bool windowActive   = !Application::instance().renderer().isHeadless();
 
     m_jpegFrameCounter++;
@@ -168,13 +168,22 @@ void StreamInstance::render(double alpha) {
 }
 
 void StreamInstance::encodeFrame() {
-    if (m_encoder && m_encoder->isRunning()) {
-        m_encoder->encodeFrame(getFrameBuffer());
+    const sf::Uint8* pixels = getFrameBuffer();
+    bool anyFailed = false;
+    for (auto& [chId, enc] : m_encoders) {
+        if (enc && enc->isRunning()) {
+            enc->encodeFrame(pixels);
+        }
+        if (enc && enc->hasFailed()) {
+            spdlog::error("[Stream '{}'] Encoder for channel '{}' failed – removing.",
+                          m_config.name, chId);
+            enc->stop();
+            enc.reset();
+            anyFailed = true;
+        }
     }
-    // Detect broken pipe and clean up the dead encoder
-    if (m_encoder && m_encoder->hasFailed()) {
-        spdlog::error("[Stream '{}'] FFmpeg encoder failed – stopping streaming.", m_config.name);
-        stopStreaming();
+    if (anyFailed) {
+        std::erase_if(m_encoders, [](const auto& p) { return !p.second; });
     }
 }
 
@@ -650,7 +659,10 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
 // ── Streaming control ────────────────────────────────────────────────────────
 
 bool StreamInstance::isStreaming() const {
-    return m_encoder && m_encoder->isRunning();
+    for (const auto& [chId, enc] : m_encoders) {
+        if (enc && enc->isRunning()) return true;
+    }
+    return false;
 }
 
 void StreamInstance::triggerPlatformInfoUpdate() {
@@ -662,23 +674,41 @@ void StreamInstance::triggerPlatformInfoUpdate() {
 }
 
 bool StreamInstance::startStreaming() {
-    std::string url = m_config.getFullStreamUrl();
-    if (url.empty()) {
-        spdlog::warn("[Stream '{}'] Cannot start: no stream URL configured.", m_config.name);
+    auto& cm = Application::instance().channelManager();
+    bool anyStarted = false;
+
+    for (const auto& chId : m_config.channelIds) {
+        const auto* cfg = cm.getChannelConfig(chId);
+        if (!cfg) continue;
+
+        std::string url = cfg->settings.value("stream_url", "");
+        std::string key = cfg->settings.value("stream_key", "");
+        if (url.empty()) continue;
+
+        std::string fullUrl = key.empty() ? url : url + "/" + key;
+
+        streaming::EncoderSettings es;
+        es.outputUrl  = fullUrl;
+        es.width      = width();
+        es.height     = height();
+        es.fps        = m_config.fps;
+        es.bitrate    = m_config.bitrate;
+        es.preset     = m_config.preset;
+        es.codec      = m_config.codec;
+
+        auto enc = std::make_unique<streaming::StreamEncoder>(es);
+        enc->start();
+        spdlog::info("[Stream '{}'] Streaming to {} via channel '{}'",
+                     m_config.name, url, chId);
+        m_encoders[chId] = std::move(enc);
+        anyStarted = true;
+    }
+
+    if (!anyStarted) {
+        spdlog::warn("[Stream '{}'] Cannot start: no channels with stream URLs configured.",
+                     m_config.name);
         return false;
     }
-    streaming::EncoderSettings es;
-    es.outputUrl  = url;
-    es.width      = width();
-    es.height     = height();
-    es.fps        = m_config.fps;
-    es.bitrate    = m_config.bitrate;
-    es.preset     = m_config.preset;
-    es.codec      = m_config.codec;
-
-    m_encoder = std::make_unique<streaming::StreamEncoder>(es);
-    m_encoder->start();
-    spdlog::info("[Stream '{}'] Streaming started to {}", m_config.name, url);
 
     // Update Twitch/YouTube stream info immediately when going live
     triggerPlatformInfoUpdate();
@@ -686,10 +716,10 @@ bool StreamInstance::startStreaming() {
 }
 
 void StreamInstance::stopStreaming() {
-    if (m_encoder) {
-        m_encoder->stop();
-        m_encoder.reset();
+    for (auto& [chId, enc] : m_encoders) {
+        if (enc) enc->stop();
     }
+    m_encoders.clear();
 }
 
 // ── Configuration update ─────────────────────────────────────────────────────
@@ -729,8 +759,6 @@ nlohmann::json StreamInstance::getState() const {
     s["title"]      = m_config.title;
     s["description"]= m_config.description;
     s["fixedGame"]  = m_config.fixedGame;
-    s["streamUrl"]  = m_config.streamUrl;
-    s["streamKey"]  = m_config.streamKey;
     s["fps"]        = m_config.fps;
     s["bitrate"]    = m_config.bitrate;
     s["preset"]     = m_config.preset;
@@ -823,8 +851,6 @@ nlohmann::json StreamInstance::toJson() const {
                         m_config.gameMode == GameModeType::Vote  ? "vote"  : "random";
     j["fixed_game"]   = m_config.fixedGame;
     j["channel_ids"]  = m_config.channelIds;
-    j["stream_url"]   = m_config.streamUrl;
-    j["stream_key"]   = m_config.streamKey;
     j["enabled"]      = m_config.enabled;
     j["fps"]          = m_config.fps;
     j["bitrate_kbps"] = m_config.bitrate;
@@ -890,8 +916,6 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
             c.channelIds.push_back(ch.get<std::string>());
     }
 
-    c.streamUrl = j.value("stream_url", "");
-    c.streamKey = j.value("stream_key", "");
     c.enabled   = j.value("enabled", true);
     c.fps       = j.value("fps", 30);
     c.bitrate   = j.value("bitrate_kbps", 4500);

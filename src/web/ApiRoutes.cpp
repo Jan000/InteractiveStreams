@@ -180,7 +180,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         bool ok = app.streamManager().startStreaming(id);
         if (!ok) {
             res.status = 400;
-            res.set_content(R"({"error":"Cannot start streaming: no RTMP URL configured. Set stream URL and key first."})", "application/json");
+            res.set_content(R"({"error":"Cannot start streaming: no assigned channels have a stream URL configured."})", "application/json");
             return;
         }
         res.set_content(R"({"success":true})", "application/json");
@@ -284,9 +284,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             }
         }
         if (cfg.contains("streams")) {
-            for (auto& st : cfg["streams"]) {
-                if (st.contains("stream_key")) st["stream_key"] = "***";
-            }
+            // stream_key is now per-channel, not per-stream
         }
         res.set_content(cfg.dump(2), "application/json");
     });

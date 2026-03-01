@@ -75,27 +75,42 @@ std::string ChannelManager::addChannel(const ChannelConfig& cfg) {
 }
 
 void ChannelManager::updateChannel(const std::string& id, const ChannelConfig& cfg) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& entry : m_channels) {
-        if (entry->config.id == id) {
-            bool wasConnected = entry->platform && entry->platform->isConnected();
-            if (wasConnected) entry->platform->disconnect();
+    std::unique_ptr<platform::IPlatform> oldPlatform;
+    bool needReconnect = false;
 
-            entry->config = cfg;
-            entry->config.id = id; // preserve ID
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& entry : m_channels) {
+            if (entry->config.id == id) {
+                bool wasConnected = entry->platform && entry->platform->isConnected();
 
-            entry->platform = createPlatform(cfg.platform);
-            if (entry->platform && !cfg.settings.is_null()) {
-                entry->platform->configure(cfg.settings);
+                // Move old platform out – will be disconnected outside the lock
+                oldPlatform = std::move(entry->platform);
+
+                entry->config = cfg;
+                entry->config.id = id; // preserve ID
+
+                entry->platform = createPlatform(cfg.platform);
+                if (entry->platform && !cfg.settings.is_null()) {
+                    entry->platform->configure(cfg.settings);
+                }
+                needReconnect = (wasConnected && cfg.enabled && entry->platform != nullptr);
+                spdlog::info("[ChannelManager] Channel updated: '{}'", id);
+                break;
             }
-            if (wasConnected && cfg.enabled && entry->platform) {
-                entry->platform->connect();
-            }
-            spdlog::info("[ChannelManager] Channel updated: '{}'", id);
-            return;
         }
     }
-    spdlog::warn("[ChannelManager] Channel not found for update: '{}'", id);
+
+    // Disconnect old platform OUTSIDE the lock (may block on thread join)
+    if (oldPlatform) {
+        oldPlatform->disconnect();
+        oldPlatform.reset();
+    }
+
+    // Reconnect new platform outside the lock
+    if (needReconnect) {
+        connectChannel(id);
+    }
 }
 
 void ChannelManager::removeChannel(const std::string& id) {

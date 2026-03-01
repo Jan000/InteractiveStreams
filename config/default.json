@@ -34,7 +34,9 @@
                 "bot_username": "InteractiveStreamsBot",
                 "channel": "",
                 "server": "irc.chat.twitch.tv",
-                "port": 6667
+                "port": 6667,
+                "stream_url": "rtmp://live.twitch.tv/app",
+                "stream_key": ""
             }
         },
         {
@@ -46,7 +48,9 @@
                 "api_key": "",
                 "live_chat_id": "",
                 "channel_id": "",
-                "poll_interval": 2000
+                "poll_interval": 2000,
+                "stream_url": "",
+                "stream_key": ""
             }
         }
     ],
@@ -58,8 +62,6 @@
             "game_mode": "fixed",
             "fixed_game": "chaos_arena",
             "channel_ids": ["local"],
-            "stream_url": "",
-            "stream_key": "",
             "enabled": true,
             "fps": 30,
             "bitrate_kbps": 4500,

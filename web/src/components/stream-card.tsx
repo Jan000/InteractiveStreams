@@ -86,8 +86,6 @@ export function StreamCard({
   const [gameMode, setGameMode] = useState(stream.gameMode);
   const [fixedGame, setFixedGame] = useState(stream.fixedGame ?? "");
   const [channelIds, setChannelIds] = useState<string[]>(stream.channelIds);
-  const [streamUrl, setStreamUrl] = useState(stream.streamUrl ?? "");
-  const [streamKey, setStreamKey] = useState(stream.streamKey ?? "");
   const [fps, setFps] = useState(stream.fps ?? 30);
   const [bitrate, setBitrate] = useState(stream.bitrate ?? 4500);
   const [preset, setPreset] = useState(stream.preset ?? "veryfast");
@@ -171,8 +169,6 @@ export function StreamCard({
       setGameMode(stream.gameMode);
       setFixedGame(stream.fixedGame ?? "");
       setChannelIds(stream.channelIds);
-      setStreamUrl(stream.streamUrl ?? "");
-      setStreamKey(stream.streamKey ?? "");
       setFps(stream.fps ?? 30);
       setBitrate(stream.bitrate ?? 4500);
       setPreset(stream.preset ?? "veryfast");
@@ -215,8 +211,6 @@ export function StreamCard({
         game_mode: gameMode,
         fixed_game: fixedGame || undefined,
         channel_ids: channelIds,
-        stream_url: streamUrl || undefined,
-        stream_key: streamKey || undefined,
         fps,
         bitrate_kbps: bitrate,
         preset,
@@ -263,12 +257,6 @@ export function StreamCard({
         await api.stopStreaming(stream.id);
         toast.success("Streaming stopped");
       } else {
-        // Validate locally first for instant feedback
-        if (!stream.streamUrl && !streamUrl) {
-          toast.error("No RTMP URL configured. Set stream URL and key in settings first.");
-          setSettingsOpen(true);
-          return;
-        }
         await api.startStreaming(stream.id);
         toast.success("Streaming started");
       }
@@ -327,7 +315,7 @@ export function StreamCard({
     }
   };
 
-  const hasValidUrl = !!(stream.streamUrl || streamUrl);
+  const hasValidUrl = channelIds.length > 0; // streaming URLs now live on channels
 
   return (
     <Card
@@ -821,42 +809,11 @@ export function StreamCard({
               </div>
             </div>
 
-            {/* RTMP / Streaming Output */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">
-                RTMP Output
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">
-                    RTMP URL
-                  </Label>
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="rtmp://live.twitch.tv/app"
-                    value={streamUrl}
-                    onChange={(e) => set(setStreamUrl)(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">
-                    Stream Key
-                  </Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="password"
-                    placeholder="live_..."
-                    value={streamKey}
-                    onChange={(e) => set(setStreamKey)(e.target.value)}
-                  />
-                </div>
-              </div>
-              {!hasValidUrl && (
-                <p className="text-[10px] text-yellow-500">
-                  ⚠ No RTMP URL set. Streaming cannot start without a valid URL.
-                </p>
-              )}
-            </div>
+            {!hasValidUrl && (
+              <p className="text-[10px] text-yellow-500">
+                ⚠ No channels assigned. Add channels and configure their stream URLs to go live.
+              </p>
+            )}
 
             {/* Encoding Settings */}
             <div className="space-y-1.5">

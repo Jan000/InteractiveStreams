@@ -40,9 +40,7 @@ struct StreamConfig {
     ResolutionPreset resolution = ResolutionPreset::Mobile;
     GameModeType gameMode = GameModeType::Fixed;
     std::string fixedGame = "chaos_arena";
-    std::vector<std::string> channelIds;   ///< subscribed input channels
-    std::string streamUrl;                 ///< RTMP output URL
-    std::string streamKey;
+    std::vector<std::string> channelIds;   ///< subscribed input/output channels
     bool enabled = true;
     int fps      = 30;
     int bitrate  = 4500;
@@ -51,11 +49,6 @@ struct StreamConfig {
 
     int width()  const { return resolution == ResolutionPreset::Mobile ? 1080 : 1920; }
     int height() const { return resolution == ResolutionPreset::Mobile ? 1920 : 1080; }
-
-    std::string getFullStreamUrl() const {
-        if (streamKey.empty()) return streamUrl;
-        return streamUrl + "/" + streamKey;
-    }
 
     // ── Per-game descriptions (optional, overrides stream description) ───
     /// Map: game_id -> description for that game
@@ -176,8 +169,8 @@ private:
     bool               m_fontLoaded = false;
     bool               m_rtReady    = false;
 
-    // Encoding
-    std::unique_ptr<streaming::StreamEncoder>  m_encoder;
+    // Encoding – one encoder per output channel (channelId → encoder)
+    std::unordered_map<std::string, std::unique_ptr<streaming::StreamEncoder>> m_encoders;
 
     // JPEG frame buffer for web preview (thread-safe)
     mutable std::mutex     m_jpegMutex;

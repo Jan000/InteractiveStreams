@@ -68,6 +68,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   const [twitchBot, setTwitchBot] = useState("InteractiveStreamsBot");
   const [twitchServer, setTwitchServer] = useState("irc.chat.twitch.tv");
   const [twitchPort, setTwitchPort] = useState(6667);
+  // Streaming output (Twitch / YouTube)
+  const [streamUrl, setStreamUrl] = useState("");
+  const [streamKey, setStreamKey] = useState("");
   // YouTube
   const [ytApiKey, setYtApiKey] = useState("");
   const [ytLiveChatId, setYtLiveChatId] = useState("");
@@ -104,6 +107,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           bot_username: twitchBot,
           server: twitchServer,
           port: twitchPort,
+          stream_url: streamUrl,
+          stream_key: streamKey,
         };
         await api.updateChannel(channel.id, { platform, name, enabled, settings });
         await api.connectChannel(channel.id);
@@ -163,6 +168,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       setTwitchBot((s.bot_username as string) ?? "InteractiveStreamsBot");
       setTwitchServer((s.server as string) ?? "irc.chat.twitch.tv");
       setTwitchPort((s.port as number) ?? 6667);
+      // Streaming output
+      setStreamUrl((s.stream_url as string) ?? "");
+      setStreamKey((s.stream_key as string) ?? "");
       // YouTube
       setYtApiKey((s.api_key as string) ?? "");
       setYtLiveChatId((s.live_chat_id as string) ?? "");
@@ -190,6 +198,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         bot_username: twitchBot,
         server: twitchServer,
         port: twitchPort,
+        stream_url: streamUrl,
+        stream_key: streamKey,
       };
     }
     if (platform === "youtube") {
@@ -198,6 +208,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         live_chat_id: ytLiveChatId,
         channel_id: ytChannelId,
         poll_interval: ytPollInterval,
+        stream_url: streamUrl,
+        stream_key: streamKey,
       };
     }
     return { console_input: consoleInput };
@@ -455,6 +467,41 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     />
                   </div>
                 </div>
+                {/* RTMP Streaming Output */}
+                <div className="space-y-1.5 rounded border border-dashed p-2">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Streaming Output (RTMP)
+                  </Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        RTMP URL
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="rtmp://live.twitch.tv/app"
+                        value={streamUrl}
+                        onChange={(e) =>
+                          markDirty(setStreamUrl)(e.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Stream Key
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        type="password"
+                        placeholder="live_..."
+                        value={streamKey}
+                        onChange={(e) =>
+                          markDirty(setStreamKey)(e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -515,6 +562,41 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     value={ytPollInterval}
                     onChange={markDirty(setYtPollInterval)}
                   />
+                </div>
+                {/* RTMP Streaming Output */}
+                <div className="space-y-1.5 rounded border border-dashed p-2">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    Streaming Output (RTMP)
+                  </Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        RTMP URL
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="rtmp://a.rtmp.youtube.com/live2"
+                        value={streamUrl}
+                        onChange={(e) =>
+                          markDirty(setStreamUrl)(e.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Stream Key
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        type="password"
+                        placeholder="xxxx-xxxx-xxxx-xxxx"
+                        value={streamKey}
+                        onChange={(e) =>
+                          markDirty(setStreamKey)(e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

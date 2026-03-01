@@ -17,8 +17,6 @@ export interface StreamState {
   channelIds: string[];
   // Editable config fields
   fixedGame: string;
-  streamUrl: string;
-  streamKey: string;
   fps: number;
   bitrate: number;
   preset: string;
