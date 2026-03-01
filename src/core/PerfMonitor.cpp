@@ -78,7 +78,7 @@ nlohmann::json PerfMonitor::toJson(int seconds) const {
         });
     }
 
-    return {"samples", arr};
+    return {{"samples", arr}};
 }
 
 nlohmann::json PerfMonitor::getAverages(int seconds) const {
