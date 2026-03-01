@@ -93,6 +93,20 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             cfg.enabled  = body.value("enabled", false);
             if (body.contains("settings")) cfg.settings = body["settings"];
 
+            // Preserve redacted secrets – the GET response replaces them
+            // with "***"; don't let that overwrite real values.
+            const auto* existing = app.channelManager().getChannelConfig(id);
+            if (existing && cfg.settings.is_object() && existing->settings.is_object()) {
+                for (const char* key : {"oauth_token", "api_key", "stream_key"}) {
+                    if (cfg.settings.contains(key)
+                        && cfg.settings[key].is_string()
+                        && cfg.settings[key].get<std::string>() == "***"
+                        && existing->settings.contains(key)) {
+                        cfg.settings[key] = existing->settings[key];
+                    }
+                }
+            }
+
             app.channelManager().updateChannel(id, cfg);
             app.persistChannels();
             res.set_content(R"({"success":true})", "application/json");

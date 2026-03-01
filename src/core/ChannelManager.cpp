@@ -307,6 +307,8 @@ nlohmann::json ChannelManager::getStatus() const {
                 settings["oauth_token"] = "***";
             if (settings.contains("api_key") && !settings["api_key"].get<std::string>().empty())
                 settings["api_key"] = "***";
+            if (settings.contains("stream_key") && !settings["stream_key"].get<std::string>().empty())
+                settings["stream_key"] = "***";
         }
         ch["settings"] = settings;
         if (e->platform) ch["details"] = e->platform->getStatus();
