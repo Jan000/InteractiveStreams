@@ -9,6 +9,9 @@ import { api, type StatusResponse } from "@/lib/api";
 export function useStatus(interval = 1000) {
   const [data, setData] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  const refresh = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
     let active = true;
@@ -28,9 +31,9 @@ export function useStatus(interval = 1000) {
     };
     poll();
     return () => { active = false; };
-  }, [interval]);
+  }, [interval, tick]);
 
-  return { data, error };
+  return { data, error, refresh };
 }
 
 /**
@@ -42,7 +45,10 @@ export function useFrameStream(streamId: string | null, fps = 10) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!streamId) return;
+    if (!streamId || fps <= 0) {
+      setConnected(false);
+      return;
+    }
     let active = true;
     setConnected(false);
 

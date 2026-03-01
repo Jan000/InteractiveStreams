@@ -27,10 +27,17 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
+const PREVIEW_SPEEDS: { label: string; fps: number }[] = [
+  { label: "Fast (10 fps)", fps: 10 },
+  { label: "Slow (2 fps)", fps: 2 },
+  { label: "Off", fps: 0 },
+];
+
 export default function StreamsPage() {
-  const { data, error } = useStatus(1000);
+  const { data, error, refresh } = useStatus(1000);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [previewFps, setPreviewFps] = useState(10);
 
   // New stream form state
   const [newName, setNewName] = useState("");
@@ -54,6 +61,7 @@ export default function StreamsPage() {
       toast.success("Stream created");
       setDialogOpen(false);
       setNewName("");
+      refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create stream");
     }
@@ -191,15 +199,32 @@ export default function StreamsPage() {
               channels={data.channels}
               selected={selectedStream?.id === s.id}
               onSelect={() => setSelectedId(s.id)}
+              onRefresh={refresh}
             />
           ))}
         </div>
 
         {/* Live preview sidebar */}
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold">Live Preview</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Live Preview</h2>
+            <div className="flex gap-1">
+              {PREVIEW_SPEEDS.map((s) => (
+                <Button
+                  key={s.fps}
+                  size="sm"
+                  variant={previewFps === s.fps ? "default" : "ghost"}
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => setPreviewFps(s.fps)}
+                >
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </div>
           <StreamPreview
             streamId={selectedStream?.id ?? null}
+            fps={previewFps}
             aspectClass={
               selectedStream?.resolution === "desktop"
                 ? "aspect-video"

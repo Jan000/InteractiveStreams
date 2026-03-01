@@ -20,6 +20,8 @@ export function StreamPreview({
 }: StreamPreviewProps) {
   const { canvasRef, connected } = useFrameStream(streamId, fps);
 
+  const disabled = fps <= 0;
+
   return (
     <div
       className={cn(
@@ -28,28 +30,30 @@ export function StreamPreview({
         className
       )}
     >
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 h-full w-full object-contain"
-      />
+      {!disabled && (
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 h-full w-full object-contain"
+        />
+      )}
 
       {/* Connection indicator */}
       <div className="absolute right-2 top-2">
         <Badge
-          variant={connected ? "default" : "secondary"}
+          variant={connected && !disabled ? "default" : "secondary"}
           className={cn(
             "text-[10px] px-1.5 py-0",
-            connected && "bg-green-600 hover:bg-green-600"
+            connected && !disabled && "bg-green-600 hover:bg-green-600"
           )}
         >
-          {connected ? "LIVE" : "NO SIGNAL"}
+          {disabled ? "OFF" : connected ? "LIVE" : "NO SIGNAL"}
         </Badge>
       </div>
 
-      {/* Placeholder when no stream selected */}
-      {!streamId && (
+      {/* Placeholder when no stream selected or disabled */}
+      {(!streamId || disabled) && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-          Select a stream to preview
+          {disabled ? "Preview disabled" : "Select a stream to preview"}
         </div>
       )}
     </div>

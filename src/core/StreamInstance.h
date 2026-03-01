@@ -32,6 +32,8 @@ enum class ResolutionPreset {
 struct StreamConfig {
     std::string id;
     std::string name = "Stream";
+    std::string title;                     ///< Stream title (shown on Twitch/YouTube)
+    std::string description;               ///< Stream description / about
     ResolutionPreset resolution = ResolutionPreset::Mobile;
     GameModeType gameMode = GameModeType::Fixed;
     std::string fixedGame = "chaos_arena";
@@ -94,7 +96,8 @@ public:
     // ── Streaming control ────────────────────────────────────────────────
 
     bool isStreaming() const;
-    void startStreaming();
+    /// Start streaming. Returns true on success, false if config is invalid.
+    bool startStreaming();
     void stopStreaming();
 
     // ── Serialisation ────────────────────────────────────────────────────

@@ -87,9 +87,10 @@ size_t StreamManager::count() const {
 
 // ── Streaming control ────────────────────────────────────────────────────────
 
-void StreamManager::startStreaming(const std::string& id) {
+bool StreamManager::startStreaming(const std::string& id) {
     auto* s = getStream(id);
-    if (s) s->startStreaming();
+    if (!s) return false;
+    return s->startStreaming();
 }
 
 void StreamManager::stopStreaming(const std::string& id) {

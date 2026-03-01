@@ -7,6 +7,8 @@ const BASE = typeof window !== "undefined" && window.location.port === "8080"
 export interface StreamState {
   id: string;
   name: string;
+  title: string;
+  description: string;
   resolution: "mobile" | "desktop";
   width: number;
   height: number;

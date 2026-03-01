@@ -11,6 +11,9 @@ import {
   ChevronDown,
   ChevronUp,
   Settings2,
+  Send,
+  Tv,
+  MessageSquare,
 } from "lucide-react";
 import type { StreamState, GameInfo, ChannelState } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -33,13 +36,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface StreamCardProps {
   stream: StreamState;
@@ -75,6 +79,8 @@ export function StreamCard({
 
   // Editable settings (initialized from stream props)
   const [name, setName] = useState(stream.name);
+  const [title, setTitle] = useState(stream.title ?? "");
+  const [description, setDescription] = useState(stream.description ?? "");
   const [resolution, setResolution] = useState(stream.resolution);
   const [gameMode, setGameMode] = useState(stream.gameMode);
   const [fixedGame, setFixedGame] = useState(stream.fixedGame ?? "");
@@ -88,13 +94,44 @@ export function StreamCard({
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Chat state
+  const [chatUser, setChatUser] = useState("Player1");
+  const [chatMsg, setChatMsg] = useState("");
+  const [chatLog, setChatLog] = useState<string[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Poll chat log when chat panel is open
+  useEffect(() => {
+    if (!chatOpen) return;
+    let active = true;
+    const poll = async () => {
+      while (active) {
+        try {
+          const entries = await api.getChatLog();
+          if (active) setChatLog(entries);
+        } catch { /* ignore */ }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    };
+    poll();
+    return () => { active = false; };
+  }, [chatOpen]);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatLog]);
 
   // Sync from server when stream changes (e.g. polling update)
   useEffect(() => {
     if (!dirty) {
       setName(stream.name);
+      setTitle(stream.title ?? "");
+      setDescription(stream.description ?? "");
       setResolution(stream.resolution);
       setGameMode(stream.gameMode);
       setFixedGame(stream.fixedGame ?? "");
@@ -123,6 +160,8 @@ export function StreamCard({
     try {
       await api.updateStream(stream.id, {
         name,
+        title,
+        description,
         resolution,
         game_mode: gameMode,
         fixed_game: fixedGame || undefined,
@@ -161,12 +200,18 @@ export function StreamCard({
         await api.stopStreaming(stream.id);
         toast.success("Streaming stopped");
       } else {
+        // Validate locally first for instant feedback
+        if (!stream.streamUrl && !streamUrl) {
+          toast.error("No RTMP URL configured. Set stream URL and key in settings first.");
+          setSettingsOpen(true);
+          return;
+        }
         await api.startStreaming(stream.id);
         toast.success("Streaming started");
       }
       onRefresh?.();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : "Failed to start streaming");
     }
   };
 
@@ -188,10 +233,23 @@ export function StreamCard({
     );
   };
 
+  const handleChatSend = async () => {
+    const text = chatMsg.trim();
+    if (!text) return;
+    try {
+      await api.sendChat(chatUser, text);
+      setChatMsg("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const hasValidUrl = !!(stream.streamUrl || streamUrl);
+
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-colors",
+        "transition-colors",
         selected
           ? "border-primary ring-1 ring-primary"
           : "hover:border-muted-foreground/40"
@@ -202,6 +260,11 @@ export function StreamCard({
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <MonitorPlay className="size-4" />
           {stream.name || stream.id}
+          {stream.title && (
+            <span className="text-xs font-normal text-muted-foreground">
+              — {stream.title}
+            </span>
+          )}
         </CardTitle>
         <div className="flex items-center gap-1.5">
           <Badge variant="outline" className="text-[10px]">
@@ -215,6 +278,11 @@ export function StreamCard({
             <Badge className="bg-red-600 text-[10px] hover:bg-red-600">
               <Radio className="mr-1 size-3" />
               LIVE
+            </Badge>
+          )}
+          {!hasValidUrl && (
+            <Badge variant="secondary" className="text-[10px] text-yellow-500">
+              No URL
             </Badge>
           )}
           {dirty && (
@@ -289,33 +357,84 @@ export function StreamCard({
           </Button>
         </div>
 
-        {/* ── Collapsible Settings ──────────────────────────────── */}
-        <button
-          type="button"
-          className="flex w-full items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => setSettingsOpen((v) => !v)}
-        >
-          <Settings2 className="size-3.5" />
-          Stream Settings
-          {settingsOpen ? (
-            <ChevronUp className="ml-auto size-3.5" />
-          ) : (
-            <ChevronDown className="ml-auto size-3.5" />
-          )}
-        </button>
+        {/* ── Section toggles ──────────────────────────────────── */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setSettingsOpen((v) => !v)}
+          >
+            <Settings2 className="size-3.5" />
+            Settings
+            {settingsOpen ? (
+              <ChevronUp className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+          </button>
 
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setChatOpen((v) => !v)}
+          >
+            <MessageSquare className="size-3.5" />
+            Chat
+            {chatOpen ? (
+              <ChevronUp className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+          </button>
+        </div>
+
+        {/* ── Collapsible Settings ──────────────────────────────── */}
         {settingsOpen && (
           <div className="space-y-4 rounded-md border border-border p-3">
-            {/* Basic Settings */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Stream Info (Title / Description) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium flex items-center gap-1.5">
+                <Tv className="size-3.5" />
+                Stream Info
+              </Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Name
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    value={name}
+                    onChange={(e) => set(setName)(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Stream Title (Twitch/YouTube)
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="e.g. 🎮 Interactive Chat Games!"
+                    value={title}
+                    onChange={(e) => set(setTitle)(e.target.value)}
+                  />
+                </div>
+              </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Name</Label>
-                <Input
-                  className="h-8 text-xs"
-                  value={name}
-                  onChange={(e) => set(setName)(e.target.value)}
+                <Label className="text-[10px] text-muted-foreground">
+                  Stream Description
+                </Label>
+                <Textarea
+                  className="min-h-[60px] text-xs"
+                  placeholder="Describe your stream for viewers…"
+                  value={description}
+                  onChange={(e) => set(setDescription)(e.target.value)}
                 />
               </div>
+            </div>
+
+            {/* Resolution / Game Mode */}
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Resolution</Label>
                 <Select
@@ -333,9 +452,6 @@ export function StreamCard({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Game Mode</Label>
                 <Select
@@ -354,31 +470,32 @@ export function StreamCard({
                   </SelectContent>
                 </Select>
               </div>
-              {gameMode === "fixed" && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Fixed Game</Label>
-                  <Select
-                    value={fixedGame}
-                    onValueChange={set(setFixedGame)}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Select game…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {games.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
             </div>
+
+            {gameMode === "fixed" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Fixed Game</Label>
+                <Select
+                  value={fixedGame}
+                  onValueChange={set(setFixedGame)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select game…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {games.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Channels */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Channels</Label>
+              <Label className="text-xs">Chat Channels</Label>
               <div className="flex flex-wrap gap-1.5">
                 {channels.map((ch) => (
                   <Badge
@@ -390,19 +507,24 @@ export function StreamCard({
                     onClick={() => toggleChannel(ch.id)}
                   >
                     {ch.name || ch.id}
+                    {ch.connected && (
+                      <span className="ml-1 inline-block size-1.5 rounded-full bg-green-500" />
+                    )}
                   </Badge>
                 ))}
                 {channels.length === 0 && (
                   <span className="text-[10px] text-muted-foreground">
-                    No channels configured
+                    No channels configured — add them in the Channels tab
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Streaming / Encoding Settings */}
+            {/* RTMP / Streaming Output */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Streaming</Label>
+              <Label className="text-xs font-medium">
+                RTMP Output
+              </Label>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
@@ -428,68 +550,79 @@ export function StreamCard({
                   />
                 </div>
               </div>
+              {!hasValidUrl && (
+                <p className="text-[10px] text-yellow-500">
+                  ⚠ No RTMP URL set. Streaming cannot start without a valid URL.
+                </p>
+              )}
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground">FPS</Label>
-                <Input
-                  className="h-8 text-xs"
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={fps}
-                  onChange={(e) => set(setFps)(Number(e.target.value))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground">
-                  Bitrate (kbps)
-                </Label>
-                <Input
-                  className="h-8 text-xs"
-                  type="number"
-                  min={500}
-                  max={20000}
-                  step={500}
-                  value={bitrate}
-                  onChange={(e) => set(setBitrate)(Number(e.target.value))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground">
-                  Preset
-                </Label>
-                <Select value={preset} onValueChange={set(setPreset)}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ultrafast">ultrafast</SelectItem>
-                    <SelectItem value="superfast">superfast</SelectItem>
-                    <SelectItem value="veryfast">veryfast</SelectItem>
-                    <SelectItem value="faster">faster</SelectItem>
-                    <SelectItem value="fast">fast</SelectItem>
-                    <SelectItem value="medium">medium</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground">
-                  Codec
-                </Label>
-                <Select value={codec} onValueChange={set(setCodec)}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="libx264">libx264</SelectItem>
-                    <SelectItem value="libx265">libx265</SelectItem>
-                    <SelectItem value="h264_nvenc">h264_nvenc</SelectItem>
-                    <SelectItem value="hevc_nvenc">hevc_nvenc</SelectItem>
-                    <SelectItem value="h264_qsv">h264_qsv</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Encoding Settings */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Encoding</Label>
+              <div className="grid grid-cols-4 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    FPS
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={fps}
+                    onChange={(e) => set(setFps)(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Bitrate (kbps)
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    type="number"
+                    min={500}
+                    max={20000}
+                    step={500}
+                    value={bitrate}
+                    onChange={(e) => set(setBitrate)(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Preset
+                  </Label>
+                  <Select value={preset} onValueChange={set(setPreset)}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ultrafast">ultrafast</SelectItem>
+                      <SelectItem value="superfast">superfast</SelectItem>
+                      <SelectItem value="veryfast">veryfast</SelectItem>
+                      <SelectItem value="faster">faster</SelectItem>
+                      <SelectItem value="fast">fast</SelectItem>
+                      <SelectItem value="medium">medium</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Codec
+                  </Label>
+                  <Select value={codec} onValueChange={set(setCodec)}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="libx264">libx264</SelectItem>
+                      <SelectItem value="libx265">libx265</SelectItem>
+                      <SelectItem value="h264_nvenc">h264_nvenc</SelectItem>
+                      <SelectItem value="hevc_nvenc">hevc_nvenc</SelectItem>
+                      <SelectItem value="h264_qsv">h264_qsv</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
@@ -503,6 +636,77 @@ export function StreamCard({
               <Save className="size-3.5" />
               {saving ? "Saving…" : "Save Settings"}
             </Button>
+          </div>
+        )}
+
+        {/* ── Collapsible Chat ──────────────────────────────────── */}
+        {chatOpen && (
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <Label className="text-xs font-medium flex items-center gap-1.5">
+              <MessageSquare className="size-3.5" />
+              Live Chat
+            </Label>
+
+            {/* Chat log */}
+            <div className="h-[180px] overflow-auto rounded bg-muted/50 p-2 text-xs font-mono">
+              {chatLog.length === 0 && (
+                <p className="text-muted-foreground">No messages yet…</p>
+              )}
+              {chatLog.slice(-50).map((entry, i) => (
+                <p key={i} className="leading-relaxed">
+                  {entry}
+                </p>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Chat input */}
+            <div className="flex gap-2">
+              <Select value={chatUser} onValueChange={setChatUser}>
+                <SelectTrigger className="h-8 w-[100px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["Player1", "Player2", "Player3", "Player4"].map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                className="h-8 flex-1 text-xs"
+                placeholder="!join, !attack, !vote …"
+                value={chatMsg}
+                onChange={(e) => setChatMsg(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleChatSend()}
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-8"
+                onClick={handleChatSend}
+              >
+                <Send className="size-3.5" />
+              </Button>
+            </div>
+
+            {/* Quick commands */}
+            <div className="flex flex-wrap gap-1">
+              {["!join", "!left", "!right", "!jump", "!attack", "!special", "!dash", "!block"].map(
+                (cmd) => (
+                  <Button
+                    key={cmd}
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() => api.sendChat(chatUser, cmd)}
+                  >
+                    {cmd}
+                  </Button>
+                )
+              )}
+            </div>
           </div>
         )}
       </CardContent>
@@ -532,7 +736,11 @@ export function StreamCard({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {stream.streaming ? "Stop streaming" : "Start streaming"}
+              {stream.streaming
+                ? "Stop streaming"
+                : hasValidUrl
+                  ? "Start streaming"
+                  : "Configure RTMP URL first"}
             </TooltipContent>
           </Tooltip>
         </div>

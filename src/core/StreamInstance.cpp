@@ -347,11 +347,11 @@ bool StreamInstance::isStreaming() const {
     return m_encoder && m_encoder->isRunning();
 }
 
-void StreamInstance::startStreaming() {
+bool StreamInstance::startStreaming() {
     std::string url = m_config.getFullStreamUrl();
     if (url.empty()) {
-        spdlog::info("[Stream '{}'] No stream URL configured.", m_config.name);
-        return;
+        spdlog::warn("[Stream '{}'] Cannot start: no stream URL configured.", m_config.name);
+        return false;
     }
     streaming::EncoderSettings es;
     es.outputUrl  = url;
@@ -365,6 +365,7 @@ void StreamInstance::startStreaming() {
     m_encoder = std::make_unique<streaming::StreamEncoder>(es);
     m_encoder->start();
     spdlog::info("[Stream '{}'] Streaming started to {}", m_config.name, url);
+    return true;
 }
 
 void StreamInstance::stopStreaming() {
@@ -400,6 +401,8 @@ nlohmann::json StreamInstance::getState() const {
     s["channelIds"] = m_config.channelIds;
 
     // Editable config fields (so the dashboard can show/modify them)
+    s["title"]      = m_config.title;
+    s["description"]= m_config.description;
     s["fixedGame"]  = m_config.fixedGame;
     s["streamUrl"]  = m_config.streamUrl;
     s["streamKey"]  = m_config.streamKey;
@@ -435,6 +438,8 @@ nlohmann::json StreamInstance::toJson() const {
     nlohmann::json j;
     j["id"]           = m_config.id;
     j["name"]         = m_config.name;
+    j["title"]        = m_config.title;
+    j["description"]  = m_config.description;
     j["resolution"]   = m_config.resolution == ResolutionPreset::Mobile ? "mobile" : "desktop";
     j["game_mode"]    = m_config.gameMode == GameModeType::Fixed ? "fixed" :
                         m_config.gameMode == GameModeType::Vote  ? "vote"  : "random";
@@ -452,8 +457,10 @@ nlohmann::json StreamInstance::toJson() const {
 
 StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     StreamConfig c;
-    c.id   = j.value("id", "");
-    c.name = j.value("name", "Stream");
+    c.id          = j.value("id", "");
+    c.name        = j.value("name", "Stream");
+    c.title       = j.value("title", "");
+    c.description = j.value("description", "");
 
     std::string res = j.value("resolution", "mobile");
     c.resolution = (res == "desktop") ? ResolutionPreset::Desktop : ResolutionPreset::Mobile;
