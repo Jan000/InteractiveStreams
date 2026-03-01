@@ -208,6 +208,8 @@ private:
 
     // Periodic info message state
     double m_infoMessageTimer = 0.0;
+    int    m_chatMessagesSinceLastInfo = 0;  ///< suppresses info spam in quiet chat
+    static constexpr int INFO_MSG_MIN_CHAT_ACTIVITY = 5;
     std::string m_lastGameId;
 
     // Per-stream interaction statistics

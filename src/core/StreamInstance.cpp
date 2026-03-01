@@ -72,6 +72,7 @@ void StreamInstance::handleChatMessage(const platform::ChatMessage& msg) {
         return; // don't forward vote commands to the game
     }
     m_gameManager->handleChatMessage(msg);
+    m_chatMessagesSinceLastInfo++;
 }
 
 void StreamInstance::update(double dt) {
@@ -121,8 +122,15 @@ void StreamInstance::update(double dt) {
         if (interval > 0) {
             m_infoMessageTimer += dt;
             if (m_infoMessageTimer >= static_cast<double>(interval)) {
-                m_infoMessageTimer = 0.0;
-                sendPeriodicInfoMessage();
+                if (m_chatMessagesSinceLastInfo >= INFO_MSG_MIN_CHAT_ACTIVITY) {
+                    m_infoMessageTimer = 0.0;
+                    sendPeriodicInfoMessage();
+                    m_chatMessagesSinceLastInfo = 0;
+                } else {
+                    // Chat is quiet – postpone, keep timer at threshold so it
+                    // fires immediately once enough messages arrive.
+                    m_infoMessageTimer = static_cast<double>(interval);
+                }
             }
         }
     }
