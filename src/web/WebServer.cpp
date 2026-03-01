@@ -1,6 +1,7 @@
 #include "web/WebServer.h"
 #include "web/ApiRoutes.h"
 #include "core/Application.h"
+#include "core/Config.h"
 #include <spdlog/spdlog.h>
 #include <fstream>
 
@@ -11,11 +12,70 @@ WebServer::WebServer(int port, core::Application& app)
     , m_app(app)
     , m_server(std::make_unique<httplib::Server>())
 {
+    reloadApiKey();
+    setupAuth();
     setupRoutes();
 }
 
 WebServer::~WebServer() {
     stop();
+}
+
+void WebServer::reloadApiKey() {
+    try {
+        m_apiKey = m_app.config().get<std::string>("web.api_key", "");
+    } catch (...) {
+        m_apiKey.clear();
+    }
+    if (m_apiKey.empty()) {
+        spdlog::info("[WebServer] API authentication disabled (no api_key configured).");
+    } else {
+        spdlog::info("[WebServer] API authentication enabled (Bearer token required).");
+    }
+}
+
+void WebServer::setupAuth() {
+    // Pre-routing handler: protect /api/ endpoints when an API key is configured.
+    // Static dashboard files are always served without authentication.
+    m_server->set_pre_routing_handler(
+        [this](const httplib::Request& req, httplib::Response& res)
+            -> httplib::Server::HandlerResponse {
+        // Allow CORS preflight
+        if (req.method == "OPTIONS") return httplib::Server::HandlerResponse::Unhandled;
+
+        // Only protect API routes
+        if (req.path.find("/api/") != 0) return httplib::Server::HandlerResponse::Unhandled;
+
+        // Skip auth if no key is configured
+        if (m_apiKey.empty()) return httplib::Server::HandlerResponse::Unhandled;
+
+        // Check Authorization header: "Bearer <key>"
+        auto it = req.headers.find("Authorization");
+        if (it != req.headers.end()) {
+            const auto& val = it->second;
+            if (val.size() > 7 && val.substr(0, 7) == "Bearer " &&
+                val.substr(7) == m_apiKey) {
+                return httplib::Server::HandlerResponse::Unhandled; // authorised
+            }
+        }
+
+        // Check X-API-Key header (alternative)
+        it = req.headers.find("X-API-Key");
+        if (it != req.headers.end() && it->second == m_apiKey) {
+            return httplib::Server::HandlerResponse::Unhandled; // authorised
+        }
+
+        // Check ?api_key= query parameter (for simple browser access)
+        if (req.has_param("api_key") && req.get_param_value("api_key") == m_apiKey) {
+            return httplib::Server::HandlerResponse::Unhandled; // authorised
+        }
+
+        // Reject
+        res.status = 401;
+        res.set_content(R"({"error":"Unauthorized – provide Bearer token, X-API-Key header, or ?api_key= parameter"})",
+                        "application/json");
+        return httplib::Server::HandlerResponse::Handled;
+    });
 }
 
 void WebServer::setupRoutes() {

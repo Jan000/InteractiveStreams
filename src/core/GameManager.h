@@ -52,6 +52,9 @@ public:
     /// Forward a chat message to the active game.
     void handleChatMessage(const platform::ChatMessage& msg);
 
+    /// Set a chat feedback callback that will be installed on every loaded game.
+    void setChatFeedback(games::ChatFeedbackCallback cb);
+
     /// Update the active game.
     void update(double dt);
 
@@ -69,6 +72,9 @@ public:
 private:
     std::unique_ptr<games::IGame> m_activeGame;
     std::string                   m_activeGameName;
+
+    // Chat feedback callback (installed on every newly loaded game)
+    games::ChatFeedbackCallback   m_chatFeedback;
 
     // Deferred switch state (guarded by mutex for thread safety)
     mutable std::mutex m_switchMutex;

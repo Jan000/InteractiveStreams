@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { Save, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,8 +29,15 @@ export default function SettingsPage() {
   const [twitchRedirectUri, setTwitchRedirectUri] = useState(
     "http://localhost:8080/auth/twitch/callback/"
   );
+  // API key – stored in localStorage (client-side), sent to server which
+  // validates it against its own web.api_key config.  Empty = no auth.
+  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
+    // Load API key from localStorage
+    const savedKey = localStorage.getItem("is_api_key") ?? "";
+    setApiKey(savedKey);
+
     api
       .getSettings()
       .then((s) => {
@@ -54,8 +61,15 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Save API key to localStorage (used by api.ts for auth headers)
+      if (apiKey) {
+        localStorage.setItem("is_api_key", apiKey);
+      } else {
+        localStorage.removeItem("is_api_key");
+      }
+
       await api.updateSettings({
-        web: { port },
+        web: { port, api_key: apiKey },
         application: {
           target_fps: fps,
           headless,
@@ -158,6 +172,24 @@ export default function SettingsPage() {
                 value={port}
                 onChange={setPort}
               />
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="size-4 text-green-500" />
+                <Label htmlFor="api-key">API Key</Label>
+              </div>
+              <Input
+                id="api-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Leave empty to disable authentication"
+              />
+              <p className="text-xs text-muted-foreground">
+                When set, all API requests must include this key as a Bearer
+                token. The key is stored in your browser and sent to the server.
+              </p>
             </div>
           </CardContent>
         </Card>

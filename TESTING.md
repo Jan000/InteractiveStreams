@@ -416,6 +416,56 @@ ctest --output-on-failure -C Debug
 
 ---
 
+## Docker-Deployment testen
+
+### Container starten
+```bash
+docker compose up -d
+docker compose logs -f app
+```
+
+### Funktionstest
+1. Öffne `http://localhost:8080` im Browser
+2. Prüfe, ob das Dashboard lädt
+3. Teste Chat über API: `curl -X POST http://localhost:8080/api/chat -H "Content-Type: application/json" -d '{"username":"DockerTest","text":"!join"}'`
+
+### Container stoppen
+```bash
+docker compose down
+```
+
+---
+
+## API-Authentifizierung testen
+
+### API-Key setzen
+1. Öffne Dashboard → **Settings → Web Server**
+2. Gib einen API-Key ein und klicke **Save**
+3. Oder direkt in der Config: `"web": { "api_key": "test-key" }`
+
+### Ohne Key (→ 401 erwartet)
+```bash
+curl -v http://localhost:8080/api/status
+# → HTTP 401 Unauthorized
+```
+
+### Mit Key (→ 200 erwartet)
+```bash
+# Via Authorization Header
+curl -H "Authorization: Bearer test-key" http://localhost:8080/api/status
+
+# Via X-API-Key Header
+curl -H "X-API-Key: test-key" http://localhost:8080/api/status
+
+# Via Query-Parameter
+curl "http://localhost:8080/api/status?api_key=test-key"
+```
+
+### Key leeren (Auth deaktivieren)
+Setze `web.api_key` auf `""` → alle API-Requests sind wieder offen.
+
+---
+
 ## Fehlerbehebung
 
 ### SFML-Fenster öffnet sich nicht

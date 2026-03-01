@@ -4,6 +4,7 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+#include <string>
 
 namespace is::core { class Application; }
 
@@ -27,14 +28,19 @@ public:
     /// Get the port.
     int port() const { return m_port; }
 
+    /// Reload the API key from config (call after settings change).
+    void reloadApiKey();
+
 private:
     void setupRoutes();
+    void setupAuth();
 
     int                          m_port;
     core::Application&           m_app;
     std::unique_ptr<httplib::Server> m_server;
     std::thread                  m_thread;
     std::atomic<bool>            m_running{false};
+    std::string                  m_apiKey;   ///< empty = no auth
 };
 
 } // namespace is::web

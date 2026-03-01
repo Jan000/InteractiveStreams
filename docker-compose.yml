@@ -1,0 +1,20 @@
+# InteractiveStreams – Docker Compose
+# Usage:  docker compose up [-d]
+# Rebuild: docker compose up --build
+
+services:
+  app:
+    build: .
+    container_name: interactive-streams
+    ports:
+      - "8080:8080"       # Web dashboard
+    volumes:
+      - streams-data:/home/streams/app/data          # SQLite databases
+      - ./config:/home/streams/app/config:ro          # Config (read-only)
+    environment:
+      - DISPLAY=:99
+    restart: unless-stopped
+
+volumes:
+  streams-data:
+    driver: local

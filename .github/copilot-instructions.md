@@ -65,6 +65,12 @@ public:
     virtual bool isGameOver() const = 0;         // true wenn gesamtes Spiel beendet
     virtual nlohmann::json getState() const = 0;
     virtual nlohmann::json getCommands() const = 0;
+
+    // Chat-Feedback Callback
+    using ChatFeedbackCallback = std::function<void(const std::string&)>;
+    void setChatFeedback(ChatFeedbackCallback cb);
+protected:
+    void sendChatFeedback(const std::string& message);
 };
 ```
 
@@ -131,6 +137,21 @@ Physik und Logik laufen mit festem Zeitschritt (1/60s), Rendering interpoliert m
 4. Gefilterte Nachrichten werden an `StreamInstance::handleChatMessage()` weitergeleitet
 5. Bei Vote-Modus fängt StreamInstance `!vote`-Commands ab, ansonsten Weiterleitung an `GameManager::handleChatMessage()`
 6. `GameManager` delegiert an das aktive `IGame::onChatMessage()`
+
+### Chat-Feedback (IGame → Chat)
+Spiele können Bestätigungsnachrichten an Zuschauer senden:
+```cpp
+// In IGame.h:
+using ChatFeedbackCallback = std::function<void(const std::string&)>;
+void setChatFeedback(ChatFeedbackCallback cb) { m_chatFeedback = std::move(cb); }
+
+// In Spiel-Code aufrufen:
+sendChatFeedback("⚔️ " + name + " joined the arena!");
+```
+- `GameManager::setChatFeedback()` speichert den Callback und installiert ihn bei jedem `loadGame()`
+- `StreamInstance`-Konstruktor setzt den Callback auf `ChannelManager::sendMessageToChannel()` für alle subscribed Channels
+- Chaos Arena: Feedback bei Join und Rundengewinn
+- Color Conquest: Feedback bei Join und Game Over
 
 ### Config-System (Dotted Keys)
 Zugriff über Punkt-getrennte Schlüssel:
@@ -326,6 +347,85 @@ Performance-Metriken mit Ring-Buffer (max 3600 Samples).
 
 ---
 
+## PostProcessing (`src/rendering/PostProcessing.h/cpp`)
+
+GPU-beschleunigtes Post-Processing mit GLSL-Fragment-Shadern und Software-Fallbacks.
+
+### Architektur
+- **Shader-Dateien**: `assets/shaders/` (vignette.frag, bloom.frag, chromatic_aberration.frag, crt.frag)
+- **Laden**: `initialize()` prüft `sf::Shader::isAvailable()` und lädt alle Shader via `loadShader()`
+- **Multi-Pass**: `applyShaderPass()` zeichnet die Quelle durch einen Shader auf `m_tempTarget` (temporäre RenderTexture), dann blit zurück – nötig weil SFML nicht auf die eigene Textur durch einen Shader zeichnen kann
+
+### Effekte
+| Methode | GPU-Shader | Software-Fallback | Uniforms |
+|---------|-----------|-------------------|----------|
+| `applyVignette()` | ✅ | ✅ (Pixel-Manipulation) | `intensity` |
+| `applyBloom()` | ✅ | ❌ (No-Op) | `threshold`, `intensity`, `resolution` |
+| `applyChromaticAberration()` | ✅ | ❌ (No-Op) | `amount`, `resolution` |
+| `applyCRT()` | ✅ | ❌ (No-Op) | `scanlineIntensity`, `curvature`, `resolution` |
+| `applyScanlines()` | ❌ | ✅ (Software-only) | — |
+
+### Nutzung in Spielen
+```cpp
+// In ChaosArena::render():
+if (auto* rt = dynamic_cast<sf::RenderTexture*>(&target)) {
+    m_postProcessing.applyBloom(*rt, 0.35f);
+    m_postProcessing.applyChromaticAberration(*rt, 1.5f);
+    m_postProcessing.applyVignette(*rt, 0.4f);
+}
+```
+
+---
+
+## WebServer-Authentifizierung (`src/web/WebServer.h/cpp`)
+
+Optionale API-Key-basierte Authentifizierung für alle REST-Endpunkte.
+
+### Konfiguration
+- **Config-Key**: `web.api_key` (leer = Auth deaktiviert)
+- **Reload**: `reloadApiKey()` liest den Key aus der Config
+- **Setup**: `setupAuth()` installiert `set_pre_routing_handler` auf dem httplib-Server
+
+### Auth-Flow
+1. Pre-Routing-Handler prüft: Ist der Request ein `/api/`-Pfad?
+2. OPTIONS-Requests (CORS-Preflight) werden immer durchgelassen
+3. Statische Dateien (Dashboard) werden immer ausgeliefert
+4. Wenn `m_apiKey` leer → kein Auth, alles durchlassen
+5. Key wird geprüft in dieser Reihenfolge:
+   - `Authorization: Bearer <key>` Header
+   - `X-API-Key: <key>` Header
+   - `?api_key=<key>` Query-Parameter
+6. Bei Fehlschlag: HTTP 401 JSON-Response
+
+### Dashboard-Integration
+- `web/src/lib/api.ts`: `getApiKey()` liest aus `localStorage['is_api_key']`
+- `authHeaders()` erzeugt `Authorization: Bearer`-Header
+- `request()` fügt Auth-Headers automatisch zu allen API-Calls hinzu
+- `web/src/app/settings/page.tsx`: Passwort-Eingabefeld für API-Key, speichert in localStorage
+
+---
+
+## Docker & CI/CD
+
+### Dockerfile (Multi-Stage)
+1. **Stage 1** (`dashboard-builder`): `oven/bun:1` – `bun install && bun run build`
+2. **Stage 2** (`cpp-builder`): `ubuntu:24.04` + CMake + Dependencies – `cmake --build && ctest`
+3. **Stage 3** (`runtime`): `ubuntu:24.04` + FFmpeg + Xvfb – Minimales Runtime-Image
+
+### docker-compose.yml
+- Service `app` auf Port 8080
+- Named Volume `is-data` für SQLite-Persistenz (`data/`)
+- Config-Bind-Mount für `config/default.json`
+
+### GitHub Actions (`.github/workflows/ci.yml`)
+4 Jobs, getriggert auf Push/PR zu `main`:
+1. **dashboard**: Bun install + build, Dashboard-Artifact hochladen
+2. **build-linux**: Ubuntu + apt deps + CMake + CTest
+3. **build-windows**: MSVC + CMake + CTest (Release-Config)
+4. **docker**: Docker-Image bauen (ohne Push)
+
+---
+
 ## Abhängigkeiten & externe Tools
 
 | Dependency | Zweck | Zugriff |
@@ -380,7 +480,8 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 - Haupt-Renderer: `src/rendering/Renderer.h/cpp` – SFML-Window und Vorschau
 - Jeder Stream hat eigene `sf::RenderTexture` (in `StreamInstance`)
 - `Renderer::displayPreview()` zeigt die Textur eines ausgewählten Streams im Vorschau-Fenster
-- Neue visuelle Effekte: Eigene Renderer-Klasse erstellen und in `StreamInstance::render()` integrieren
+- **Post-Processing**: `src/rendering/PostProcessing.h/cpp` – GLSL-Shader in `assets/shaders/` (Vignette, Bloom, Chromatic Aberration, CRT). `applyShaderPass()` nutzt eine temporäre RenderTexture für Multi-Pass-Rendering. Software-Fallback für Vignette wenn keine Shader verfügbar.
+- Neue visuelle Effekte: Neuen Shader in `assets/shaders/` erstellen, in `PostProcessing` laden und in `StreamInstance::render()` oder Spiel-`render()` aufrufen
 
 ### Streaming ändern
 - Encoder: `src/streaming/StreamEncoder.h/cpp` – FFmpeg wird via `popen` als Kindprozess gestartet
@@ -397,7 +498,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 
 ## Wichtige Hinweise
 
-1. **Keine externen Shader**: Aktuell werden Effekte (Bloom, Vignette) in Software berechnet. GLSL-Shader sind als Erweiterung geplant.
+1. **GLSL-Shader**: Post-Processing nutzt GPU-Shader (`assets/shaders/`) mit Software-Fallback. `PostProcessing::initialize()` lädt alle Shader; `applyShaderPass()` rendert über temporäre `sf::RenderTexture`. Verfügbare Effekte: Vignette, Bloom, Chromatic Aberration, CRT, Scanlines.
 2. **Kein Sound**: Aktuell stumm. Ein Sound-System ist für eine spätere Phase geplant.
 3. **Pixel-Format**: Jeder Stream hat eigene `sf::RenderTexture`, der Encoder erwartet RGBA-Pixeldaten.
 4. **Thread-Sicherheit**: Plattform-Threads und Web-API-Threads nutzen `std::mutex`-geschützte Queues/States. Stream/Channel-CRUD vom Web-Thread durch Mutex geschützt. RenderTextures werden lazy im Main-Thread erstellt.
@@ -405,7 +506,10 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
 7. **Config-Persistenz**: Alle Einstellungen werden automatisch in `data/settings.db` (SQLite) persistiert. `POST /api/config/save` schreibt zusätzlich eine JSON-Backup-Datei. SQLite ist die primäre Source of Truth; `config/default.json` dient nur als Erst-Migrations-Template.
 8. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake). Dashboard ist ein Next.js-Static-Export (`web/`), gebaut mit `bun run build`. Tab-basiert: Streams, Channels, Statistics, Scoreboard, Performance, Settings. **Immer `bun` verwenden** (nicht npm/yarn).
-9. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
+9. **API-Authentifizierung**: `WebServer::setupAuth()` installiert einen `set_pre_routing_handler` der alle `/api/`-Requests prüft. Drei Auth-Methoden: `Authorization: Bearer`, `X-API-Key`-Header, `?api_key=`-Query-Param. Konfiguriert über `web.api_key` in Config. Leerer Key = Auth deaktiviert.
+10. **Docker**: Multi-Stage Dockerfile (Bun Dashboard-Build → Ubuntu C++-Build → Ubuntu Runtime mit FFmpeg+Xvfb). `docker-compose.yml` für einfaches Deployment. Named Volume für SQLite-Daten.
+11. **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`) mit 4 Jobs: Dashboard-Build, Linux-Build+Test, Windows-Build+Test, Docker-Image. Trigger auf Push/PR zu `main`.
+12. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
 
 ---
 

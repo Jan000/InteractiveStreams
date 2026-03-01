@@ -1,0 +1,10 @@
+build/
+.git/
+node_modules/
+web/node_modules/
+web/.next/
+*.exe
+*.dll
+*.obj
+*.pdb
+data/

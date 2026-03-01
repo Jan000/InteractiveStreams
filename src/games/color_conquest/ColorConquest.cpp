@@ -153,6 +153,10 @@ void ColorConquest::cmdJoin(const std::string& userId, const std::string& displa
     int totalPlayers = static_cast<int>(m_playerTeam.size());
     spdlog::info("[ColorConquest] '{}' joined Team {} ({} total players)",
                  displayName, getTeamName(team), totalPlayers);
+
+    // Chat feedback
+    sendChatFeedback("🗺️ " + displayName + " joined Team " + getTeamName(team) +
+                     "! (" + std::to_string(totalPlayers) + " players total)");
 }
 
 void ColorConquest::cmdVote(const std::string& userId, Direction dir) {
@@ -360,6 +364,10 @@ void ColorConquest::checkGameOver() {
         });
 
         spdlog::info("[ColorConquest] Game over! Winner: {} ({} cells)", winner, maxCells);
+
+        // Chat feedback – announce game winner
+        sendChatFeedback("🏆 Game Over! Team " + winner + " wins with " +
+                         std::to_string(maxCells) + " cells!");
     } else {
         m_currentRound++;
         m_phase = Phase::Playing;

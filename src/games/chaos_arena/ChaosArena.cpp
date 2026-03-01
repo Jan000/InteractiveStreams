@@ -188,6 +188,11 @@ void ChaosArena::cmdJoin(const std::string& userId, const std::string& displayNa
     }
 
     spdlog::info("[ChaosArena] Player '{}' joined! ({} players)", displayName, m_players.size());
+
+    // Chat feedback
+    sendChatFeedback("⚔️ " + displayName + " joined the arena! (" +
+                     std::to_string(m_players.size()) + "/" +
+                     std::to_string(m_maxPlayers) + " players)");
 }
 
 void ChaosArena::cmdLeft(const std::string& userId) {
@@ -707,6 +712,10 @@ void ChaosArena::checkRoundEnd() {
             m_leaderboard[lastAlive].wins++;
             m_leaderboard[lastAlive].totalScore += 100;
 
+            // Chat feedback – announce round winner
+            sendChatFeedback("🏆 " + winner.displayName + " wins Round " +
+                             std::to_string(m_roundNumber) + "!");
+
             // Record round win to persistent database (bonus points)
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
@@ -853,8 +862,14 @@ void ChaosArena::render(sf::RenderTarget& target, double alpha) {
     renderParticles(target);
     renderUI(target);
 
-    // Post-processing: vignette, scanlines
-    m_postProcessing.applyVignette(target, 0.5f);
+    // Post-processing: vignette, bloom, chromatic aberration, scanlines
+    // Effects need sf::RenderTexture – cast from the generic target
+    auto* rt = dynamic_cast<sf::RenderTexture*>(&target);
+    if (rt) {
+        m_postProcessing.applyVignette(*rt, 0.5f);
+        m_postProcessing.applyBloom(*rt, 0.7f, 0.35f);
+        m_postProcessing.applyChromaticAberration(*rt, 1.5f);
+    }
     m_postProcessing.applyScanlines(target, 0.03f);
 }
 

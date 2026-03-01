@@ -165,10 +165,23 @@ export interface StatusResponse {
 
 // ── Generic fetch helpers ─────────────────────────────────────────────────
 
+/** Read the saved API key (set in Settings page and persisted in localStorage). */
+function getApiKey(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("is_api_key") ?? "";
+}
+
+/** Build auth headers if an API key is configured. */
+function authHeaders(): Record<string, string> {
+  const key = getApiKey();
+  if (!key) return {};
+  return { Authorization: `Bearer ${key}` };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

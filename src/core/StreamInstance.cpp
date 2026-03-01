@@ -20,6 +20,16 @@ StreamInstance::StreamInstance(const StreamConfig& config)
 {
     m_gameManager = std::make_unique<GameManager>();
 
+    // Install chat feedback callback – routes game messages to all subscribed channels
+    m_gameManager->setChatFeedback([this](const std::string& message) {
+        try {
+            auto& cm = Application::instance().channelManager();
+            for (const auto& chId : m_config.channelIds) {
+                cm.sendMessageToChannel(chId, message);
+            }
+        } catch (...) {}
+    });
+
     // Font for vote overlay (may fail if not found)
     m_fontLoaded = m_font.loadFromFile("assets/fonts/JetBrainsMono-Regular.ttf");
 

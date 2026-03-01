@@ -22,6 +22,8 @@ void GameManager::loadGame(const std::string& name) {
 
     m_activeGame = std::move(game);
     m_activeGameName = name;
+    if (m_chatFeedback)
+        m_activeGame->setChatFeedback(m_chatFeedback);
     m_activeGame->initialize();
     spdlog::info("Game '{}' loaded and initialized.", name);
 
@@ -103,6 +105,13 @@ games::IGame* GameManager::activeGame() const {
 
 std::string GameManager::activeGameName() const {
     return m_activeGameName;
+}
+
+void GameManager::setChatFeedback(games::ChatFeedbackCallback cb) {
+    m_chatFeedback = std::move(cb);
+    // Also install on the currently active game (if any)
+    if (m_activeGame && m_chatFeedback)
+        m_activeGame->setChatFeedback(m_chatFeedback);
 }
 
 void GameManager::handleChatMessage(const platform::ChatMessage& msg) {

@@ -3,9 +3,14 @@
 #include "platform/ChatMessage.h"
 #include <SFML/Graphics.hpp>
 #include <string>
+#include <functional>
 #include <nlohmann/json.hpp>
 
 namespace is::games {
+
+/// Callback type for sending chat feedback to viewers.
+/// Games call this to send confirmation messages (e.g. "Player joined!").
+using ChatFeedbackCallback = std::function<void(const std::string& message)>;
 
 /// Abstract interface that all games must implement.
 /// This is the core extension point for adding new games.
@@ -30,6 +35,10 @@ public:
 
     /// Get the current font scale factor.
     float fontScale() const { return m_fontScale; }
+
+    /// Set the chat feedback callback.  The stream instance installs this
+    /// so that games can send confirmation messages to viewers.
+    void setChatFeedback(ChatFeedbackCallback cb) { m_chatFeedback = std::move(cb); }
 
     /// Initialize game state. Called once when the game is loaded.
     virtual void initialize() = 0;
@@ -61,7 +70,13 @@ public:
     virtual nlohmann::json getCommands() const = 0;
 
 protected:
+    /// Send a feedback message to viewers via the installed callback.
+    void sendChatFeedback(const std::string& message) {
+        if (m_chatFeedback) m_chatFeedback(message);
+    }
+
     float m_fontScale = 1.0f;
+    ChatFeedbackCallback m_chatFeedback;
 };
 
 } // namespace is::games

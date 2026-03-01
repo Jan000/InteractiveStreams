@@ -8,7 +8,8 @@
     },
     "web": {
         "port": 8080,
-        "enabled": true
+        "enabled": true,
+        "api_key": ""
     },
     "twitch": {
         "client_id": "",

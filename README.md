@@ -44,7 +44,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 ### Grafik & Physik
 - **Box2D-Physik** – Realistische Physik-Simulation mit Kollisionen und Knockback
 - **Partikel-System** – Tausende Partikel für Explosionen, Treffer-Funken, Trails und Effekte
-- **Post-Processing** – Vignette, Bloom-Approximation, Scanline-Effekte
+- **GLSL-Shader Post-Processing** – GPU-beschleunigte Effekte: Vignette, Bloom, Chromatic Aberration, CRT-Effekt, Scanlines (mit Software-Fallback)
 - **Animierter Hintergrund** – Parallax-Sternenhimmel mit Nebula-Effekten
 - **60 FPS Rendering** – Flüssige Darstellung mit Fixed-Timestep-Physik
 
@@ -53,6 +53,12 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Leaderboard & Score-System** – Persistente Rangliste über mehrere Runden
 - **Power-Ups** – Heilung, Geschwindigkeit, Schaden, Schild, Doppelsprung
 - **Kill-Feed** – Echtzeit-Anzeige von Eliminierungen
+- **Chat-Feedback** – Automatische Bestätigungsnachrichten an Zuschauer (Join, Win, Game Over)
+
+### DevOps & Sicherheit
+- **Docker-Container** – Multi-Stage-Build mit Dockerfile und docker-compose für Server-Deployment
+- **CI/CD Pipeline** – GitHub Actions mit Build, Test und Docker-Image für Linux und Windows
+- **API-Authentifizierung** – Bearer-Token / API-Key Schutz für alle REST-Endpunkte (konfigurierbar)
 
 ---
 
@@ -211,12 +217,22 @@ Das Web-Dashboard (`web/`) nutzt **Bun** als Package-Manager und Build-Tool.
 InteractiveStreams/
 ├── CMakeLists.txt              # Haupt-Build-Konfiguration
 ├── README.md                   # Diese Datei
+├── Dockerfile                  # Multi-Stage Docker-Build
+├── docker-compose.yml          # Docker Compose Konfiguration
+├── .dockerignore               # Docker-Ausschlüsse
 ├── .github/
-│   └── copilot-instructions.md # GitHub Copilot Anweisungen
+│   ├── copilot-instructions.md # GitHub Copilot Anweisungen
+│   └── workflows/
+│       └── ci.yml              # GitHub Actions CI/CD Pipeline
 ├── config/
 │   └── default.json            # Standard-Konfiguration
 ├── assets/
-│   └── fonts/                  # TrueType-Schriftarten
+│   ├── fonts/                  # TrueType-Schriftarten
+│   └── shaders/                # GLSL Fragment-Shader
+│       ├── bloom.frag          # Bloom-Effekt
+│       ├── chromatic_aberration.frag # Chromatische Aberration
+│       ├── crt.frag            # CRT-Monitor-Effekt
+│       └── vignette.frag       # Vignette-Effekt
 ├── src/
 │   ├── main.cpp                # Einstiegspunkt
 │   ├── core/                   # Kern-Framework
@@ -295,6 +311,7 @@ InteractiveStreams/
 - **Git** (für FetchContent)
 - **Bun** ≥ 1.0 (für das Web-Dashboard: [bun.sh](https://bun.sh))
 - **FFmpeg** (optional, für Streaming – muss im PATH sein)
+- **Docker** (optional, für Container-Deployment)
 
 ### Build (Windows)
 
@@ -454,7 +471,7 @@ bun run build        # Erzeugt statischen Export in web/out/
 | **Channels** | Chat-Kanäle (Twitch, YouTube, Local) hinzufügen, verbinden, inline bearbeiten mit plattformspezifischen Einstellungen |
 | **Scoreboard** | Persistentes Spieler-Ranking – Top 10 (24h) und Top 5 (All-Time) mit konfigurierbaren Anzeige-Einstellungen |
 | **Performance** | Live-Graphen für FPS, Frame-Time, Memory-Nutzung und Spieleranzahl mit wählbarem Zeitfenster |
-| **Settings** | Anwendungseinstellungen (FPS, Port), Spiel-Konfigurationen |
+| **Settings** | Anwendungseinstellungen (FPS, Port), Spiel-Konfigurationen, API-Key für Authentifizierung |
 
 ### Dashboard-Features
 - **Multi-Stream-Verwaltung** – Streams erstellen, konfigurieren und löschen
@@ -596,7 +613,117 @@ curl -X POST http://localhost:8080/api/chat \
 
 ---
 
-## 🔌 Erweiterbarkeit
+## � Docker-Deployment
+
+InteractiveStreams lässt sich als Docker-Container für Server-Deployments betreiben.
+
+### Docker Compose (empfohlen)
+
+```bash
+# Container starten
+docker compose up -d
+
+# Logs anzeigen
+docker compose logs -f app
+
+# Container stoppen
+docker compose down
+```
+
+Das Dashboard ist dann unter `http://localhost:8080` erreichbar.
+
+### Manuell bauen
+
+```bash
+docker build -t interactive-streams .
+docker run -d -p 8080:8080 -v is-data:/app/data interactive-streams
+```
+
+### Multi-Stage-Build
+
+Das `Dockerfile` nutzt einen 3-stufigen Build:
+1. **Dashboard-Builder** – Baut das Next.js-Frontend mit Bun
+2. **C++-Builder** – Kompiliert die C++-Anwendung mit CMake
+3. **Runtime** – Minimales Ubuntu-Image mit FFmpeg und Xvfb
+
+---
+
+## 🔄 CI/CD Pipeline
+
+GitHub Actions automatisiert Build, Test und Docker-Image-Erstellung.
+
+### Workflow (`.github/workflows/ci.yml`)
+
+| Job | Umgebung | Beschreibung |
+|-----|----------|-------------|
+| `dashboard` | Ubuntu + Bun | Web-Dashboard bauen und als Artifact hochladen |
+| `build-linux` | Ubuntu + GCC | C++-Build, Dashboard integrieren, CTest ausführen |
+| `build-windows` | Windows + MSVC | C++-Build, Dashboard integrieren, CTest ausführen |
+| `docker` | Ubuntu | Docker-Image bauen und verifizieren |
+
+Trigger: Push und Pull Requests auf `main`.
+
+---
+
+## 🔒 Authentifizierung
+
+Die REST API kann optional mit einem API-Key geschützt werden.
+
+### Konfiguration
+
+Im Dashboard unter **Settings → Web Server** einen API-Key setzen, oder direkt in der Config:
+
+```json
+{
+    "web": {
+        "port": 8080,
+        "api_key": "mein-geheimer-schluessel"
+    }
+}
+```
+
+Wenn `api_key` leer ist, ist die API ungeschützt (Standard für lokale Entwicklung).
+
+### Authentifizierung senden
+
+Die API akzeptiert den Key auf drei Wegen:
+
+1. **Authorization-Header**: `Authorization: Bearer <key>`
+2. **X-API-Key-Header**: `X-API-Key: <key>`
+3. **Query-Parameter**: `?api_key=<key>`
+
+```bash
+# Beispiel mit curl
+curl -H "Authorization: Bearer mein-key" http://localhost:8080/api/status
+```
+
+### Schutzbereich
+- Alle `/api/`-Endpunkte sind geschützt
+- Statische Dashboard-Dateien werden immer ausgeliefert
+- CORS-Preflight-Requests (OPTIONS) werden durchgelassen
+
+---
+
+## 🎨 GLSL-Shader Post-Processing
+
+InteractiveStreams nutzt GPU-beschleunigte GLSL-Fragment-Shader für visuelle Effekte. Bei fehlender GPU-Unterstützung wird automatisch auf Software-Fallbacks zurückgegriffen.
+
+### Verfügbare Shader
+
+| Shader | Datei | Beschreibung |
+|--------|-------|-------------|
+| **Vignette** | `assets/shaders/vignette.frag` | Abdunkelung der Bildränder mit smoothstep |
+| **Bloom** | `assets/shaders/bloom.frag` | 9-Tap Box-Blur auf helle Pixel über Threshold |
+| **Chromatic Aberration** | `assets/shaders/chromatic_aberration.frag` | Farbverschiebung der RGB-Kanäle basierend auf Distanz zur Mitte |
+| **CRT** | `assets/shaders/crt.frag` | Barrel-Distortion + Scanlines + RGB-Sub-Pixel-Maske |
+
+### Integration
+
+Shader werden von `PostProcessing::initialize()` geladen. Multi-Pass-Rendering nutzt eine temporäre `sf::RenderTexture` als Zwischenpuffer. Chaos Arena wendet automatisch Bloom und Chromatic Aberration an.
+
+---
+
+## �🔌 Erweiterbarkeit
 
 ### Neues Spiel hinzufügen
 
@@ -705,13 +832,12 @@ public:
 - [x] Performance-Seite mit Recharts-Graphen
 - [x] Scoring-Hooks in Chaos Arena (Round-Win, Kill) und Color Conquest (Team-Win)
 
-### Phase 3 – Polish (geplant)
-- [ ] Font-Rendering für Spielernamen und HUD-Text
-- [ ] GLSL-Shader für Bloom, CRT-Effekt, Chromatic Aberration
+### Phase 3 – Polish ✅
+- [x] GLSL-Shader für Bloom, CRT-Effekt, Chromatic Aberration, Vignette (GPU + Software-Fallback)
+- [x] Chat-Feedback (Bestätigungen an Zuschauer senden bei Join, Win, Game Over)
 - [ ] Sound-System (Hintergrundmusik, SFX)
 - [ ] Animierte Spieler-Sprites statt Rectangles
 - [ ] Verbesserte Arena-Generierung (prozedural)
-- [ ] Chat-Feedback (Bestätigungen an Zuschauer senden)
 
 ### Phase 4 – Content
 - [ ] Weiteres Spiel: Marble Race
@@ -719,11 +845,11 @@ public:
 - [ ] Weiteres Spiel: Tower Defense
 - [ ] Skin-/Cosmetic-System
 
-### Phase 5 – Production
-- [ ] Docker-Container für Server-Deployment
-- [ ] CI/CD Pipeline
-- [ ] Headless-Modus (ohne Fenster)
-- [ ] Authentifizierung für Web-Dashboard
+### Phase 5 – Production ✅
+- [x] Docker-Container für Server-Deployment (Multi-Stage-Build mit docker-compose)
+- [x] CI/CD Pipeline (GitHub Actions: Build, Test, Docker für Linux & Windows)
+- [x] Headless-Modus (ohne Fenster, für Server-Deployments)
+- [x] Authentifizierung für Web-Dashboard (Bearer-Token / API-Key)
 
 ---
 
