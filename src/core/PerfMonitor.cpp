@@ -70,6 +70,7 @@ nlohmann::json PerfMonitor::toJson(int seconds) const {
             {"time", s.timestamp},
             {"fps", static_cast<int>(s.fps)},
             {"frameTimeMs", static_cast<int>(s.frameTimeMs * 10) / 10.0},
+            {"cpuPercent", s.cpuPercent},
             {"memoryMB", s.memoryMB},
             {"activeStreams", s.activeStreams},
             {"activeChannels", s.activeChannels},
