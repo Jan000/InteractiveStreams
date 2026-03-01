@@ -27,6 +27,12 @@ bool TwitchPlatform::connect() {
         return false;
     }
 
+    // Guard: disconnect first if already running (prevents assigning to a
+    // joinable std::thread which is undefined behaviour / hangs on MSVC).
+    if (m_shouldRun || m_thread.joinable()) {
+        disconnect();
+    }
+
     m_shouldRun = true;
     m_thread = std::thread(&TwitchPlatform::ircLoop, this);
 

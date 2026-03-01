@@ -118,15 +118,21 @@ void ChannelManager::removeChannel(const std::string& id) {
         spdlog::warn("[ChannelManager] Cannot remove the local channel.");
         return;
     }
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = std::remove_if(m_channels.begin(), m_channels.end(),
-        [&id](const auto& e) { return e->config.id == id; });
-    if (it != m_channels.end()) {
-        for (auto jt = it; jt != m_channels.end(); ++jt) {
-            if ((*jt)->platform && (*jt)->platform->isConnected())
-                (*jt)->platform->disconnect();
-        }
+
+    // Move channels to remove out of the list, then disconnect outside the lock
+    std::vector<std::unique_ptr<ChannelEntry>> removed;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = std::remove_if(m_channels.begin(), m_channels.end(),
+            [&id](const auto& e) { return e->config.id == id; });
+        for (auto jt = it; jt != m_channels.end(); ++jt)
+            removed.push_back(std::move(*jt));
         m_channels.erase(it, m_channels.end());
+    }
+
+    for (auto& entry : removed) {
+        if (entry->platform && entry->platform->isConnected())
+            entry->platform->disconnect();
         spdlog::info("[ChannelManager] Channel removed: '{}'", id);
     }
 }
@@ -148,44 +154,72 @@ std::vector<ChannelConfig> ChannelManager::getAllChannels() const {
 // ── Connection management ────────────────────────────────────────────────────
 
 void ChannelManager::connectChannel(const std::string& id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& e : m_channels) {
-        if (e->config.id == id && e->platform) {
-            spdlog::info("[ChannelManager] Connecting '{}'...", e->config.name);
-            e->platform->connect();
-            return;
+    platform::IPlatform* plat = nullptr;
+    std::string name;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& e : m_channels) {
+            if (e->config.id == id && e->platform) {
+                plat = e->platform.get();
+                name = e->config.name;
+                break;
+            }
         }
+    }
+    if (plat) {
+        spdlog::info("[ChannelManager] Connecting '{}'...", name);
+        plat->connect();
     }
 }
 
 void ChannelManager::disconnectChannel(const std::string& id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& e : m_channels) {
-        if (e->config.id == id && e->platform) {
-            e->platform->disconnect();
-            return;
+    platform::IPlatform* plat = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& e : m_channels) {
+            if (e->config.id == id && e->platform) {
+                plat = e->platform.get();
+                break;
+            }
         }
+    }
+    if (plat) {
+        plat->disconnect();
     }
 }
 
 void ChannelManager::connectAllEnabled() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& e : m_channels) {
-        if (e->config.enabled && e->platform && !e->platform->isConnected()) {
-            spdlog::info("[ChannelManager] Connecting '{}'...", e->config.name);
-            if (e->platform->connect())
-                spdlog::info("[ChannelManager] '{}' connected.", e->config.name);
-            else
-                spdlog::warn("[ChannelManager] Failed to connect '{}'.", e->config.name);
+    // Collect platforms to connect outside the lock
+    struct ConnectInfo { platform::IPlatform* plat; std::string name; };
+    std::vector<ConnectInfo> toConnect;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& e : m_channels) {
+            if (e->config.enabled && e->platform && !e->platform->isConnected()) {
+                toConnect.push_back({e->platform.get(), e->config.name});
+            }
         }
+    }
+    for (auto& ci : toConnect) {
+        spdlog::info("[ChannelManager] Connecting '{}'...", ci.name);
+        if (ci.plat->connect())
+            spdlog::info("[ChannelManager] '{}' connected.", ci.name);
+        else
+            spdlog::warn("[ChannelManager] Failed to connect '{}'.", ci.name);
     }
 }
 
 void ChannelManager::disconnectAll() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& e : m_channels) {
-        if (e->platform && e->platform->isConnected())
-            e->platform->disconnect();
+    std::vector<platform::IPlatform*> toDisconnect;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto& e : m_channels) {
+            if (e->platform && e->platform->isConnected())
+                toDisconnect.push_back(e->platform.get());
+        }
+    }
+    for (auto* plat : toDisconnect) {
+        plat->disconnect();
     }
 }
 
