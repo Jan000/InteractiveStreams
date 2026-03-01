@@ -27,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
 export default function ChannelsPage() {
-  const { data, error } = useStatus(2000);
+  const { data, error, refresh } = useStatus(2000);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   // New channel form
@@ -195,7 +195,7 @@ export default function ChannelsPage() {
       {/* Channel grid */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data?.channels.map((ch) => (
-          <ChannelCard key={ch.id} channel={ch} />
+          <ChannelCard key={ch.id} channel={ch} onRefresh={refresh} />
         ))}
       </div>
 

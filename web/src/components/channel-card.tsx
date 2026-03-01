@@ -86,6 +86,17 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   const [twitchAuthLoading, setTwitchAuthLoading] = useState(false);
   const oauthPopupRef = useRef<Window | null>(null);
 
+  // Ref that always holds current form values — used by the async OAuth
+  // callback so it never reads stale closure state.
+  const formRef = useRef({
+    twitchChannel, twitchBot, twitchServer, twitchPort,
+    streamUrl, streamKey, platform, name, enabled,
+  });
+  formRef.current = {
+    twitchChannel, twitchBot, twitchServer, twitchPort,
+    streamUrl, streamKey, platform, name, enabled,
+  };
+
   // Listen for OAuth token from popup callback page
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
@@ -99,18 +110,26 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       setTwitchAuthLoading(false);
       setTwitchOauth(token);
 
+      // Read form values via ref (avoids stale closures)
+      const f = formRef.current;
+
       // Save ALL current settings with the new token, then auto-connect
       try {
         const settings = {
-          channel: twitchChannel,
+          channel: f.twitchChannel,
           oauth_token: token,
-          bot_username: twitchBot,
-          server: twitchServer,
-          port: twitchPort,
-          stream_url: streamUrl,
-          stream_key: streamKey,
+          bot_username: f.twitchBot,
+          server: f.twitchServer,
+          port: f.twitchPort,
+          stream_url: f.streamUrl,
+          stream_key: f.streamKey,
         };
-        await api.updateChannel(channel.id, { platform, name, enabled, settings });
+        await api.updateChannel(channel.id, {
+          platform: f.platform,
+          name: f.name,
+          enabled: f.enabled,
+          settings,
+        });
         await api.connectChannel(channel.id);
         toast.success("Twitch authenticated and connected!");
         setDirty(false);
@@ -240,6 +259,17 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         await api.disconnectChannel(channel.id);
         toast.success(`Disconnected from ${channel.name}`);
       } else {
+        // Auto-save unsaved changes before connecting so the server
+        // has the latest settings (channel name, token, etc.)
+        if (dirty) {
+          await api.updateChannel(channel.id, {
+            platform,
+            name,
+            enabled,
+            settings: buildSettings(),
+          });
+          setDirty(false);
+        }
         await api.connectChannel(channel.id);
         toast.success(`Connected to ${channel.name}`);
       }
