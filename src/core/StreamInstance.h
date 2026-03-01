@@ -143,6 +143,10 @@ public:
     bool startStreaming();
     void stopStreaming();
 
+    /// Immediately push current game title/category to Twitch/YouTube.
+    /// Call this after a channel connects or its OAuth token changes.
+    void triggerPlatformInfoUpdate();
+
     // ── Serialisation ────────────────────────────────────────────────────
 
     nlohmann::json getState() const;

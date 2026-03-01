@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <algorithm>
 
 namespace is::web {
 
@@ -108,7 +109,15 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     });
 
     server.Post(R"(/api/channels/([^/]+)/connect)", [&app](const httplib::Request& req, httplib::Response& res) {
-        app.channelManager().connectChannel(pathParam(req));
+        std::string chId = pathParam(req);
+        app.channelManager().connectChannel(chId);
+        // If any stream subscribes to this channel, refresh Twitch/YouTube info
+        for (auto* si : app.streamManager().allStreams()) {
+            const auto& ids = si->config().channelIds;
+            if (std::find(ids.begin(), ids.end(), chId) != ids.end()) {
+                si->triggerPlatformInfoUpdate();
+            }
+        }
         res.set_content(R"({"success":true})", "application/json");
     });
 
@@ -375,6 +384,14 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
             // Auto-connect the channel so the user doesn't have to click Connect
             app.channelManager().connectChannel(channelId);
+
+            // Refresh Twitch stream info on any stream subscribed to this channel
+            for (auto* si : app.streamManager().allStreams()) {
+                const auto& ids = si->config().channelIds;
+                if (std::find(ids.begin(), ids.end(), channelId) != ids.end()) {
+                    si->triggerPlatformInfoUpdate();
+                }
+            }
 
             spdlog::info("[API] Twitch OAuth token stored and connect triggered for channel '{}'", channelId);
             res.set_content(R"({"success":true})", "application/json");

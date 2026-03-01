@@ -570,6 +570,9 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
         if (it != m_config.gameYoutubeTitles.end()) youtubeTitle = it->second;
     }
 
+    // Fall back to the stream's general title when no per-game title is configured
+    if (twitchTitle.empty() && !m_config.title.empty()) twitchTitle = m_config.title;
+
     // If no platform names configured, nothing to do
     if (twitchCategory.empty() && twitchTitle.empty() && youtubeTitle.empty()) return;
 
@@ -650,6 +653,14 @@ bool StreamInstance::isStreaming() const {
     return m_encoder && m_encoder->isRunning();
 }
 
+void StreamInstance::triggerPlatformInfoUpdate() {
+    auto* game = m_gameManager->activeGame();
+    std::string currentGameId = game ? game->id() : m_config.fixedGame;
+    if (!currentGameId.empty()) {
+        updatePlatformInfo(currentGameId);
+    }
+}
+
 bool StreamInstance::startStreaming() {
     std::string url = m_config.getFullStreamUrl();
     if (url.empty()) {
@@ -668,6 +679,9 @@ bool StreamInstance::startStreaming() {
     m_encoder = std::make_unique<streaming::StreamEncoder>(es);
     m_encoder->start();
     spdlog::info("[Stream '{}'] Streaming started to {}", m_config.name, url);
+
+    // Update Twitch/YouTube stream info immediately when going live
+    triggerPlatformInfoUpdate();
     return true;
 }
 
