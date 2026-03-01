@@ -3,8 +3,10 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <fstream>
 #include <array>
 #include <cstdio>
+#include <filesystem>
 
 #ifdef _WIN32
 #define popen  _popen
@@ -49,15 +51,31 @@ std::string TwitchApi::curlRequest(const std::string& method,
                                    const std::string& clientId,
                                    const std::string& body)
 {
+    // Write the JSON body to a temp file to avoid cmd.exe shell escaping issues
+    // on Windows.  curl reads the body via `-d @filename` which is shell-safe.
+    std::string tempBodyPath;
+    if (!body.empty()) {
+        try {
+            auto tmp = std::filesystem::temp_directory_path() / "is_twitch_body.json";
+            tempBodyPath = tmp.string();
+            std::ofstream ofs(tempBodyPath, std::ios::trunc);
+            ofs << body;
+            ofs.close();
+        } catch (const std::exception& e) {
+            spdlog::error("[TwitchApi] Failed to write temp body file: {}", e.what());
+            return "";
+        }
+    }
+
     std::ostringstream cmd;
     cmd << "curl -s -X " << method
         << " \"" << shellEscape(url) << "\""
         << " -H \"Authorization: Bearer " << shellEscape(token) << "\""
         << " -H \"Client-Id: " << shellEscape(clientId) << "\"";
 
-    if (!body.empty()) {
+    if (!tempBodyPath.empty()) {
         cmd << " -H \"Content-Type: application/json\""
-            << " -d \"" << shellEscape(body) << "\"";
+            << " -d @\"" << shellEscape(tempBodyPath) << "\"";
     }
 
     // Redirect stderr to suppress curl progress output
@@ -73,6 +91,7 @@ std::string TwitchApi::curlRequest(const std::string& method,
     FILE* pipe = popen(cmdStr.c_str(), "r");
     if (!pipe) {
         spdlog::error("[TwitchApi] Failed to run curl.");
+        if (!tempBodyPath.empty()) std::filesystem::remove(tempBodyPath);
         return "";
     }
 
@@ -82,6 +101,13 @@ std::string TwitchApi::curlRequest(const std::string& method,
         result += buffer.data();
     }
     int rc = pclose(pipe);
+
+    // Clean up temp file
+    if (!tempBodyPath.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(tempBodyPath, ec);
+    }
+
     if (rc != 0) {
         spdlog::warn("[TwitchApi] curl exited with code {}", rc);
     }

@@ -8,6 +8,7 @@
 #include "core/PerfMonitor.h"
 #include "core/SettingsDatabase.h"
 #include "games/GameRegistry.h"
+#include "platform/twitch/TwitchApi.h"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -169,6 +170,12 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             cfg.id = id;  // preserve the path-param ID
             app.streamManager().updateStream(id, cfg);
             app.persistStreams();
+
+            // Push updated Twitch/YouTube titles/categories immediately
+            if (auto* si = app.streamManager().getStream(id)) {
+                si->triggerPlatformInfoUpdate();
+            }
+
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -411,6 +418,43 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             res.status = 400;
             res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
         }
+    });
+
+    // Diagnostic: test Twitch Helix API connectivity for a specific channel
+    server.Get(R"(/api/twitch/test/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string chId = pathParam(req);
+        nlohmann::json result;
+
+        std::string clientId = app.config().get<std::string>("twitch.client_id", "");
+        result["client_id_set"]  = !clientId.empty();
+        result["curl_available"] = platform::TwitchApi::isCurlAvailable();
+
+        const auto* cfg = app.channelManager().getChannelConfig(chId);
+        if (!cfg || cfg->platform != "twitch") {
+            result["error"] = "Channel not found or not a Twitch channel.";
+            res.set_content(result.dump(), "application/json");
+            return;
+        }
+
+        std::string token = cfg->settings.value("oauth_token", "");
+        result["oauth_token_set"] = !token.empty();
+
+        if (token.empty() || clientId.empty()) {
+            result["error"] = "Missing oauth_token or client_id. Set client_id in Settings.";
+            res.set_content(result.dump(), "application/json");
+            return;
+        }
+
+        // Test: resolve broadcaster ID
+        std::string broadcasterId = platform::TwitchApi::getBroadcasterId(token, clientId);
+        result["broadcaster_id"] = broadcasterId;
+        result["broadcaster_ok"] = !broadcasterId.empty();
+
+        if (broadcasterId.empty()) {
+            result["error"] = "Failed to resolve broadcaster ID – check OAuth token and client_id.";
+        }
+
+        res.set_content(result.dump(), "application/json");
     });
 
     // ══════════════════════════════════════════════════════════════════════

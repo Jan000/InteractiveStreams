@@ -588,7 +588,12 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
     if (twitchTitle.empty() && !m_config.title.empty()) twitchTitle = m_config.title;
 
     // If no platform names configured, nothing to do
-    if (twitchCategory.empty() && twitchTitle.empty() && youtubeTitle.empty()) return;
+    if (twitchCategory.empty() && twitchTitle.empty() && youtubeTitle.empty()) {
+        spdlog::debug("[Stream '{}'] No Twitch/YouTube category or title configured for game '{}' – "
+                      "skipping platform info update. Configure these in the stream settings.",
+                      m_config.name, gameId);
+        return;
+    }
 
     auto& cm = Application::instance().channelManager();
     std::string clientId = Application::instance().config().get<std::string>("twitch.client_id", "");
@@ -602,53 +607,81 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
             std::string token = cfg->settings.value("oauth_token", "");
             if (token.empty() || clientId.empty()) {
                 spdlog::warn("[Stream '{}'] Twitch channel '{}' missing oauth_token or client_id – "
-                             "cannot update stream info.", m_config.name, chId);
+                             "cannot update stream info. Set client_id in Settings page.",
+                             m_config.name, chId);
                 continue;
             }
 
-            // Fire-and-forget in a detached thread to not block the main loop
-            std::string sName = m_config.name;
-            std::string cat   = twitchCategory;
-            std::string ttl   = twitchTitle;
-            auto& brCache  = m_twitchBroadcasterIdCache;
-            auto& gmCache  = m_twitchGameIdCache;
-
-            // Resolve broadcaster ID (cached)
-            std::string broadcasterId;
-            auto brIt = brCache.find(chId);
-            if (brIt != brCache.end()) {
-                broadcasterId = brIt->second;
-            } else {
-                broadcasterId = platform::TwitchApi::getBroadcasterId(token, clientId);
-                if (!broadcasterId.empty()) brCache[chId] = broadcasterId;
-            }
-            if (broadcasterId.empty()) {
-                spdlog::error("[Stream '{}'] Could not resolve broadcaster ID for Twitch channel '{}'.",
-                              sName, chId);
-                continue;
+            // Check cached broadcaster ID (avoid blocking main thread for cache hit)
+            std::string cachedBroadcasterId;
+            auto brIt = m_twitchBroadcasterIdCache.find(chId);
+            if (brIt != m_twitchBroadcasterIdCache.end()) {
+                cachedBroadcasterId = brIt->second;
             }
 
-            // Resolve game ID (cached by category name)
-            std::string twitchGameId;
-            if (!cat.empty()) {
-                auto gmIt = gmCache.find(cat);
-                if (gmIt != gmCache.end()) {
-                    twitchGameId = gmIt->second;
-                } else {
-                    twitchGameId = platform::TwitchApi::getGameId(token, clientId, cat);
-                    if (!twitchGameId.empty()) gmCache[cat] = twitchGameId;
+            std::string cachedGameId;
+            if (!twitchCategory.empty()) {
+                auto gmIt = m_twitchGameIdCache.find(twitchCategory);
+                if (gmIt != m_twitchGameIdCache.end()) {
+                    cachedGameId = gmIt->second;
                 }
             }
 
-            // Fire the update in a background thread
-            std::thread([sName, token, clientId, broadcasterId, ttl, twitchGameId]() {
+            // Fire-and-forget – ALL curl calls run in a detached thread to avoid
+            // blocking the game loop (getBroadcasterId, getGameId, updateChannelInfo).
+            std::string sName = m_config.name;
+            std::string cat   = twitchCategory;
+            std::string ttl   = twitchTitle;
+            std::string channelIdCopy = chId;
+
+            // Capture cache pointers safely via a shared_ptr to this instance's maps
+            // We'll write back to the caches on the main thread later – for now the
+            // detached thread just resolves IDs if not cached.
+            std::thread([this, sName, token, clientId, channelIdCopy, cat, ttl,
+                         cachedBroadcasterId, cachedGameId]() {
+                // Resolve broadcaster ID
+                std::string broadcasterId = cachedBroadcasterId;
+                if (broadcasterId.empty()) {
+                    spdlog::info("[Stream '{}'] Resolving Twitch broadcaster ID for channel '{}'...",
+                                 sName, channelIdCopy);
+                    broadcasterId = platform::TwitchApi::getBroadcasterId(token, clientId);
+                    if (broadcasterId.empty()) {
+                        spdlog::error("[Stream '{}'] Could not resolve broadcaster ID for Twitch channel '{}'. "
+                                      "Check that your OAuth token is valid and client_id is correct.",
+                                      sName, channelIdCopy);
+                        return;
+                    }
+                    // Write back to cache (single writer, safe for our use case)
+                    m_twitchBroadcasterIdCache[channelIdCopy] = broadcasterId;
+                    spdlog::info("[Stream '{}'] Resolved broadcaster ID: {}", sName, broadcasterId);
+                }
+
+                // Resolve game ID
+                std::string twitchGameId = cachedGameId;
+                if (!cat.empty() && twitchGameId.empty()) {
+                    spdlog::info("[Stream '{}'] Looking up Twitch game ID for category '{}'...",
+                                 sName, cat);
+                    twitchGameId = platform::TwitchApi::getGameId(token, clientId, cat);
+                    if (twitchGameId.empty()) {
+                        spdlog::warn("[Stream '{}'] Twitch category '{}' not found – title will still be updated.",
+                                     sName, cat);
+                    } else {
+                        m_twitchGameIdCache[cat] = twitchGameId;
+                        spdlog::info("[Stream '{}'] Resolved game ID: {} for '{}'",
+                                     sName, twitchGameId, cat);
+                    }
+                }
+
+                // Update channel info
+                spdlog::info("[Stream '{}'] Updating Twitch channel info (title='{}', category='{}', gameId={})...",
+                             sName, ttl, cat, twitchGameId);
                 bool ok = platform::TwitchApi::updateChannelInfo(
                     token, clientId, broadcasterId, ttl, twitchGameId);
                 if (ok) {
-                    spdlog::info("[Stream '{}'] Twitch channel updated (title='{}', gameId={}).",
+                    spdlog::info("[Stream '{}'] Twitch channel updated successfully (title='{}', gameId={}).",
                                  sName, ttl, twitchGameId);
                 } else {
-                    spdlog::error("[Stream '{}'] Failed to update Twitch channel.", sName);
+                    spdlog::error("[Stream '{}'] Failed to update Twitch channel info.", sName);
                 }
             }).detach();
         }

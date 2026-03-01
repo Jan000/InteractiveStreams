@@ -14,6 +14,7 @@ import {
   Send,
   Tv,
   MessageSquare,
+  Link as LinkIcon,
 } from "lucide-react";
 import type { StreamState, GameInfo, ChannelState } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -504,6 +505,45 @@ export function StreamCard({
               </div>
             </div>
 
+            {/* Channels — controls which platform channels this stream uses (chat + streaming output) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium flex items-center gap-1.5">
+                <LinkIcon className="size-3.5" />
+                Channels
+              </Label>
+              <p className="text-[10px] text-muted-foreground">
+                Select which channels this stream reads chat from and streams to. Each channel with a stream URL becomes an RTMP output.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {channels.map((ch) => (
+                  <Badge
+                    key={ch.id}
+                    variant={
+                      channelIds.includes(ch.id) ? "default" : "outline"
+                    }
+                    className="cursor-pointer text-[10px]"
+                    onClick={() => toggleChannel(ch.id)}
+                  >
+                    {ch.name || ch.id}
+                    <span className="ml-0.5 text-[8px] opacity-60">({ch.platform})</span>
+                    {ch.connected && (
+                      <span className="ml-1 inline-block size-1.5 rounded-full bg-green-500" />
+                    )}
+                  </Badge>
+                ))}
+                {channels.length === 0 && (
+                  <span className="text-[10px] text-muted-foreground">
+                    No channels configured — add them in the Channels tab
+                  </span>
+                )}
+              </div>
+              {!hasValidUrl && (
+                <p className="text-[10px] text-yellow-500">
+                  ⚠ No channels assigned. Add channels and configure their stream URLs to go live.
+                </p>
+              )}
+            </div>
+
             {/* Resolution / Game Mode */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -782,38 +822,6 @@ export function StreamCard({
               </div>
             </div>
 
-            {/* Channels */}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Chat Channels</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {channels.map((ch) => (
-                  <Badge
-                    key={ch.id}
-                    variant={
-                      channelIds.includes(ch.id) ? "default" : "outline"
-                    }
-                    className="cursor-pointer text-[10px]"
-                    onClick={() => toggleChannel(ch.id)}
-                  >
-                    {ch.name || ch.id}
-                    {ch.connected && (
-                      <span className="ml-1 inline-block size-1.5 rounded-full bg-green-500" />
-                    )}
-                  </Badge>
-                ))}
-                {channels.length === 0 && (
-                  <span className="text-[10px] text-muted-foreground">
-                    No channels configured — add them in the Channels tab
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {!hasValidUrl && (
-              <p className="text-[10px] text-yellow-500">
-                ⚠ No channels assigned. Add channels and configure their stream URLs to go live.
-              </p>
-            )}
 
             {/* Encoding Settings */}
             <div className="space-y-1.5">
