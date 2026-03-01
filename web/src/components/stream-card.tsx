@@ -43,7 +43,7 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface StreamCardProps {
   stream: StreamState;
@@ -102,7 +102,6 @@ export function StreamCard({
   const [chatUser, setChatUser] = useState("Player1");
   const [chatMsg, setChatMsg] = useState("");
   const [chatLog, setChatLog] = useState<string[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Poll chat log when chat panel is open
   useEffect(() => {
@@ -121,10 +120,7 @@ export function StreamCard({
     return () => { active = false; };
   }, [chatOpen]);
 
-  // Auto-scroll chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatLog]);
+
 
   // Sync from server when stream changes (e.g. polling update)
   useEffect(() => {
@@ -657,7 +653,7 @@ export function StreamCard({
                   {entry}
                 </p>
               ))}
-              <div ref={chatEndRef} />
+
             </div>
 
             {/* Chat input */}
@@ -693,7 +689,7 @@ export function StreamCard({
 
             {/* Quick commands */}
             <div className="flex flex-wrap gap-1">
-              {["!join", "!left", "!right", "!jump", "!attack", "!special", "!dash", "!block"].map(
+              {["!join", "!left", "!right", "!jump", "!jumpleft", "!jumpright", "!attack", "!special", "!dash", "!block"].map(
                 (cmd) => (
                   <Button
                     key={cmd}

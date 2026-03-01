@@ -111,6 +111,10 @@ void ChaosArena::onChatMessage(const platform::ChatMessage& msg) {
         cmdRight(msg.userId);
     } else if (cmd == "!jump" || cmd == "!j" || cmd == "!w" || cmd == "!up") {
         cmdJump(msg.userId);
+    } else if (cmd == "!jumpleft" || cmd == "!jl") {
+        cmdJumpLeft(msg.userId);
+    } else if (cmd == "!jumpright" || cmd == "!jr") {
+        cmdJumpRight(msg.userId);
     } else if (cmd == "!attack" || cmd == "!hit" || cmd == "!atk") {
         cmdAttack(msg.userId);
     } else if (cmd == "!special" || cmd == "!sp" || cmd == "!ult") {
@@ -205,6 +209,58 @@ void ChaosArena::cmdJump(const std::string& userId) {
         p.jumpsLeft--;
 
         // Jump dust particles
+        auto pos = p.body->GetPosition();
+        sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
+                               SCREEN_CY + (pos.y + Player::HALF_HEIGHT) * PIXELS_PER_METER);
+        m_particles->emitDust(screenPos);
+    }
+}
+
+void ChaosArena::cmdJumpLeft(const std::string& userId) {
+    auto it = m_players.find(userId);
+    if (it == m_players.end() || !it->second.alive) return;
+    if (m_phase != GamePhase::Battle) return;
+
+    auto& p = it->second;
+    bool onGround = m_physics->isOnGround(p.body);
+    if (onGround) {
+        p.jumpsLeft = 2;
+    }
+
+    if (p.jumpsLeft > 0) {
+        p.facingDir = -1;
+        b2Vec2 vel;
+        vel.x = -p.moveSpeed;
+        vel.y = -p.jumpForce;
+        p.body->SetLinearVelocity(vel);
+        p.jumpsLeft--;
+
+        auto pos = p.body->GetPosition();
+        sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
+                               SCREEN_CY + (pos.y + Player::HALF_HEIGHT) * PIXELS_PER_METER);
+        m_particles->emitDust(screenPos);
+    }
+}
+
+void ChaosArena::cmdJumpRight(const std::string& userId) {
+    auto it = m_players.find(userId);
+    if (it == m_players.end() || !it->second.alive) return;
+    if (m_phase != GamePhase::Battle) return;
+
+    auto& p = it->second;
+    bool onGround = m_physics->isOnGround(p.body);
+    if (onGround) {
+        p.jumpsLeft = 2;
+    }
+
+    if (p.jumpsLeft > 0) {
+        p.facingDir = 1;
+        b2Vec2 vel;
+        vel.x = p.moveSpeed;
+        vel.y = -p.jumpForce;
+        p.body->SetLinearVelocity(vel);
+        p.jumpsLeft--;
+
         auto pos = p.body->GetPosition();
         sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
                                SCREEN_CY + (pos.y + Player::HALF_HEIGHT) * PIXELS_PER_METER);
@@ -1299,7 +1355,9 @@ nlohmann::json ChaosArena::getCommands() const {
         {{"command", "!join"}, {"description", "Join the game"}, {"aliases", nlohmann::json::array({"!play"})}},
         {{"command", "!left"}, {"description", "Move left"}, {"aliases", nlohmann::json::array({"!l", "!a"})}},
         {{"command", "!right"}, {"description", "Move right"}, {"aliases", nlohmann::json::array({"!r", "!d"})}},
-        {{"command", "!jump"}, {"description", "Jump (double jump available)"}, {"aliases", nlohmann::json::array({"!j", "!w", "!up"})}},
+        {{"command", "!jump"}, {"description", "Jump straight up"}, {"aliases", nlohmann::json::array({"!j", "!w", "!up"})}},
+        {{"command", "!jumpleft"}, {"description", "Jump to the left"}, {"aliases", nlohmann::json::array({"!jl"})}},
+        {{"command", "!jumpright"}, {"description", "Jump to the right"}, {"aliases", nlohmann::json::array({"!jr"})}},
         {{"command", "!attack"}, {"description", "Melee attack"}, {"aliases", nlohmann::json::array({"!hit", "!atk"})}},
         {{"command", "!special"}, {"description", "Fire projectile (5s cooldown)"}, {"aliases", nlohmann::json::array({"!sp", "!ult"})}},
         {{"command", "!dash"}, {"description", "Quick dash (3s cooldown)"}, {"aliases", nlohmann::json::array({"!dodge"})}},

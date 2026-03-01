@@ -66,6 +66,8 @@ private:
     void cmdLeft(const std::string& userId);
     void cmdRight(const std::string& userId);
     void cmdJump(const std::string& userId);
+    void cmdJumpLeft(const std::string& userId);
+    void cmdJumpRight(const std::string& userId);
     void cmdAttack(const std::string& userId);
     void cmdSpecial(const std::string& userId);
     void cmdDash(const std::string& userId);
