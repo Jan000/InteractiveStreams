@@ -133,7 +133,6 @@ set(GAME_SOURCES
 )
 
 set(PLATFORM_SOURCES
-    src/platform/PlatformManager.cpp
     src/platform/local/LocalPlatform.cpp
     src/platform/twitch/TwitchPlatform.cpp
     src/platform/youtube/YoutubePlatform.cpp
@@ -141,16 +140,12 @@ set(PLATFORM_SOURCES
 
 set(RENDERING_SOURCES
     src/rendering/Renderer.cpp
-    src/rendering/Camera.cpp
-    src/rendering/ParticleRenderer.cpp
-    src/rendering/UIOverlay.cpp
     src/rendering/Background.cpp
     src/rendering/PostProcessing.cpp
 )
 
 set(STREAMING_SOURCES
     src/streaming/StreamEncoder.cpp
-    src/streaming/StreamOutput.cpp
     src/streaming/stb_impl.cpp
 )
 
@@ -200,17 +195,13 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 
 # Copy web dashboard to build directory (Next.js static export)
 # Build with: cd web && bun run build   (produces web/out/)
-# Falls back to legacy dashboard if web/out/ does not exist.
 if(EXISTS ${CMAKE_SOURCE_DIR}/web/out)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/web/out $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
     )
 else()
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/src/web/dashboard $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
-    )
+    message(WARNING "web/out/ not found – dashboard will not be available. Run: cd web && bun run build")
 endif()
 
 # Copy config to build directory
@@ -266,7 +257,5 @@ install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 install(DIRECTORY assets/ DESTINATION bin/assets)
 if(EXISTS ${CMAKE_SOURCE_DIR}/web/out/)
     install(DIRECTORY web/out/ DESTINATION bin/dashboard)
-else()
-    install(DIRECTORY src/web/dashboard/ DESTINATION bin/dashboard)
 endif()
 install(DIRECTORY config/ DESTINATION bin/config)
