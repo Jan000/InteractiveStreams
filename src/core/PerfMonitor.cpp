@@ -67,17 +67,17 @@ nlohmann::json PerfMonitor::toJson(int seconds) const {
     for (size_t i = 0; i < samples.size(); i += step) {
         const auto& s = samples[i];
         arr.push_back({
-            {"t", s.timestamp},
+            {"time", s.timestamp},
             {"fps", static_cast<int>(s.fps)},
-            {"ft", static_cast<int>(s.frameTimeMs * 10) / 10.0},
-            {"mem", s.memoryMB},
-            {"streams", s.activeStreams},
-            {"channels", s.activeChannels},
-            {"players", s.totalPlayers}
+            {"frameTimeMs", static_cast<int>(s.frameTimeMs * 10) / 10.0},
+            {"memoryMB", s.memoryMB},
+            {"activeStreams", s.activeStreams},
+            {"activeChannels", s.activeChannels},
+            {"totalPlayers", s.totalPlayers}
         });
     }
 
-    return arr;
+    return {"samples", arr};
 }
 
 nlohmann::json PerfMonitor::getAverages(int seconds) const {
@@ -96,10 +96,17 @@ nlohmann::json PerfMonitor::getAverages(int seconds) const {
         avgMem += s.memoryMB;
     }
     double n = static_cast<double>(samples.size());
+
+    double peakMem = 0;
+    for (const auto& s : samples) {
+        if (s.memoryMB > peakMem) peakMem = static_cast<double>(s.memoryMB);
+    }
+
     return {
-        {"fps", static_cast<int>(avgFps / n)},
-        {"frameTimeMs", static_cast<int>(avgFt / n * 10) / 10.0},
-        {"memoryMB", avgMem / samples.size()},
+        {"avgFps", static_cast<int>(avgFps / n)},
+        {"avgFrameTime", static_cast<int>(avgFt / n * 10) / 10.0},
+        {"avgMemory", avgMem / samples.size()},
+        {"peakMemory", static_cast<int>(peakMem)},
         {"cpuPercent", static_cast<int>(avgCpu / n)},
         {"activeStreams", samples.back().activeStreams},
         {"activeChannels", samples.back().activeChannels},

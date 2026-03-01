@@ -150,21 +150,21 @@ export default function PerformancePage() {
         <StatCard
           icon={Timer}
           label="Avg FPS"
-          value={perf ? perf.avgFps.toFixed(1) : "—"}
+          value={perf?.avgFps != null ? perf.avgFps.toFixed(1) : "—"}
           color="green-500"
         />
         <StatCard
           icon={Cpu}
           label="Avg Frame Time"
-          value={perf ? perf.avgFrameTime.toFixed(2) : "—"}
+          value={perf?.avgFrameTime != null ? perf.avgFrameTime.toFixed(2) : "—"}
           unit="ms"
           color="blue-500"
         />
         <StatCard
           icon={HardDrive}
           label="Memory"
-          value={perf ? perf.avgMemory.toFixed(1) : "—"}
-          unit={`MB (peak: ${perf?.peakMemory.toFixed(0) ?? "—"})`}
+          value={perf?.avgMemory != null ? perf.avgMemory.toFixed(1) : "—"}
+          unit={`MB (peak: ${perf?.peakMemory != null ? perf.peakMemory.toFixed(0) : "—"})`}
           color="purple-500"
         />
         <StatCard
