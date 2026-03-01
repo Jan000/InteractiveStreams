@@ -164,6 +164,11 @@ void StreamInstance::encodeFrame() {
     if (m_encoder && m_encoder->isRunning()) {
         m_encoder->encodeFrame(getFrameBuffer());
     }
+    // Detect broken pipe and clean up the dead encoder
+    if (m_encoder && m_encoder->hasFailed()) {
+        spdlog::error("[Stream '{}'] FFmpeg encoder failed – stopping streaming.", m_config.name);
+        stopStreaming();
+    }
 }
 
 const sf::Uint8* StreamInstance::getFrameBuffer() const {

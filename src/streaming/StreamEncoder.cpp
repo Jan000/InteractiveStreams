@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <sstream>
+#include <fstream>
 
 #ifdef _WIN32
 #define popen _popen
@@ -55,10 +56,18 @@ bool StreamEncoder::start() {
         return false;
     }
 
-    // Build FFmpeg command
+    // Build stderr log path next to the executable
+    {
+        namespace fs = std::filesystem;
+        auto logDir = fs::current_path();
+        m_stderrLogPath = (logDir / "ffmpeg_stderr.log").string();
+    }
+
+    // Build FFmpeg command (redirect stderr to a log file for diagnostics)
     std::ostringstream cmd;
     cmd << m_ffmpegPath
         << " -y"
+        << " -loglevel warning"
         << " -f rawvideo"
         << " -vcodec rawvideo"
         << " -pix_fmt rgba"
@@ -74,10 +83,12 @@ bool StreamEncoder::start() {
         << " -g " << m_fps * 2  // Keyframe interval
         << " -tune zerolatency"  // Low-latency encoding for streaming
         << " -f flv"
-        << " \"" << m_outputUrl << "\"";
+        << " \"" << m_outputUrl << "\""
+        << " 2>\"" << m_stderrLogPath << "\"";
 
     std::string cmdStr = cmd.str();
     spdlog::info("[StreamEncoder] Starting FFmpeg: {}", cmdStr);
+    spdlog::info("[StreamEncoder] FFmpeg stderr log: {}", m_stderrLogPath);
 
     m_pipe = popen(cmdStr.c_str(), "wb");
     if (!m_pipe) {
@@ -106,6 +117,18 @@ void StreamEncoder::stop() {
     }
 
     spdlog::info("[StreamEncoder] Encoding stopped. Total frames: {}", m_frameCount.load());
+
+    // If it failed, try to read FFmpeg's stderr log for diagnostics
+    if (m_failed && !m_stderrLogPath.empty()) {
+        std::ifstream logFile(m_stderrLogPath);
+        if (logFile.is_open()) {
+            std::string contents((std::istreambuf_iterator<char>(logFile)),
+                                  std::istreambuf_iterator<char>());
+            if (!contents.empty()) {
+                spdlog::error("[StreamEncoder] FFmpeg stderr output:\n{}", contents);
+            }
+        }
+    }
 }
 
 void StreamEncoder::encodeFrame(const sf::Uint8* pixelData) {
@@ -134,12 +157,22 @@ void StreamEncoder::encoderThread() {
 
         // Write frame to FFmpeg's stdin
         if (m_pipe) {
-            // SFML gives us RGBA pixels top-to-bottom, which is what we told FFmpeg to expect
             size_t frameSize = m_frameBuffer.size();
             size_t written = fwrite(m_frameBuffer.data(), 1, frameSize, m_pipe);
 
             if (written != frameSize) {
+                // Check if the pipe is broken (FFmpeg exited)
+                if (written == 0 || ferror(m_pipe)) {
+                    spdlog::error("[StreamEncoder] FFmpeg pipe broken (wrote {}/{} bytes). "
+                                  "FFmpeg likely exited – check {}.",
+                                  written, frameSize, m_stderrLogPath);
+                    m_failed = true;
+                    m_running = false;
+                    break;
+                }
                 spdlog::warn("[StreamEncoder] Incomplete frame write: {}/{}", written, frameSize);
+            } else {
+                fflush(m_pipe);
             }
         }
 

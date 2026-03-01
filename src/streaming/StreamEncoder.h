@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <filesystem>
 
 namespace is::core { class Config; }
 
@@ -47,6 +48,12 @@ public:
     /// Check if encoder is running.
     bool isRunning() const { return m_running; }
 
+    /// True if the FFmpeg pipe broke (process exited / crashed).
+    bool hasFailed() const { return m_failed; }
+
+    /// Path to the FFmpeg stderr log file (empty if not started).
+    const std::string& stderrLogPath() const { return m_stderrLogPath; }
+
     /// Get current FPS.
     float getFps() const { return m_currentFps; }
 
@@ -74,6 +81,10 @@ private:
     std::condition_variable m_cv;
     std::vector<sf::Uint8>  m_frameBuffer;
     bool                    m_frameReady = false;
+
+    // Error state
+    std::atomic<bool>   m_failed{false};
+    std::string         m_stderrLogPath;
 
     // Stats
     std::atomic<size_t> m_frameCount{0};
