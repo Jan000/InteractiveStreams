@@ -219,6 +219,7 @@ export default function PerformancePage() {
                 fill="url(#fpsGrad)"
                 strokeWidth={2}
                 dot={false}
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -260,6 +261,7 @@ export default function PerformancePage() {
                   strokeWidth={2}
                   dot={false}
                   name="Frame Time (ms)"
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -306,6 +308,7 @@ export default function PerformancePage() {
                   strokeWidth={2}
                   dot={false}
                   name="Memory (MB)"
+                  isAnimationActive={false}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -346,6 +349,7 @@ export default function PerformancePage() {
                 strokeWidth={2}
                 dot={false}
                 name="Players"
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -354,6 +358,7 @@ export default function PerformancePage() {
                 strokeWidth={2}
                 dot={false}
                 name="Streams"
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -362,6 +367,7 @@ export default function PerformancePage() {
                 strokeWidth={2}
                 dot={false}
                 name="Channels"
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
