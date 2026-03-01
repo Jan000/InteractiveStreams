@@ -3,6 +3,8 @@
 #include "core/ChannelManager.h"
 #include "core/StreamManager.h"
 #include "core/Logger.h"
+#include "core/PlayerDatabase.h"
+#include "core/PerfMonitor.h"
 #include "rendering/Renderer.h"
 #include "web/WebServer.h"
 
@@ -21,6 +23,8 @@ struct Application::Impl {
     std::unique_ptr<Config>                    config;
     std::unique_ptr<ChannelManager>            channelManager;
     std::unique_ptr<StreamManager>             streamManager;
+    std::unique_ptr<PlayerDatabase>            playerDatabase;
+    std::unique_ptr<PerfMonitor>               perfMonitor;
     std::unique_ptr<rendering::Renderer>       renderer;
     std::unique_ptr<web::WebServer>            webServer;
 
@@ -59,6 +63,13 @@ void Application::initialize() {
         m_impl->channelManager->loadFromJson(cfg.raw()["channels"]);
     }
     m_impl->channelManager->connectAllEnabled();
+
+    // ── Player database (SQLite) ─────────────────────────────────────────
+    m_impl->playerDatabase = std::make_unique<PlayerDatabase>();
+    m_impl->playerDatabase->open("data/players.db");
+
+    // ── Performance monitor ──────────────────────────────────────────────
+    m_impl->perfMonitor = std::make_unique<PerfMonitor>();
 
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
@@ -161,6 +172,35 @@ void Application::mainLoop() {
                 previewStream->width(), previewStream->height());
         }
 
+        // Record performance sample
+        {
+            double fps = (frameTime > 0.0) ? (1.0 / frameTime) : 0.0;
+            double ftMs = frameTime * 1000.0;
+            int nStreams = 0;
+            int nChannels = 0;
+            int nPlayers = 0;
+            for (auto* s : m_impl->streamManager->allStreams()) {
+                if (s->isStreaming()) nStreams++;
+                auto* game = s->gameManager().activeGame();
+                if (game) {
+                    auto state = game->getState();
+                    if (state.contains("players")) {
+                        if (state["players"].is_number())
+                            nPlayers += state["players"].get<int>();
+                        else if (state["players"].is_array())
+                            nPlayers += static_cast<int>(state["players"].size());
+                        else if (state["players"].is_object())
+                            nPlayers += static_cast<int>(state["players"].size());
+                    }
+                }
+            }
+            auto chStatus = m_impl->channelManager->getStatus();
+            for (const auto& ch : chStatus) {
+                if (ch.value("connected", false)) nChannels++;
+            }
+            m_impl->perfMonitor->recordSample(fps, ftMs, nStreams, nChannels, nPlayers);
+        }
+
         // Handle window events
         m_impl->renderer->processEvents([this](const sf::Event& event) {
             if (event.type == sf::Event::Closed) requestShutdown();
@@ -184,6 +224,8 @@ void Application::shutdown() {
 Config&               Application::config()         { return *m_impl->config; }
 ChannelManager&       Application::channelManager() { return *m_impl->channelManager; }
 StreamManager&        Application::streamManager()  { return *m_impl->streamManager; }
+PlayerDatabase&       Application::playerDatabase() { return *m_impl->playerDatabase; }
+PerfMonitor&          Application::perfMonitor()    { return *m_impl->perfMonitor; }
 rendering::Renderer&  Application::renderer()       { return *m_impl->renderer; }
 web::WebServer&       Application::webServer()      { return *m_impl->webServer; }
 

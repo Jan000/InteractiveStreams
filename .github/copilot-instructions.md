@@ -262,6 +262,44 @@ Befehle in `ColorConquest::onChatMessage()`:
 
 ---
 
+## PlayerDatabase (`src/core/PlayerDatabase.h/cpp`)
+
+SQLite-basierte persistente Spieler-Datenbank für Scoreboard-Funktionalität.
+
+### Tabellen
+- `players` – user_id (PK), display_name, total_points, total_wins, games_played, first_seen, last_seen
+- `game_results` – id (autoincrement), user_id (FK), game_name, points, is_win, timestamp
+
+### Scoring-Hooks
+Spiele rufen `Application::instance().playerDatabase().recordResult()` auf:
+- **Chaos Arena**: +100 Punkte + Win bei Rundengewinn, +25 Punkte bei Kill, +1 Punkt für Teilnahme
+- **Color Conquest**: +50 Punkte + Win für Gewinner-Team, +5 Punkte für Teilnahme
+
+### API
+- `GET /api/scoreboard/recent?limit=10&hours=24` – Top-Spieler der letzten N Stunden
+- `GET /api/scoreboard/alltime?limit=5` – All-Time-Leaderboard
+- `GET /api/scoreboard/player/:id` – Einzelne Spieler-Statistiken
+
+---
+
+## PerfMonitor (`src/core/PerfMonitor.h/cpp`)
+
+Performance-Metriken mit Ring-Buffer (max 3600 Samples).
+
+### Erfasste Metriken
+- FPS, Frame-Time (ms), CPU-Auslastung (Windows: `GetProcessMemoryInfo`), RAM (MB)
+- Aktive Streams, verbundene Channels, Gesamtspielerzahl
+
+### Sampling
+- Alle 5 Frames ein Sample, Ring-Buffer mit Verwurf ältester Einträge
+- `toJson()` dünnt auf ~120 Datenpunkte für Charts aus
+
+### API
+- `GET /api/perf?seconds=60` – Durchschnittswerte
+- `GET /api/perf/history?seconds=300` – Zeitreihen für Graphen
+
+---
+
 ## Abhängigkeiten & externe Tools
 
 | Dependency | Zweck | Zugriff |
@@ -271,6 +309,7 @@ Befehle in `ColorConquest::onChatMessage()`:
 | nlohmann/json 3.11.3 | JSON-Konfiguration | `FetchContent`, `nlohmann::json` |
 | cpp-httplib 0.15.3 | HTTP-Server (Regex-Pfadmuster) | `FetchContent`, `httplib::Server` |
 | spdlog 1.13.0 | Logging | `FetchContent`, globaler Logger |
+| SQLite3 3.45.3 | Spieler-Datenbank (Scoreboard) | `FetchContent` (URL-Download Amalgamation), `sqlite3_lib` |
 | FFmpeg | RTMP-Encoding | **Extern** (muss im PATH sein), über `popen()` angesteuert |
 
 ---

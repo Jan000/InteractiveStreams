@@ -1,5 +1,7 @@
 #include "games/chaos_arena/ChaosArena.h"
 #include "games/GameRegistry.h"
+#include "core/Application.h"
+#include "core/PlayerDatabase.h"
 
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -611,6 +613,16 @@ void ChaosArena::update(double dt) {
         case GamePhase::GameOver:
             m_countdownTimer -= dt;
             if (m_countdownTimer <= 0) {
+                // Record participation for all players who played
+                try {
+                    auto& db = is::core::Application::instance().playerDatabase();
+                    for (const auto& [pid, entry] : m_leaderboard) {
+                        if (entry.totalScore == 0) {
+                            db.recordResult(pid, entry.displayName, "chaos_arena", 1, false);
+                        }
+                    }
+                } catch (...) {}
+
                 // Reset everything for a new game
                 m_roundNumber = 0;
                 m_leaderboard.clear();
@@ -675,6 +687,12 @@ void ChaosArena::checkRoundEnd() {
             winner.score += 100;
             m_leaderboard[lastAlive].wins++;
             m_leaderboard[lastAlive].totalScore += 100;
+
+            // Record round win to persistent database
+            try {
+                is::core::Application::instance().playerDatabase().recordResult(
+                    lastAlive, winner.displayName, "chaos_arena", 100, true);
+            } catch (...) {}
         }
     }
     if (m_roundTimer <= 0) {
@@ -734,6 +752,12 @@ void ChaosArena::applyDamage(Player& attacker, Player& victim, float damage,
         attacker.score += 25;
         m_leaderboard[attacker.userId].kills++;
         m_leaderboard[attacker.userId].totalScore += 25;
+
+        // Record kill points to persistent database
+        try {
+            is::core::Application::instance().playerDatabase().recordResult(
+                attacker.userId, attacker.displayName, "chaos_arena", 25, false);
+        } catch (...) {}
     }
 }
 

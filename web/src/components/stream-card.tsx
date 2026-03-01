@@ -102,6 +102,7 @@ export function StreamCard({
   const [chatUser, setChatUser] = useState("Player1");
   const [chatMsg, setChatMsg] = useState("");
   const [chatLog, setChatLog] = useState<string[]>([]);
+  const [chatTarget, setChatTarget] = useState("local"); // "local", "all", or a channelId
 
   // Poll chat log when chat panel is open
   useEffect(() => {
@@ -233,8 +234,28 @@ export function StreamCard({
     const text = chatMsg.trim();
     if (!text) return;
     try {
-      await api.sendChat(chatUser, text);
+      if (chatTarget === "local") {
+        await api.sendChat(chatUser, text);
+      } else if (chatTarget === "all") {
+        await api.broadcastChat(text);
+      } else {
+        await api.sendToChannel(chatTarget, text);
+      }
       setChatMsg("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleQuickCmd = async (cmd: string) => {
+    try {
+      if (chatTarget === "local") {
+        await api.sendChat(chatUser, cmd);
+      } else if (chatTarget === "all") {
+        await api.broadcastChat(cmd);
+      } else {
+        await api.sendToChannel(chatTarget, cmd);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     }
@@ -656,23 +677,47 @@ export function StreamCard({
 
             </div>
 
-            {/* Chat input */}
+            {/* Target + User selector */}
             <div className="flex gap-2">
-              <Select value={chatUser} onValueChange={setChatUser}>
-                <SelectTrigger className="h-8 w-[100px] text-xs">
+              <Select value={chatTarget} onValueChange={setChatTarget}>
+                <SelectTrigger className="h-8 w-[140px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {["Player1", "Player2", "Player3", "Player4"].map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="local">🖥️ Local (Test)</SelectItem>
+                  <SelectItem value="all">📡 All Channels</SelectItem>
+                  {channels
+                    .filter((ch) => ch.id !== "local")
+                    .map((ch) => (
+                      <SelectItem key={ch.id} value={ch.id}>
+                        {ch.platform === "twitch" ? "🟣" : ch.platform === "youtube" ? "🔴" : "📡"}{" "}
+                        {ch.name || ch.id}
+                        {ch.connected ? "" : " (offline)"}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
+              {chatTarget === "local" && (
+                <Select value={chatUser} onValueChange={setChatUser}>
+                  <SelectTrigger className="h-8 w-[100px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["Player1", "Player2", "Player3", "Player4"].map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* Chat input */}
+            <div className="flex gap-2">
               <Input
                 className="h-8 flex-1 text-xs"
-                placeholder="!join, !attack, !vote …"
+                placeholder={chatTarget === "local" ? "!join, !attack, !vote …" : "Type a message…"}
                 value={chatMsg}
                 onChange={(e) => setChatMsg(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleChatSend()}
@@ -687,22 +732,24 @@ export function StreamCard({
               </Button>
             </div>
 
-            {/* Quick commands */}
-            <div className="flex flex-wrap gap-1">
-              {["!join", "!left", "!right", "!jump", "!jumpleft", "!jumpright", "!attack", "!special", "!dash", "!block"].map(
-                (cmd) => (
-                  <Button
-                    key={cmd}
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-[10px]"
-                    onClick={() => api.sendChat(chatUser, cmd)}
-                  >
-                    {cmd}
-                  </Button>
-                )
-              )}
-            </div>
+            {/* Quick commands (only for local test) */}
+            {chatTarget === "local" && (
+              <div className="flex flex-wrap gap-1">
+                {["!join", "!left", "!right", "!jump", "!jumpleft", "!jumpright", "!attack", "!special", "!dash", "!block"].map(
+                  (cmd) => (
+                    <Button
+                      key={cmd}
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() => handleQuickCmd(cmd)}
+                    >
+                      {cmd}
+                    </Button>
+                  )
+                )}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

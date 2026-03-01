@@ -6,9 +6,10 @@ import {
   MonitorPlay,
   Radio,
   Settings,
-  MessageSquare,
   Gamepad2,
   Power,
+  Trophy,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -25,8 +26,9 @@ import {
 const nav = [
   { href: "/", label: "Streams", icon: MonitorPlay },
   { href: "/channels", label: "Channels", icon: Radio },
+  { href: "/scoreboard", label: "Scoreboard", icon: Trophy },
+  { href: "/performance", label: "Performance", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/chat", label: "Chat Test", icon: MessageSquare },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

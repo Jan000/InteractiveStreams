@@ -68,6 +68,14 @@ public:
     void injectLocalMessage(const std::string& username, const std::string& text);
     std::vector<std::string> getLocalMessageLog() const;
 
+    // ── Send messages to channels ────────────────────────────────────────
+
+    /// Send a message to a specific channel.
+    bool sendMessageToChannel(const std::string& channelId, const std::string& text);
+
+    /// Send a message to all connected channels.
+    int sendMessageToAll(const std::string& text);
+
     // ── Platform access ──────────────────────────────────────────────────
 
     platform::IPlatform* getPlatform(const std::string& channelId);

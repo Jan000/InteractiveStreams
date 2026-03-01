@@ -59,6 +59,37 @@ export interface GameInfo {
   description: string;
 }
 
+export interface ScoreEntry {
+  displayName: string;
+  gameName: string;
+  points: number;
+  wins: number;
+  gamesPlayed: number;
+  timestamp: number;
+}
+
+export interface PerfSample {
+  time: number;
+  fps: number;
+  frameTimeMs: number;
+  cpuPercent: number;
+  memoryMB: number;
+  activeStreams: number;
+  activeChannels: number;
+  totalPlayers: number;
+}
+
+export interface PerfData {
+  avgFps: number;
+  avgFrameTime: number;
+  avgMemory: number;
+  peakMemory: number;
+  activeStreams: number;
+  activeChannels: number;
+  totalPlayers: number;
+  samples: PerfSample[];
+}
+
 export interface StatusResponse {
   version: string;
   streams: StreamState[];
@@ -152,6 +183,24 @@ export const api = {
   sendChat: (username: string, text: string) =>
     post<{ success: boolean }>("/api/chat", { username, text }),
   getChatLog: () => get<string[]>("/api/chat/log"),
+  sendToChannel: (channelId: string, text: string) =>
+    post<{ success: boolean }>(`/api/channels/${channelId}/send`, { text }),
+  broadcastChat: (text: string) =>
+    post<{ success: boolean; sent_to: number }>("/api/chat/broadcast", { text }),
+
+  // Scoreboard
+  getScoreboardRecent: (limit = 10, hours = 24) =>
+    get<{ leaderboard: ScoreEntry[] }>(`/api/scoreboard/recent?limit=${limit}&hours=${hours}`),
+  getScoreboardAllTime: (limit = 5) =>
+    get<{ leaderboard: ScoreEntry[] }>(`/api/scoreboard/alltime?limit=${limit}`),
+  getPlayerStats: (userId: string) =>
+    get<ScoreEntry>(`/api/scoreboard/player/${encodeURIComponent(userId)}`),
+
+  // Performance
+  getPerf: (seconds = 60) =>
+    get<PerfData>(`/api/perf?seconds=${seconds}`),
+  getPerfHistory: (seconds = 300) =>
+    get<{ samples: PerfSample[] }>(`/api/perf/history?seconds=${seconds}`),
 
   // Frame preview URL (not JSON – returns JPEG binary)
   frameUrl: (streamId: string) => `${BASE}/api/streams/${streamId}/frame`,

@@ -1,6 +1,16 @@
 "use client";
 
-import { Plug, PlugZap, Trash2, Radio } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  Plug,
+  PlugZap,
+  Trash2,
+  Radio,
+  Save,
+  Settings2,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import type { ChannelState } from "@/lib/api";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +23,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -32,6 +52,105 @@ const platformIcons: Record<string, string> = {
 };
 
 export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
+  const isLocal = channel.id === "local";
+
+  // Editable fields
+  const [name, setName] = useState(channel.name ?? "");
+  const [platform, setPlatform] = useState(channel.platform ?? "local");
+  const [enabled, setEnabled] = useState(channel.enabled ?? false);
+
+  // Platform-specific settings
+  // Twitch
+  const [twitchChannel, setTwitchChannel] = useState("");
+  const [twitchOauth, setTwitchOauth] = useState("");
+  const [twitchBot, setTwitchBot] = useState("InteractiveStreamsBot");
+  const [twitchServer, setTwitchServer] = useState("irc.chat.twitch.tv");
+  const [twitchPort, setTwitchPort] = useState(6667);
+  // YouTube
+  const [ytApiKey, setYtApiKey] = useState("");
+  const [ytLiveChatId, setYtLiveChatId] = useState("");
+  const [ytChannelId, setYtChannelId] = useState("");
+  const [ytPollInterval, setYtPollInterval] = useState(2000);
+  // Local
+  const [consoleInput, setConsoleInput] = useState(true);
+
+  // UI state
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync from server when channel data changes (polling)
+  useEffect(() => {
+    if (!dirty) {
+      setName(channel.name ?? "");
+      setPlatform(channel.platform ?? "local");
+      setEnabled(channel.enabled ?? false);
+      const s = channel.settings ?? {};
+      // Twitch
+      setTwitchChannel((s.channel as string) ?? "");
+      setTwitchOauth((s.oauth_token as string) ?? "");
+      setTwitchBot((s.bot_username as string) ?? "InteractiveStreamsBot");
+      setTwitchServer((s.server as string) ?? "irc.chat.twitch.tv");
+      setTwitchPort((s.port as number) ?? 6667);
+      // YouTube
+      setYtApiKey((s.api_key as string) ?? "");
+      setYtLiveChatId((s.live_chat_id as string) ?? "");
+      setYtChannelId((s.channel_id as string) ?? "");
+      setYtPollInterval((s.poll_interval as number) ?? 2000);
+      // Local
+      setConsoleInput((s.console_input as boolean) ?? true);
+    }
+  }, [channel, dirty]);
+
+  const markDirty = useCallback(
+    <T,>(setter: React.Dispatch<React.SetStateAction<T>>) =>
+      (val: T) => {
+        setter(val);
+        setDirty(true);
+      },
+    []
+  );
+
+  const buildSettings = (): Record<string, unknown> => {
+    if (platform === "twitch") {
+      return {
+        channel: twitchChannel,
+        oauth_token: twitchOauth,
+        bot_username: twitchBot,
+        server: twitchServer,
+        port: twitchPort,
+      };
+    }
+    if (platform === "youtube") {
+      return {
+        api_key: ytApiKey,
+        live_chat_id: ytLiveChatId,
+        channel_id: ytChannelId,
+        poll_interval: ytPollInterval,
+      };
+    }
+    return { console_input: consoleInput };
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.updateChannel(channel.id, {
+        platform,
+        name,
+        enabled,
+        settings: buildSettings(),
+      });
+      toast.success("Channel updated");
+      setDirty(false);
+      onRefresh?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleConnect = async () => {
     try {
       if (channel.connected) {
@@ -48,7 +167,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   };
 
   const handleDelete = async () => {
-    if (channel.id === "local") {
+    if (isLocal) {
       toast.error("Cannot delete the local channel");
       return;
     }
@@ -66,7 +185,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <span className="text-lg">{platformIcons[channel.platform] ?? "📡"}</span>
+          <span className="text-lg">
+            {platformIcons[channel.platform] ?? "📡"}
+          </span>
           {channel.name || channel.id}
         </CardTitle>
         <div className="flex items-center gap-1.5">
@@ -90,21 +211,248 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
               "Disconnected"
             )}
           </Badge>
+          {dirty && (
+            <Badge variant="secondary" className="text-[10px]">
+              unsaved
+            </Badge>
+          )}
         </div>
       </CardHeader>
 
-      <CardContent>
+      <CardContent className="space-y-3">
+        {/* Info row */}
         <p className="text-xs text-muted-foreground">
-          ID: <code className="rounded bg-muted px-1 py-0.5">{channel.id}</code>
-          {channel.enabled !== undefined && (
-            <span className="ml-3">
-              Enabled:{" "}
-              <span className={channel.enabled ? "text-green-500" : "text-red-500"}>
-                {channel.enabled ? "Yes" : "No"}
-              </span>
+          ID:{" "}
+          <code className="rounded bg-muted px-1 py-0.5">{channel.id}</code>
+          <span className="ml-3">
+            Enabled:{" "}
+            <span
+              className={enabled ? "text-green-500" : "text-red-500"}
+            >
+              {enabled ? "Yes" : "No"}
             </span>
-          )}
+          </span>
         </p>
+
+        {/* Settings toggle */}
+        <button
+          type="button"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setSettingsOpen((v) => !v)}
+        >
+          <Settings2 className="size-3.5" />
+          Settings
+          {settingsOpen ? (
+            <ChevronUp className="size-3.5" />
+          ) : (
+            <ChevronDown className="size-3.5" />
+          )}
+        </button>
+
+        {/* ── Collapsible Settings ────────────────────────────── */}
+        {settingsOpen && (
+          <div className="space-y-4 rounded-md border border-border p-3">
+            {/* General */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Name</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={name}
+                  onChange={(e) => markDirty(setName)(e.target.value)}
+                  disabled={isLocal}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Platform</Label>
+                <Select
+                  value={platform}
+                  onValueChange={markDirty(setPlatform)}
+                  disabled={isLocal}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">Local</SelectItem>
+                    <SelectItem value="twitch">Twitch</SelectItem>
+                    <SelectItem value="youtube">YouTube</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={enabled}
+                onCheckedChange={markDirty(setEnabled)}
+                disabled={isLocal}
+              />
+              <Label className="text-xs">Enabled</Label>
+            </div>
+
+            {/* ── Twitch settings ──────────────────────────────── */}
+            {platform === "twitch" && (
+              <div className="space-y-3">
+                <Label className="text-xs font-medium">Twitch Settings</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Channel
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="your_channel"
+                      value={twitchChannel}
+                      onChange={(e) =>
+                        markDirty(setTwitchChannel)(e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Bot Username
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      value={twitchBot}
+                      onChange={(e) => markDirty(setTwitchBot)(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    OAuth Token
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    type="password"
+                    placeholder="oauth:abc123..."
+                    value={twitchOauth}
+                    onChange={(e) =>
+                      markDirty(setTwitchOauth)(e.target.value)
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      IRC Server
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      value={twitchServer}
+                      onChange={(e) =>
+                        markDirty(setTwitchServer)(e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Port
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      type="number"
+                      value={twitchPort}
+                      onChange={(e) =>
+                        markDirty(setTwitchPort)(Number(e.target.value))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── YouTube settings ─────────────────────────────── */}
+            {platform === "youtube" && (
+              <div className="space-y-3">
+                <Label className="text-xs font-medium">YouTube Settings</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    API Key
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    type="password"
+                    placeholder="AIza..."
+                    value={ytApiKey}
+                    onChange={(e) => markDirty(setYtApiKey)(e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Live Chat ID
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="Cg0KC..."
+                      value={ytLiveChatId}
+                      onChange={(e) =>
+                        markDirty(setYtLiveChatId)(e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Channel ID
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="UC..."
+                      value={ytChannelId}
+                      onChange={(e) =>
+                        markDirty(setYtChannelId)(e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Poll Interval (ms)
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    type="number"
+                    min={500}
+                    max={30000}
+                    step={500}
+                    value={ytPollInterval}
+                    onChange={(e) =>
+                      markDirty(setYtPollInterval)(Number(e.target.value))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ── Local settings ───────────────────────────────── */}
+            {platform === "local" && (
+              <div className="space-y-3">
+                <Label className="text-xs font-medium">Local Settings</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={consoleInput}
+                    onCheckedChange={markDirty(setConsoleInput)}
+                  />
+                  <Label className="text-xs">Console Input</Label>
+                </div>
+              </div>
+            )}
+
+            {/* Save */}
+            <Button
+              size="sm"
+              className="w-full gap-1"
+              disabled={!dirty || saving}
+              onClick={handleSave}
+            >
+              <Save className="size-3.5" />
+              {saving ? "Saving…" : "Save Settings"}
+            </Button>
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="flex justify-between border-t pt-3">
@@ -132,7 +480,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           </TooltipContent>
         </Tooltip>
 
-        {channel.id !== "local" && (
+        {!isLocal && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

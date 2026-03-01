@@ -4,6 +4,8 @@
 #include "core/ChannelManager.h"
 #include "core/StreamManager.h"
 #include "core/StreamInstance.h"
+#include "core/PlayerDatabase.h"
+#include "core/PerfMonitor.h"
 #include "games/GameRegistry.h"
 
 #include <nlohmann/json.hpp>
@@ -321,6 +323,106 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         auto log = app.channelManager().getLocalMessageLog();
         nlohmann::json j = log;
         res.set_content(j.dump(), "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Platform Chat (send to specific channel or all)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Send a message to a specific channel
+    server.Post(R"(/api/channels/([^/]+)/send)", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string channelId = pathParam(req);
+            auto body = nlohmann::json::parse(req.body);
+            std::string text = body.value("text", "");
+            if (text.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"Empty message"})", "application/json");
+                return;
+            }
+            bool ok = app.channelManager().sendMessageToChannel(channelId, text);
+            if (!ok) {
+                res.status = 400;
+                res.set_content(R"({"error":"Channel not found or not connected"})", "application/json");
+                return;
+            }
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // Send a message to all connected channels
+    server.Post("/api/chat/broadcast", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string text = body.value("text", "");
+            if (text.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"Empty message"})", "application/json");
+                return;
+            }
+            int sent = app.channelManager().sendMessageToAll(text);
+            res.set_content(nlohmann::json({{"success",true},{"sent_to",sent}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Scoreboard (Player Database)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Top players in last N hours (default 24h, limit default 10)
+    server.Get("/api/scoreboard/recent", [&app](const httplib::Request& req, httplib::Response& res) {
+        int limit = 10;
+        int hours = 24;
+        if (req.has_param("limit"))
+            limit = std::min(50, std::max(1, std::stoi(req.get_param_value("limit"))));
+        if (req.has_param("hours"))
+            hours = std::min(720, std::max(1, std::stoi(req.get_param_value("hours"))));
+        res.set_content(app.playerDatabase().recentToJson(limit, hours).dump(2), "application/json");
+    });
+
+    // All-time top players (default limit 5)
+    server.Get("/api/scoreboard/alltime", [&app](const httplib::Request& req, httplib::Response& res) {
+        int limit = 5;
+        if (req.has_param("limit"))
+            limit = std::min(50, std::max(1, std::stoi(req.get_param_value("limit"))));
+        res.set_content(app.playerDatabase().allTimeToJson(limit).dump(2), "application/json");
+    });
+
+    // Player stats by userId
+    server.Get(R"(/api/scoreboard/player/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto stats = app.playerDatabase().getPlayerStats(pathParam(req));
+        if (stats.empty()) {
+            res.status = 404;
+            res.set_content(R"({"error":"Player not found"})", "application/json");
+            return;
+        }
+        res.set_content(stats.dump(2), "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Performance Monitoring
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Current averages (last 60s by default)
+    server.Get("/api/perf", [&app](const httplib::Request& req, httplib::Response& res) {
+        int seconds = 60;
+        if (req.has_param("seconds"))
+            seconds = std::min(600, std::max(5, std::stoi(req.get_param_value("seconds"))));
+        res.set_content(app.perfMonitor().getAverages(seconds).dump(2), "application/json");
+    });
+
+    // Time-series data for charts (last 300s by default)
+    server.Get("/api/perf/history", [&app](const httplib::Request& req, httplib::Response& res) {
+        int seconds = 300;
+        if (req.has_param("seconds"))
+            seconds = std::min(3600, std::max(10, std::stoi(req.get_param_value("seconds"))));
+        res.set_content(app.perfMonitor().toJson(seconds).dump(), "application/json");
     });
 
     // ══════════════════════════════════════════════════════════════════════

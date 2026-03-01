@@ -75,6 +75,14 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
+# SQLite3 – amalgamation via sqlite_modern_cpp wrapper alternative:
+# We use the raw amalgamation from the official mirror for maximum compatibility.
+FetchContent_Declare(
+    sqlite3
+    URL https://www.sqlite.org/2024/sqlite-amalgamation-3450300.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
 # Suppress deprecation warnings from older CMakeLists in dependencies
 set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sfml box2d json httplib spdlog)
@@ -87,6 +95,17 @@ if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
 endif()
 
+# SQLite3 amalgamation – no CMakeLists.txt, create a static library
+FetchContent_GetProperties(sqlite3)
+if(NOT sqlite3_POPULATED)
+    FetchContent_Populate(sqlite3)
+endif()
+add_library(sqlite3_lib STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+target_include_directories(sqlite3_lib PUBLIC ${sqlite3_SOURCE_DIR})
+if(MSVC)
+    target_compile_options(sqlite3_lib PRIVATE /wd4706 /wd4100)
+endif()
+
 # ─── Source files ─────────────────────────────────────────────────────────────
 set(CORE_SOURCES
     src/core/Application.cpp
@@ -96,6 +115,8 @@ set(CORE_SOURCES
     src/core/ChannelManager.cpp
     src/core/StreamInstance.cpp
     src/core/StreamManager.cpp
+    src/core/PlayerDatabase.cpp
+    src/core/PerfMonitor.cpp
 )
 
 set(GAME_SOURCES
@@ -163,6 +184,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     nlohmann_json::nlohmann_json
     httplib::httplib
     spdlog::spdlog
+    sqlite3_lib
 )
 
 # ─── Speed: Precompiled Header ────────────────────────────────────────────────

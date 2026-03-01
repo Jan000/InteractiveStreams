@@ -9,6 +9,8 @@ class Config;
 class ChannelManager;
 class StreamManager;
 class Logger;
+class PlayerDatabase;
+class PerfMonitor;
 
 }
 
@@ -43,6 +45,8 @@ public:
     Config&               config();
     ChannelManager&       channelManager();
     StreamManager&        streamManager();
+    PlayerDatabase&       playerDatabase();
+    PerfMonitor&          perfMonitor();
     rendering::Renderer&  renderer();
     web::WebServer&       webServer();
 

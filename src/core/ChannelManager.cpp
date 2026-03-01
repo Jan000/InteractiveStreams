@@ -238,6 +238,29 @@ platform::IPlatform* ChannelManager::getPlatform(const std::string& channelId) {
     return nullptr;
 }
 
+bool ChannelManager::sendMessageToChannel(const std::string& channelId,
+                                           const std::string& text) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (auto& e : m_channels) {
+        if (e->config.id == channelId && e->platform && e->platform->isConnected()) {
+            return e->platform->sendMessage(text);
+        }
+    }
+    spdlog::warn("[ChannelManager] Cannot send to '{}': not found or not connected.", channelId);
+    return false;
+}
+
+int ChannelManager::sendMessageToAll(const std::string& text) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int sent = 0;
+    for (auto& e : m_channels) {
+        if (e->platform && e->platform->isConnected()) {
+            if (e->platform->sendMessage(text)) sent++;
+        }
+    }
+    return sent;
+}
+
 // ── Status / serialisation ───────────────────────────────────────────────────
 
 nlohmann::json ChannelManager::getStatus() const {
@@ -250,6 +273,15 @@ nlohmann::json ChannelManager::getStatus() const {
         ch["name"]     = e->config.name;
         ch["enabled"]  = e->config.enabled;
         ch["connected"] = e->platform ? e->platform->isConnected() : false;
+        // Include settings but redact secrets
+        auto settings = e->config.settings;
+        if (!settings.is_null()) {
+            if (settings.contains("oauth_token") && !settings["oauth_token"].get<std::string>().empty())
+                settings["oauth_token"] = "***";
+            if (settings.contains("api_key") && !settings["api_key"].get<std::string>().empty())
+                settings["api_key"] = "***";
+        }
+        ch["settings"] = settings;
         if (e->platform) ch["details"] = e->platform->getStatus();
         arr.push_back(ch);
     }

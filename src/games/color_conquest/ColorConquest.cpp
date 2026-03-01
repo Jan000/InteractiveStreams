@@ -1,4 +1,6 @@
 #include "games/color_conquest/ColorConquest.h"
+#include "core/Application.h"
+#include "core/PlayerDatabase.h"
 
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -311,13 +313,26 @@ void ColorConquest::checkGameOver() {
 
         // Determine winner
         int maxCells = 0;
+        TeamId winnerTeam = TeamId::None;
         std::string winner = "Nobody";
         for (int i = 0; i < 4; i++) {
             if (m_teams[i].cellCount > maxCells) {
                 maxCells = m_teams[i].cellCount;
-                winner = getTeamName(static_cast<TeamId>(i + 1));
+                winnerTeam = static_cast<TeamId>(i + 1);
+                winner = getTeamName(winnerTeam);
             }
         }
+
+        // Record scores to persistent database
+        try {
+            auto& db = is::core::Application::instance().playerDatabase();
+            for (const auto& [userId, team] : m_playerTeam) {
+                const auto& name = m_playerNames.count(userId) ? m_playerNames.at(userId) : userId;
+                bool isWin = (team == winnerTeam);
+                int points = isWin ? 50 : 5;  // 50 for winners, 5 for participation
+                db.recordResult(userId, name, "color_conquest", points, isWin);
+            }
+        } catch (...) {}
 
         m_events.push_back({
             "GAME OVER! Team " + winner + " wins with " +

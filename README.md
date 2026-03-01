@@ -33,7 +33,9 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Desktop & Mobile** – Wählbare Auflösung pro Stream: 1080×1920 (Mobile/Vertikal) oder 1920×1080 (Desktop)
 - **Chat-basierte Steuerung** – Zuschauer steuern ihre Spielfiguren über Chat-Befehle
 - **Modulare Spielarchitektur** – Neue Spiele als eigenständige Module hinzufügbar
-- **Web-Admin-Dashboard** – Next.js + TypeScript + shadcn/ui Dashboard mit Tabs für Streams, Channels, Settings und Chat-Test, inkl. Live-Stream-Vorschau
+- **Web-Admin-Dashboard** – Next.js + TypeScript + shadcn/ui Dashboard mit Tabs für Streams, Channels, Scoreboard, Performance und Settings, inkl. Live-Stream-Vorschau
+- **SQLite Scoreboard** – Persistente Spieler-Datenbank mit Top 10 (24h) und Top 5 (All-Time), konfigurierbare Anzeige
+- **Performance-Monitoring** – Live-Graphen für FPS, Frame-Time, Memory und Spieleranzahl mit konfigurierbarem Zeitfenster
 - **Headless Mode** – Betrieb ohne GUI-Fenster (für Server-Deployments, z.B. Ubuntu Server)
 - **Alle Einstellungen via Web** – Kein manuelles Bearbeiten von Konfigurationsdateien nötig
 - **Plattformunabhängig** – Läuft auf Windows, Linux und macOS
@@ -190,6 +192,8 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 | **JSON** | nlohmann/json | 3.11.3 |
 | **HTTP-Server** | cpp-httplib | 0.15.3 |
 | **Logging** | spdlog | 1.13.0 |
+| **Datenbank** | SQLite3 | 3.45.3 |
+| **Charts** | Recharts | 3.7.0 |
 | **Streaming** | FFmpeg (extern) | — |
 
 Alle Abhängigkeiten werden automatisch über **CMake FetchContent** heruntergeladen und gebaut.
@@ -217,6 +221,8 @@ InteractiveStreams/
 │   │   ├── StreamManager.h/cpp  # Multi-Stream-Verwaltung (CRUD)
 │   │   ├── StreamInstance.h/cpp # Einzelne Stream-Instanz (Game + Render + Encode)
 │   │   ├── GameManager.h/cpp   # Spiel-Verwaltung pro Stream
+│   │   ├── PlayerDatabase.h/cpp # SQLite Spieler-Datenbank & Scoreboard
+│   │   ├── PerfMonitor.h/cpp    # Performance-Metriken (FPS, Memory, etc.)
 │   │   └── Logger.h/cpp        # Logging (spdlog)
 │   ├── games/                  # Spiele-Module
 │   │   ├── IGame.h             # Spiel-Interface (abstrakt)
@@ -430,10 +436,11 @@ bun run build        # Erzeugt statischen Export in web/out/
 
 | Tab | Beschreibung |
 |-----|-------------|
-| **Streams** | Alle aktiven Streams verwalten – Spiel wechseln, Game-Modus setzen, Streaming starten/stoppen |
-| **Channels** | Chat-Kanäle (Twitch, YouTube, Local) hinzufügen, verbinden, konfigurieren |
+| **Streams** | Alle aktiven Streams verwalten – Spiel wechseln, Game-Modus setzen, Streaming starten/stoppen, Chat an Plattformen senden |
+| **Channels** | Chat-Kanäle (Twitch, YouTube, Local) hinzufügen, verbinden, inline bearbeiten mit plattformspezifischen Einstellungen |
+| **Scoreboard** | Persistentes Spieler-Ranking – Top 10 (24h) und Top 5 (All-Time) mit konfigurierbaren Anzeige-Einstellungen |
+| **Performance** | Live-Graphen für FPS, Frame-Time, Memory-Nutzung und Spieleranzahl mit wählbarem Zeitfenster |
 | **Settings** | Anwendungseinstellungen (FPS, Port), Spiel-Konfigurationen |
-| **Chat Test** | Lokale Chat-Nachrichten injizieren mit Quick-Buttons und Multi-Player-Test |
 
 ### Dashboard-Features
 - **Multi-Stream-Verwaltung** – Streams erstellen, konfigurieren und löschen
@@ -442,6 +449,10 @@ bun run build        # Erzeugt statischen Export in web/out/
 - **Auflösung pro Stream** – Mobile (1080×1920) oder Desktop (1920×1080)
 - **Spiel-Wechsel pro Stream** – Sofort, nach Runde oder nach Spiel
 - **Streaming-Steuerung** – Start/Stop pro Stream mit individuellem RTMP-Ziel
+- **Plattform-Chat** – Chat-Nachrichten direkt über die Stream-Card an einzelne Kanäle oder alle gleichzeitig senden
+- **Inline-Channel-Editing** – Alle Kanal-Einstellungen (Twitch OAuth, YouTube API Key, etc.) direkt in der Channel-Card bearbeitbar
+- **SQLite-Scoreboard** – Persistentes Spieler-Ranking mit konfigurierbaren Top-N und Zeitfenster-Einstellungen
+- **Performance-Dashboard** – Echtzeit-Graphen (Recharts) für FPS, Frame-Time, Memory und Spieleranzahl
 - **Config-Persistenz** – "Save Config" speichert den aktuellen Zustand auf Disk
 - **Server-Shutdown** – Graceful Shutdown über das Dashboard
 
@@ -485,6 +496,21 @@ bun run build        # Erzeugt statischen Export in web/out/
 | POST | `/api/config/save` | Laufzeit-Zustand in Config speichern |
 | POST | `/api/chat` | Lokale Chat-Nachricht senden |
 | GET | `/api/chat/log` | Nachrichten-Log abrufen |
+| POST | `/api/channels/:id/send` | Nachricht über spezifischen Kanal senden |
+| POST | `/api/chat/broadcast` | Nachricht an alle verbundenen Kanäle senden |
+
+#### Scoreboard
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/scoreboard/recent?limit=10&hours=24` | Top-Spieler der letzten N Stunden |
+| GET | `/api/scoreboard/alltime?limit=5` | All-Time-Leaderboard |
+| GET | `/api/scoreboard/player/:id` | Einzelne Spieler-Statistiken |
+
+#### Performance
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/perf?seconds=60` | Aktuelle Performance-Durchschnittswerte |
+| GET | `/api/perf/history?seconds=300` | Zeitreihen-Daten für Graphen |
 
 ---
 
@@ -655,6 +681,16 @@ public:
 - [x] Lazy RenderTexture-Initialisierung (Thread-Safety)
 - [x] Message-Routing: Channels → Streams mit Filter
 
+### Phase 2.5 – Scoreboard, Performance & UX ✅
+- [x] SQLite Player-Datenbank mit persistentem Scoreboard
+- [x] Performance-Monitoring mit Live-Graphen (FPS, Frame-Time, Memory)
+- [x] Plattform-Chat direkt über Stream-Card (einzelner Kanal oder Broadcast)
+- [x] Inline-Channel-Editing mit plattformspezifischen Einstellungen
+- [x] Chat-Test-Tab entfernt (integriert in Stream-Card)
+- [x] Scoreboard-Seite im Dashboard (Top 10/24h, Top 5/All-Time, konfigurierbar)
+- [x] Performance-Seite mit Recharts-Graphen
+- [x] Scoring-Hooks in Chaos Arena (Round-Win, Kill) und Color Conquest (Team-Win)
+
 ### Phase 3 – Polish (geplant)
 - [ ] Font-Rendering für Spielernamen und HUD-Text
 - [ ] GLSL-Shader für Bloom, CRT-Effekt, Chromatic Aberration
@@ -668,14 +704,12 @@ public:
 - [ ] Weiteres Spiel: Quiz Battle
 - [ ] Weiteres Spiel: Tower Defense
 - [ ] Skin-/Cosmetic-System
-- [ ] Persistente Datenbank für Leaderboards
 
 ### Phase 5 – Production
 - [ ] Docker-Container für Server-Deployment
 - [ ] CI/CD Pipeline
 - [ ] Headless-Modus (ohne Fenster)
 - [ ] Authentifizierung für Web-Dashboard
-- [ ] Metrics & Monitoring (Prometheus/Grafana)
 
 ---
 
