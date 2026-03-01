@@ -10,6 +10,10 @@
         "port": 8080,
         "enabled": true
     },
+    "twitch": {
+        "client_id": "",
+        "redirect_uri": "http://localhost:8080/auth/twitch/callback/"
+    },
     "channels": [
         {
             "id": "local",

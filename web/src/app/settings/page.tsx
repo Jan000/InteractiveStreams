@@ -24,6 +24,10 @@ export default function SettingsPage() {
   const [fps, setFps] = useState("30");
   const [headless, setHeadless] = useState(false);
   const [ffmpegPath, setFfmpegPath] = useState("ffmpeg");
+  const [twitchClientId, setTwitchClientId] = useState("");
+  const [twitchRedirectUri, setTwitchRedirectUri] = useState(
+    "http://localhost:8080/auth/twitch/callback/"
+  );
 
   useEffect(() => {
     api
@@ -38,6 +42,9 @@ export default function SettingsPage() {
         if (app?.fps) setFps(String(app.fps));
         if (app?.headless !== undefined) setHeadless(Boolean(app.headless));
         if (streaming?.ffmpeg_path) setFfmpegPath(String(streaming.ffmpeg_path));
+        const twitch = s.twitch as Record<string, unknown> | undefined;
+        if (twitch?.client_id) setTwitchClientId(String(twitch.client_id));
+        if (twitch?.redirect_uri) setTwitchRedirectUri(String(twitch.redirect_uri));
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed"))
       .finally(() => setLoading(false));
@@ -54,6 +61,10 @@ export default function SettingsPage() {
         },
         streaming: {
           ffmpeg_path: ffmpegPath,
+        },
+        twitch: {
+          client_id: twitchClientId,
+          redirect_uri: twitchRedirectUri,
         },
       });
       await api.saveConfig();
@@ -166,6 +177,50 @@ export default function SettingsPage() {
               />
               <p className="text-xs text-muted-foreground">
                 Path to ffmpeg binary (or just &quot;ffmpeg&quot; if in PATH)
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Twitch Integration */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Twitch Integration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="twitch-client-id">Client ID</Label>
+              <Input
+                id="twitch-client-id"
+                value={twitchClientId}
+                onChange={(e) => setTwitchClientId(e.target.value)}
+                placeholder="Your Twitch Application Client ID"
+              />
+              <p className="text-xs text-muted-foreground">
+                From{" "}
+                <a
+                  href="https://dev.twitch.tv/console/apps"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-foreground"
+                >
+                  dev.twitch.tv/console
+                </a>
+                . Required for the &quot;Login with Twitch&quot; button on
+                Channel cards.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="twitch-redirect-uri">OAuth Redirect URI</Label>
+              <Input
+                id="twitch-redirect-uri"
+                value={twitchRedirectUri}
+                onChange={(e) => setTwitchRedirectUri(e.target.value)}
+                placeholder="http://localhost:8080/auth/twitch/callback/"
+              />
+              <p className="text-xs text-muted-foreground">
+                Must match the redirect URI registered in your Twitch
+                application.
               </p>
             </div>
           </CardContent>

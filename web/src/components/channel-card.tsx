@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plug,
   PlugZap,
@@ -10,6 +10,7 @@ import {
   Settings2,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
 } from "lucide-react";
 import type { ChannelState } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -78,6 +79,63 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [twitchAuthLoading, setTwitchAuthLoading] = useState(false);
+  const oauthPopupRef = useRef<Window | null>(null);
+
+  // Listen for OAuth token from popup callback page
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "twitch-oauth") return;
+      if (event.data.channelId !== channel.id) return;
+
+      const token = event.data.accessToken as string;
+      if (!token) return;
+
+      setTwitchAuthLoading(false);
+      setTwitchOauth(token);
+      setDirty(true);
+
+      // Also immediately persist the token via the backend endpoint
+      try {
+        await api.storeTwitchToken(channel.id, token);
+        toast.success("Twitch OAuth token received and saved!");
+        setDirty(false);
+        onRefresh?.();
+      } catch {
+        toast.success("Twitch OAuth token received — click Save to persist.");
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [channel.id, onRefresh]);
+
+  const handleTwitchLogin = async () => {
+    setTwitchAuthLoading(true);
+    try {
+      const { url } = await api.getTwitchAuthUrl(channel.id);
+      // Open popup centered on screen
+      const w = 500, h = 700;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      oauthPopupRef.current = window.open(
+        url,
+        "twitch-oauth",
+        `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no`
+      );
+      // Poll to detect if user closed popup without completing auth
+      const timer = setInterval(() => {
+        if (oauthPopupRef.current?.closed) {
+          clearInterval(timer);
+          setTwitchAuthLoading(false);
+        }
+      }, 500);
+    } catch (e) {
+      setTwitchAuthLoading(false);
+      toast.error(e instanceof Error ? e.message : "Failed to start Twitch login");
+    }
+  };
 
   // Re-sync from server when channel data changes (polling)
   useEffect(() => {
@@ -324,15 +382,38 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                   <Label className="text-[10px] text-muted-foreground">
                     OAuth Token
                   </Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="password"
-                    placeholder="oauth:abc123..."
-                    value={twitchOauth}
-                    onChange={(e) =>
-                      markDirty(setTwitchOauth)(e.target.value)
-                    }
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      className="h-8 text-xs flex-1"
+                      type="password"
+                      placeholder="oauth:abc123..."
+                      value={twitchOauth}
+                      onChange={(e) =>
+                        markDirty(setTwitchOauth)(e.target.value)
+                      }
+                    />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 whitespace-nowrap bg-purple-600/20 border-purple-600/40 text-purple-300 hover:bg-purple-600/30 hover:text-purple-200"
+                          onClick={handleTwitchLogin}
+                          disabled={twitchAuthLoading}
+                        >
+                          {twitchAuthLoading ? (
+                            <div className="size-3.5 animate-spin rounded-full border-2 border-purple-400/30 border-t-purple-400" />
+                          ) : (
+                            <ExternalLink className="size-3.5" />
+                          )}
+                          Login with Twitch
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Open Twitch authorization (requires Client ID in Settings)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">

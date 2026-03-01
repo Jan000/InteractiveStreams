@@ -298,6 +298,76 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     });
 
     // ══════════════════════════════════════════════════════════════════════
+    //  Twitch OAuth (Implicit Grant Flow)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Returns the Twitch authorize URL for the Implicit Grant Flow.
+    // Frontend opens this in a popup; Twitch redirects back with the token.
+    server.Get("/api/auth/twitch/url", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string clientId    = app.config().get<std::string>("twitch.client_id", "");
+        std::string redirectUri = app.config().get<std::string>("twitch.redirect_uri",
+                                     "http://localhost:8080/auth/twitch/callback/");
+        std::string channelId   = req.has_param("channel_id")
+                                    ? req.get_param_value("channel_id") : "";
+
+        if (clientId.empty()) {
+            res.status = 400;
+            res.set_content(R"({"error":"twitch.client_id not configured"})", "application/json");
+            return;
+        }
+
+        // Scopes needed for reading and writing chat
+        std::string scopes = "chat:read+chat:edit";
+        // Pass channel_id in the state so the callback knows where to store the token
+        std::string state = channelId;
+
+        std::string url = "https://id.twitch.tv/oauth2/authorize"
+            "?response_type=token"
+            "&client_id=" + clientId +
+            "&redirect_uri=" + redirectUri +
+            "&scope=" + scopes +
+            "&state=" + state +
+            "&force_verify=true";
+
+        res.set_content(nlohmann::json({{"url", url}, {"channelId", channelId}}).dump(), "application/json");
+    });
+
+    // Receives the OAuth token from the frontend callback and stores it
+    // in the specified channel's settings.
+    server.Post("/api/auth/twitch/token", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string channelId  = body.value("channelId", "");
+            std::string token      = body.value("accessToken", "");
+
+            if (channelId.empty() || token.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"channelId and accessToken required"})", "application/json");
+                return;
+            }
+
+            const auto* cfg = app.channelManager().getChannelConfig(channelId);
+            if (!cfg) {
+                res.status = 404;
+                res.set_content(R"({"error":"Channel not found"})", "application/json");
+                return;
+            }
+
+            // Update the channel's settings with the new token
+            core::ChannelConfig updated = *cfg;
+            if (!updated.settings.is_object()) updated.settings = nlohmann::json::object();
+            updated.settings["oauth_token"] = token;
+            app.channelManager().updateChannel(channelId, updated);
+
+            spdlog::info("[API] Twitch OAuth token stored for channel '{}'", channelId);
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
     //  Local Chat (Test)
     // ══════════════════════════════════════════════════════════════════════
 

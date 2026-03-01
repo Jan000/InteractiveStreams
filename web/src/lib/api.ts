@@ -260,6 +260,12 @@ export const api = {
   getPlayerStats: (userId: string) =>
     get<ScoreEntry>(`/api/scoreboard/player/${encodeURIComponent(userId)}`),
 
+  // Twitch OAuth
+  getTwitchAuthUrl: (channelId: string) =>
+    get<{ url: string; channelId: string }>(`/api/auth/twitch/url?channel_id=${channelId}`),
+  storeTwitchToken: (channelId: string, accessToken: string) =>
+    post<{ success: boolean }>("/api/auth/twitch/token", { channelId, accessToken }),
+
   // Performance
   getPerf: (seconds = 60) =>
     get<PerfData>(`/api/perf?seconds=${seconds}`),
