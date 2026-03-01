@@ -110,6 +110,16 @@ export function StreamCard({
   const [gamePlayerLimits, setGamePlayerLimits] = useState<Record<string, number>>(
     stream.gamePlayerLimits ?? {}
   );
+  // Per-game platform display names
+  const [gameTwitchCategories, setGameTwitchCategories] = useState<Record<string, string>>(
+    stream.gameTwitchCategories ?? {}
+  );
+  const [gameTwitchTitles, setGameTwitchTitles] = useState<Record<string, string>>(
+    stream.gameTwitchTitles ?? {}
+  );
+  const [gameYoutubeTitles, setGameYoutubeTitles] = useState<Record<string, string>>(
+    stream.gameYoutubeTitles ?? {}
+  );
   // Scoreboard settings
   const [scoreboardTopN, setScoreboardTopN] = useState(stream.scoreboardTopN ?? 5);
   const [scoreboardFontSize, setScoreboardFontSize] = useState(stream.scoreboardFontSize ?? 20);
@@ -171,6 +181,9 @@ export function StreamCard({
       setGameInfoIntervals(stream.gameInfoIntervals ?? {});
       setGameFontScales(stream.gameFontScales ?? {});
       setGamePlayerLimits(stream.gamePlayerLimits ?? {});
+      setGameTwitchCategories(stream.gameTwitchCategories ?? {});
+      setGameTwitchTitles(stream.gameTwitchTitles ?? {});
+      setGameYoutubeTitles(stream.gameYoutubeTitles ?? {});
       setScoreboardTopN(stream.scoreboardTopN ?? 5);
       setScoreboardFontSize(stream.scoreboardFontSize ?? 20);
       setScoreboardAllTimeTitle(stream.scoreboardAllTimeTitle ?? "ALL TIME");
@@ -212,6 +225,9 @@ export function StreamCard({
         game_info_intervals: Object.keys(gameInfoIntervals).length > 0 ? gameInfoIntervals : undefined,
         game_font_scales: Object.keys(gameFontScales).length > 0 ? gameFontScales : undefined,
         game_player_limits: Object.keys(gamePlayerLimits).length > 0 ? gamePlayerLimits : undefined,
+        game_twitch_categories: Object.keys(gameTwitchCategories).length > 0 ? gameTwitchCategories : undefined,
+        game_twitch_titles: Object.keys(gameTwitchTitles).length > 0 ? gameTwitchTitles : undefined,
+        game_youtube_titles: Object.keys(gameYoutubeTitles).length > 0 ? gameYoutubeTitles : undefined,
         scoreboard_top_n: scoreboardTopN,
         scoreboard_font_size: scoreboardFontSize,
         scoreboard_alltime_title: scoreboardAllTimeTitle,
@@ -658,6 +674,52 @@ export function StreamCard({
                       />
                       <span className="text-[10px] text-muted-foreground">0 = unlimited</span>
                     </div>
+                  </div>
+                  {/* Platform display names */}
+                  <div className="mt-1 space-y-1 border-t pt-1">
+                    <span className="text-[10px] font-medium text-muted-foreground">Platform Names</span>
+                    <Input
+                      className="h-7 text-xs"
+                      placeholder="Twitch Category (e.g. Just Chatting)"
+                      value={gameTwitchCategories[g.id] ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setGameTwitchCategories((prev) => {
+                          const next = { ...prev };
+                          if (v) next[g.id] = v; else delete next[g.id];
+                          return next;
+                        });
+                        setDirty(true);
+                      }}
+                    />
+                    <Input
+                      className="h-7 text-xs"
+                      placeholder="Twitch Stream Title"
+                      value={gameTwitchTitles[g.id] ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setGameTwitchTitles((prev) => {
+                          const next = { ...prev };
+                          if (v) next[g.id] = v; else delete next[g.id];
+                          return next;
+                        });
+                        setDirty(true);
+                      }}
+                    />
+                    <Input
+                      className="h-7 text-xs"
+                      placeholder="YouTube Stream Title"
+                      value={gameYoutubeTitles[g.id] ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setGameYoutubeTitles((prev) => {
+                          const next = { ...prev };
+                          if (v) next[g.id] = v; else delete next[g.id];
+                          return next;
+                        });
+                        setDirty(true);
+                      }}
+                    />
                   </div>
                 </div>
               ))}

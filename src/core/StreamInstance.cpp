@@ -1,9 +1,11 @@
 #include "core/StreamInstance.h"
 #include "core/Application.h"
 #include "core/ChannelManager.h"
+#include "core/Config.h"
 #include "rendering/Renderer.h"
 #include "games/GameRegistry.h"
 #include "streaming/StreamEncoder.h"
+#include "platform/twitch/TwitchApi.h"
 
 #include <stb_image_write.h>
 #include <spdlog/spdlog.h>
@@ -104,6 +106,11 @@ void StreamInstance::update(double dt) {
             if (descIt != m_config.gameDescriptions.end() && !descIt->second.empty()) {
                 m_config.description = descIt->second;
             }
+        }
+
+        // Notify platforms (Twitch/YouTube) about the game change
+        if (!currentGameId.empty()) {
+            updatePlatformInfo(currentGameId);
         }
     }
 
@@ -545,6 +552,98 @@ void StreamInstance::sendPeriodicInfoMessage() {
     spdlog::debug("[Stream '{}'] Sent info message for game '{}'", m_config.name, m_lastGameId);
 }
 
+// ── Platform info update (Twitch / YouTube) ───────────────────────────────────
+
+void StreamInstance::updatePlatformInfo(const std::string& gameId) {
+    // Look up per-game platform names from config
+    std::string twitchCategory, twitchTitle, youtubeTitle;
+    {
+        auto it = m_config.gameTwitchCategories.find(gameId);
+        if (it != m_config.gameTwitchCategories.end()) twitchCategory = it->second;
+    }
+    {
+        auto it = m_config.gameTwitchTitles.find(gameId);
+        if (it != m_config.gameTwitchTitles.end()) twitchTitle = it->second;
+    }
+    {
+        auto it = m_config.gameYoutubeTitles.find(gameId);
+        if (it != m_config.gameYoutubeTitles.end()) youtubeTitle = it->second;
+    }
+
+    // If no platform names configured, nothing to do
+    if (twitchCategory.empty() && twitchTitle.empty() && youtubeTitle.empty()) return;
+
+    auto& cm = Application::instance().channelManager();
+    std::string clientId = Application::instance().config().get<std::string>("twitch.client_id", "");
+
+    // Update Twitch channels subscribed to this stream
+    if (!twitchCategory.empty() || !twitchTitle.empty()) {
+        for (const auto& chId : m_config.channelIds) {
+            const auto* cfg = cm.getChannelConfig(chId);
+            if (!cfg || cfg->platform != "twitch") continue;
+
+            std::string token = cfg->settings.value("oauth_token", "");
+            if (token.empty() || clientId.empty()) {
+                spdlog::warn("[Stream '{}'] Twitch channel '{}' missing oauth_token or client_id – "
+                             "cannot update stream info.", m_config.name, chId);
+                continue;
+            }
+
+            // Fire-and-forget in a detached thread to not block the main loop
+            std::string sName = m_config.name;
+            std::string cat   = twitchCategory;
+            std::string ttl   = twitchTitle;
+            auto& brCache  = m_twitchBroadcasterIdCache;
+            auto& gmCache  = m_twitchGameIdCache;
+
+            // Resolve broadcaster ID (cached)
+            std::string broadcasterId;
+            auto brIt = brCache.find(chId);
+            if (brIt != brCache.end()) {
+                broadcasterId = brIt->second;
+            } else {
+                broadcasterId = platform::TwitchApi::getBroadcasterId(token, clientId);
+                if (!broadcasterId.empty()) brCache[chId] = broadcasterId;
+            }
+            if (broadcasterId.empty()) {
+                spdlog::error("[Stream '{}'] Could not resolve broadcaster ID for Twitch channel '{}'.",
+                              sName, chId);
+                continue;
+            }
+
+            // Resolve game ID (cached by category name)
+            std::string twitchGameId;
+            if (!cat.empty()) {
+                auto gmIt = gmCache.find(cat);
+                if (gmIt != gmCache.end()) {
+                    twitchGameId = gmIt->second;
+                } else {
+                    twitchGameId = platform::TwitchApi::getGameId(token, clientId, cat);
+                    if (!twitchGameId.empty()) gmCache[cat] = twitchGameId;
+                }
+            }
+
+            // Fire the update in a background thread
+            std::thread([sName, token, clientId, broadcasterId, ttl, twitchGameId]() {
+                bool ok = platform::TwitchApi::updateChannelInfo(
+                    token, clientId, broadcasterId, ttl, twitchGameId);
+                if (ok) {
+                    spdlog::info("[Stream '{}'] Twitch channel updated (title='{}', gameId={}).",
+                                 sName, ttl, twitchGameId);
+                } else {
+                    spdlog::error("[Stream '{}'] Failed to update Twitch channel.", sName);
+                }
+            }).detach();
+        }
+    }
+
+    // YouTube: future implementation (requires YouTube OAuth & Data API v3)
+    if (!youtubeTitle.empty()) {
+        spdlog::debug("[Stream '{}'] YouTube title update not yet implemented (title='{}').",
+                      m_config.name, youtubeTitle);
+    }
+}
+
 // ── Streaming control ────────────────────────────────────────────────────────
 
 bool StreamInstance::isStreaming() const {
@@ -639,6 +738,14 @@ nlohmann::json StreamInstance::getState() const {
     if (!m_config.gamePlayerLimits.empty())
         s["gamePlayerLimits"] = m_config.gamePlayerLimits;
 
+    // Per-game platform names
+    if (!m_config.gameTwitchCategories.empty())
+        s["gameTwitchCategories"] = m_config.gameTwitchCategories;
+    if (!m_config.gameTwitchTitles.empty())
+        s["gameTwitchTitles"] = m_config.gameTwitchTitles;
+    if (!m_config.gameYoutubeTitles.empty())
+        s["gameYoutubeTitles"] = m_config.gameYoutubeTitles;
+
     // Scoreboard overlay settings
     s["scoreboardTopN"]         = m_config.scoreboardTopN;
     s["scoreboardFontSize"]     = m_config.scoreboardFontSize;
@@ -726,6 +833,14 @@ nlohmann::json StreamInstance::toJson() const {
     if (!m_config.gamePlayerLimits.empty())
         j["game_player_limits"] = m_config.gamePlayerLimits;
 
+    // Per-game platform names
+    if (!m_config.gameTwitchCategories.empty())
+        j["game_twitch_categories"] = m_config.gameTwitchCategories;
+    if (!m_config.gameTwitchTitles.empty())
+        j["game_twitch_titles"] = m_config.gameTwitchTitles;
+    if (!m_config.gameYoutubeTitles.empty())
+        j["game_youtube_titles"] = m_config.gameYoutubeTitles;
+
     // Scoreboard settings
     j["scoreboard_top_n"]          = m_config.scoreboardTopN;
     j["scoreboard_font_size"]      = m_config.scoreboardFontSize;
@@ -792,6 +907,20 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     if (j.contains("game_player_limits") && j["game_player_limits"].is_object()) {
         for (auto& [k, v] : j["game_player_limits"].items())
             c.gamePlayerLimits[k] = v.get<int>();
+    }
+
+    // Per-game platform names
+    if (j.contains("game_twitch_categories") && j["game_twitch_categories"].is_object()) {
+        for (auto& [k, v] : j["game_twitch_categories"].items())
+            c.gameTwitchCategories[k] = v.get<std::string>();
+    }
+    if (j.contains("game_twitch_titles") && j["game_twitch_titles"].is_object()) {
+        for (auto& [k, v] : j["game_twitch_titles"].items())
+            c.gameTwitchTitles[k] = v.get<std::string>();
+    }
+    if (j.contains("game_youtube_titles") && j["game_youtube_titles"].is_object()) {
+        for (auto& [k, v] : j["game_youtube_titles"].items())
+            c.gameYoutubeTitles[k] = v.get<std::string>();
     }
 
     // Scoreboard settings

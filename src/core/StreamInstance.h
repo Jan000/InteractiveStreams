@@ -10,6 +10,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -73,6 +74,14 @@ struct StreamConfig {
     // ── Per-game player limits (0 = unlimited) ──────────────────────────
     /// Map: game_id -> max player count
     std::unordered_map<std::string, int> gamePlayerLimits;
+
+    // ── Per-game platform names (Twitch / YouTube) ──────────────────────
+    /// Map: game_id -> Twitch category name (e.g. "Just Chatting")
+    std::unordered_map<std::string, std::string> gameTwitchCategories;
+    /// Map: game_id -> Twitch stream title
+    std::unordered_map<std::string, std::string> gameTwitchTitles;
+    /// Map: game_id -> YouTube stream title
+    std::unordered_map<std::string, std::string> gameYoutubeTitles;
 
     // ── Scoreboard overlay settings ─────────────────────────────────────
     int    scoreboardTopN        = 5;        ///< Entries per scoreboard panel
@@ -150,6 +159,7 @@ private:
     void updateJpegBuffer();
     void updateScoreboardCache();
     void sendPeriodicInfoMessage();
+    void updatePlatformInfo(const std::string& gameId);
     std::vector<std::string> getAvailableGameIds() const;
 
     StreamConfig                               m_config;
@@ -201,6 +211,10 @@ private:
 
     // Per-stream interaction statistics
     ChannelStats m_stats;
+
+    // Twitch API cache (broadcaster IDs, game IDs)
+    std::unordered_map<std::string, std::string> m_twitchBroadcasterIdCache;
+    std::unordered_map<std::string, std::string> m_twitchGameIdCache;
 };
 
 } // namespace is::core

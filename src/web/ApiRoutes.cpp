@@ -317,7 +317,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         }
 
         // Scopes needed for reading and writing chat
-        std::string scopes = "chat:read+chat:edit";
+        std::string scopes = "chat:read+chat:edit+channel:manage:broadcast";
         // Pass channel_id in the state so the callback knows where to store the token
         std::string state = channelId;
 

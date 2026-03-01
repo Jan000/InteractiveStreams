@@ -32,6 +32,10 @@ export interface StreamState {
   gameFontScales?: Record<string, number>;
   // Per-game player limits (0 = unlimited)
   gamePlayerLimits?: Record<string, number>;
+  // Per-game platform display names (Twitch / YouTube)
+  gameTwitchCategories?: Record<string, string>;
+  gameTwitchTitles?: Record<string, string>;
+  gameYoutubeTitles?: Record<string, string>;
   // Scoreboard overlay settings
   scoreboardTopN?: number;
   scoreboardFontSize?: number;

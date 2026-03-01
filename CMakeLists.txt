@@ -135,6 +135,7 @@ set(GAME_SOURCES
 set(PLATFORM_SOURCES
     src/platform/local/LocalPlatform.cpp
     src/platform/twitch/TwitchPlatform.cpp
+    src/platform/twitch/TwitchApi.cpp
     src/platform/youtube/YoutubePlatform.cpp
 )
 
