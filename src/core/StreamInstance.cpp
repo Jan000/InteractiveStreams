@@ -222,6 +222,12 @@ void StreamInstance::updateGameMode(double dt) {
                 case GameModeType::Vote:
                     m_voteState = VoteState{};
                     m_voteState.active = true;
+                    // Cache display names so we don't create game objects per frame
+                    m_voteDisplayNames.clear();
+                    for (const auto& gid : getAvailableGameIds()) {
+                        auto tmp = games::GameRegistry::instance().create(gid);
+                        m_voteDisplayNames[gid] = tmp ? tmp->displayName() : gid;
+                    }
                     spdlog::info("[Stream '{}'] Vote started ({:.0f}s)",
                         m_config.name, m_voteState.duration);
                     break;
@@ -380,8 +386,12 @@ void StreamInstance::renderVoteOverlay() {
         card.setOutlineThickness(1.5f);
         m_renderTexture.draw(card);
 
-        auto temp = games::GameRegistry::instance().create(gid);
-        std::string dispName = temp ? temp->displayName() : gid;
+        // Use cached display name to avoid creating full game objects per frame
+        std::string dispName = gid;
+        auto nameIt = m_voteDisplayNames.find(gid);
+        if (nameIt != m_voteDisplayNames.end()) {
+            dispName = nameIt->second;
+        }
 
         sf::Text nameT;
         nameT.setFont(m_font);
@@ -571,6 +581,14 @@ void StreamInstance::updateConfig(const StreamConfig& c) {
     m_config = c;
     if (resChanged) { m_rtReady = false; }
     if (gameChanged) { m_gameManager->loadGame(m_config.fixedGame); }
+
+    // Re-apply font scale to the running game (so dashboard changes take effect)
+    auto* game = m_gameManager->activeGame();
+    if (game) {
+        auto scaleIt = m_config.gameFontScales.find(game->id());
+        float scale = (scaleIt != m_config.gameFontScales.end()) ? scaleIt->second : 1.0f;
+        game->setFontScale(scale);
+    }
 }
 
 // ── Serialisation ────────────────────────────────────────────────────────────

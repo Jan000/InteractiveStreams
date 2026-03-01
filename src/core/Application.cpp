@@ -172,7 +172,7 @@ void Application::mainLoop() {
                 previewStream->width(), previewStream->height());
         }
 
-        // Record performance sample
+        // Record performance sample (lightweight – no getState())
         {
             double fps = (frameTime > 0.0) ? (1.0 / frameTime) : 0.0;
             double ftMs = frameTime * 1000.0;
@@ -181,18 +181,7 @@ void Application::mainLoop() {
             int nPlayers = 0;
             for (auto* s : m_impl->streamManager->allStreams()) {
                 if (s->isStreaming()) nStreams++;
-                auto* game = s->gameManager().activeGame();
-                if (game) {
-                    auto state = game->getState();
-                    if (state.contains("players")) {
-                        if (state["players"].is_number())
-                            nPlayers += state["players"].get<int>();
-                        else if (state["players"].is_array())
-                            nPlayers += static_cast<int>(state["players"].size());
-                        else if (state["players"].is_object())
-                            nPlayers += static_cast<int>(state["players"].size());
-                    }
-                }
+                nPlayers += s->stats().uniqueViewerCount();
             }
             auto chStatus = m_impl->channelManager->getStatus();
             for (const auto& ch : chStatus) {
@@ -205,6 +194,19 @@ void Application::mainLoop() {
         m_impl->renderer->processEvents([this](const sf::Event& event) {
             if (event.type == sf::Event::Closed) requestShutdown();
         });
+
+        // Live headless toggle: check config flag each frame
+        bool wantHeadless = m_impl->config->get<bool>("application.headless", false);
+        m_impl->renderer->setHeadless(wantHeadless);
+
+        // Frame limiter: sleep to hit target FPS
+        auto endTime = clock::now();
+        double elapsed = std::chrono::duration<double>(endTime - currentTime).count();
+        double targetFrameTime = 1.0 / static_cast<double>(m_impl->targetFps);
+        if (elapsed < targetFrameTime) {
+            auto sleepDuration = std::chrono::duration<double>(targetFrameTime - elapsed);
+            std::this_thread::sleep_for(sleepDuration);
+        }
     }
 }
 

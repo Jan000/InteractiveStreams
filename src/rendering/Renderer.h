@@ -47,6 +47,9 @@ public:
     /// Display an external texture in the preview window (for multi-stream).
     void displayPreview(const sf::Texture& texture, int sourceWidth, int sourceHeight);
 
+    /// Toggle headless mode at runtime (open/close preview window).
+    void setHeadless(bool headless);
+
 private:
     int m_width;
     int m_height;

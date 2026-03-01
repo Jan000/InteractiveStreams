@@ -138,4 +138,35 @@ void Renderer::displayPreview(const sf::Texture& texture,
     m_window.display();
 }
 
+void Renderer::setHeadless(bool headless) {
+    if (headless == m_headless) return;
+    m_headless = headless;
+
+    if (headless) {
+        // Switching TO headless – close the window
+        if (m_window.isOpen()) {
+            m_window.close();
+            spdlog::info("Renderer: switched to headless mode (window closed)");
+        }
+    } else {
+        // Switching FROM headless – open the window
+        sf::ContextSettings settings;
+        settings.antialiasingLevel = 4;
+
+        int previewW = m_width;
+        int previewH = m_height;
+        if (m_height > 1080 || m_width > 1920) {
+            float scale = std::min(1080.0f / m_height, 1920.0f / m_width);
+            previewW = static_cast<int>(m_width * scale);
+            previewH = static_cast<int>(m_height * scale);
+        }
+
+        m_window.create(sf::VideoMode(previewW, previewH),
+            "InteractiveStreams", sf::Style::Default, settings);
+        m_window.setVerticalSyncEnabled(false);
+        m_window.setFramerateLimit(0);
+        spdlog::info("Renderer: switched to windowed mode ({}x{})", previewW, previewH);
+    }
+}
+
 } // namespace is::rendering

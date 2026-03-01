@@ -181,6 +181,9 @@ private:
     };
     VoteState m_voteState;
 
+    // Cached game display names for vote overlay (avoid creating game objects per frame)
+    std::unordered_map<std::string, std::string> m_voteDisplayNames;
+
     // Game-mode transition state
     bool   m_waitingForTransition = false;
     double m_transitionTimer      = 0.0;
