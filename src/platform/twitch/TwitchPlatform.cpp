@@ -63,8 +63,13 @@ std::vector<ChatMessage> TwitchPlatform::pollMessages() {
 }
 
 bool TwitchPlatform::sendMessage(const std::string& text) {
-    // TODO: Send via IRC socket
-    spdlog::debug("[Twitch] Send: {}", text);
+    if (!m_connected || text.empty()) return false;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_outgoingQueue.push(text);
+    }
+    spdlog::debug("[Twitch] Queued outgoing: {}", text);
     m_messagesSent++;
     return true;
 }
@@ -127,6 +132,26 @@ void TwitchPlatform::ircLoop() {
                 }
 
                 parseIrcMessage(line);
+            }
+        }
+
+        // Drain outgoing message queue (send up to 5 per iteration to stay
+        // within Twitch rate limits of ~20 messages / 30s)
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            int sent = 0;
+            while (!m_outgoingQueue.empty() && sent < 5) {
+                const std::string& text = m_outgoingQueue.front();
+                std::string ircMsg = "PRIVMSG #" + m_channel + " :" + text + "\r\n";
+                auto sendStatus = socket.send(ircMsg.c_str(), ircMsg.size());
+                if (sendStatus != sf::Socket::Done) {
+                    spdlog::warn("[Twitch] Failed to send PRIVMSG (status={}). Will retry.",
+                                 static_cast<int>(sendStatus));
+                    break; // retry next iteration
+                }
+                spdlog::info("[Twitch] Sent to #{}: {}", m_channel, text);
+                m_outgoingQueue.pop();
+                ++sent;
             }
         }
 

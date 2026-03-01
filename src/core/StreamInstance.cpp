@@ -135,9 +135,25 @@ void StreamInstance::render(double alpha) {
     m_jpegFrameCounter++;
     bool needJpeg = (m_jpegFrameCounter >= m_jpegFrameInterval);
 
+    // Determine if the encoder needs a new frame this iteration.
+    // The encoder expects m_config.fps frames/sec, but the game loop runs at
+    // application.target_fps (typically 60).  Only perform the expensive
+    // GPU→CPU readback (copyToImage) on the frames the encoder actually needs.
+    bool needEncode = false;
+    if (encoderRunning) {
+        int targetFps = Application::instance().config().get<int>("application.target_fps", 60);
+        int encFps    = m_config.fps > 0 ? m_config.fps : 30;
+        int skip      = (targetFps > encFps) ? (targetFps / encFps) : 1;
+        m_encodeFrameCounter++;
+        if (m_encodeFrameCounter >= skip) {
+            m_encodeFrameCounter = 0;
+            needEncode = true;
+        }
+    }
+
     // Skip the entire GPU render when nothing needs a fresh frame
     // (headless mode, no encoder, and JPEG preview not yet due).
-    if (!encoderRunning && !windowActive && !needJpeg) {
+    if (!needEncode && !windowActive && !needJpeg) {
         return;
     }
     if (needJpeg) m_jpegFrameCounter = 0;
@@ -158,17 +174,19 @@ void StreamInstance::render(double alpha) {
 
     m_renderTexture.display();
 
-    // GPU→CPU readback: encoder needs it every frame, JPEG periodically
-    if (encoderRunning || needJpeg) {
+    // GPU→CPU readback: encoder needs it on encode frames, JPEG periodically
+    if (needEncode || needJpeg) {
         m_frameCapture = m_renderTexture.getTexture().copyToImage();
     }
     if (needJpeg) {
         updateJpegBuffer();
     }
+    m_frameReadyForEncoder = needEncode;
 }
 
 void StreamInstance::encodeFrame() {
-    if (m_encoders.empty()) return;
+    if (m_encoders.empty() || !m_frameReadyForEncoder) return;
+    m_frameReadyForEncoder = false;
 
     const sf::Uint8* pixels = getFrameBuffer();
     if (!pixels) return;
@@ -957,7 +975,7 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.enabled   = j.value("enabled", true);
     c.fps       = j.value("fps", 30);
     c.bitrate   = j.value("bitrate_kbps", 4500);
-    c.preset    = j.value("preset", "fast");
+    c.preset    = j.value("preset", "ultrafast");
     c.codec     = j.value("codec", "libx264");
 
     // Per-game descriptions

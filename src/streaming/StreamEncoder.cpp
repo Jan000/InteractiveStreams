@@ -20,7 +20,7 @@ StreamEncoder::StreamEncoder(core::Config& config)
     m_height     = config.get<int>("rendering.height", 1920);
     m_fps        = config.get<int>("streaming.fps", 30);
     m_bitrate    = config.get<int>("streaming.bitrate_kbps", 4500);
-    m_preset     = config.get<std::string>("streaming.preset", "fast");
+    m_preset     = config.get<std::string>("streaming.preset", "ultrafast");
     m_codec      = config.get<std::string>("streaming.codec", "libx264");
 
     m_frameBuffer.resize(m_width * m_height * 4);  // RGBA

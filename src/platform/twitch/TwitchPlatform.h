@@ -42,8 +42,9 @@ private:
     std::atomic<bool> m_shouldRun{false};
     std::thread       m_thread;
 
-    // Thread-safe message queue
-    std::queue<ChatMessage> m_messageQueue;
+    // Thread-safe message queues
+    std::queue<ChatMessage> m_messageQueue;       // incoming
+    std::queue<std::string> m_outgoingQueue;       // outgoing (PRIVMSG text)
     mutable std::mutex      m_mutex;
 
     // Stats

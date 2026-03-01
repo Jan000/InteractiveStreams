@@ -21,7 +21,7 @@ struct EncoderSettings {
     int         height     = 1920;
     int         fps        = 30;
     int         bitrate    = 4500;  // kbps
-    std::string preset     = "fast";
+    std::string preset     = "ultrafast";
     std::string codec      = "libx264";
 };
 

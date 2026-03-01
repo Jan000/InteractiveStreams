@@ -44,7 +44,7 @@ struct StreamConfig {
     bool enabled = true;
     int fps      = 30;
     int bitrate  = 4500;
-    std::string preset = "fast";
+    std::string preset = "ultrafast";
     std::string codec  = "libx264";
 
     int width()  const { return resolution == ResolutionPreset::Mobile ? 1080 : 1920; }
@@ -168,6 +168,10 @@ private:
     sf::Font           m_font;
     bool               m_fontLoaded = false;
     bool               m_rtReady    = false;
+
+    // Frame-pacing: only perform GPU readback + encode at the configured encoder FPS
+    int  m_encodeFrameCounter   = 0;
+    bool m_frameReadyForEncoder = false;
 
     // Encoding – one encoder per output channel (channelId → encoder)
     std::unordered_map<std::string, std::unique_ptr<streaming::StreamEncoder>> m_encoders;
