@@ -25,6 +25,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -432,13 +433,13 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     <Label className="text-[10px] text-muted-foreground">
                       Port
                     </Label>
-                    <Input
+                    <NumericInput
                       className="h-8 text-xs"
-                      type="number"
+                      integer
+                      min={1}
+                      max={65535}
                       value={twitchPort}
-                      onChange={(e) =>
-                        markDirty(setTwitchPort)(Number(e.target.value))
-                      }
+                      onChange={markDirty(setTwitchPort)}
                     />
                   </div>
                 </div>
@@ -493,16 +494,14 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                   <Label className="text-[10px] text-muted-foreground">
                     Poll Interval (ms)
                   </Label>
-                  <Input
+                  <NumericInput
                     className="h-8 text-xs"
-                    type="number"
+                    integer
                     min={500}
                     max={30000}
                     step={500}
                     value={ytPollInterval}
-                    onChange={(e) =>
-                      markDirty(setYtPollInterval)(Number(e.target.value))
-                    }
+                    onChange={markDirty(setYtPollInterval)}
                   />
                 </div>
               </div>

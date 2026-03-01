@@ -28,6 +28,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -614,14 +615,13 @@ export function StreamCard({
                   />
                   <div className="flex items-center gap-2">
                     <Label className="text-[10px] whitespace-nowrap">Interval (s)</Label>
-                    <Input
+                    <NumericInput
                       className="h-7 w-20 text-xs"
-                      type="number"
+                      integer
                       min={0}
                       placeholder="0"
-                      value={gameInfoIntervals[g.id] ?? ""}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value, 10);
+                      value={gameInfoIntervals[g.id] ?? 0}
+                      onChange={(v) => {
                         setGameInfoIntervals((prev) => {
                           const next = { ...prev };
                           if (v > 0) next[g.id] = v; else delete next[g.id];
@@ -635,16 +635,14 @@ export function StreamCard({
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5">
                       <Label className="text-[10px] whitespace-nowrap">Font Scale</Label>
-                      <Input
+                      <NumericInput
                         className="h-7 w-20 text-xs"
-                        type="number"
                         min={0.1}
                         max={5}
                         step={0.1}
                         placeholder="1.0"
-                        value={gameFontScales[g.id] ?? ""}
-                        onChange={(e) => {
-                          const v = parseFloat(e.target.value);
+                        value={gameFontScales[g.id] ?? 1.0}
+                        onChange={(v) => {
                           setGameFontScales((prev) => {
                             const next = { ...prev };
                             if (v > 0 && v !== 1.0) next[g.id] = v; else delete next[g.id];
@@ -656,14 +654,13 @@ export function StreamCard({
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Label className="text-[10px] whitespace-nowrap">Max Players</Label>
-                      <Input
+                      <NumericInput
                         className="h-7 w-20 text-xs"
-                        type="number"
+                        integer
                         min={0}
                         placeholder="0"
-                        value={gamePlayerLimits[g.id] ?? ""}
-                        onChange={(e) => {
-                          const v = parseInt(e.target.value, 10);
+                        value={gamePlayerLimits[g.id] ?? 0}
+                        onChange={(v) => {
                           setGamePlayerLimits((prev) => {
                             const next = { ...prev };
                             if (v > 0) next[g.id] = v; else delete next[g.id];
@@ -752,48 +749,47 @@ export function StreamCard({
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">Entries per panel</Label>
-                  <Input
+                  <NumericInput
                     className="h-7 text-xs"
-                    type="number"
+                    integer
                     min={1}
                     max={20}
                     value={scoreboardTopN}
-                    onChange={(e) => set(setScoreboardTopN)(Number(e.target.value))}
+                    onChange={set(setScoreboardTopN)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">Font Size</Label>
-                  <Input
+                  <NumericInput
                     className="h-7 text-xs"
-                    type="number"
+                    integer
                     min={8}
                     max={48}
                     value={scoreboardFontSize}
-                    onChange={(e) => set(setScoreboardFontSize)(Number(e.target.value))}
+                    onChange={set(setScoreboardFontSize)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">Recent Hours</Label>
-                  <Input
+                  <NumericInput
                     className="h-7 text-xs"
-                    type="number"
+                    integer
                     min={1}
                     max={720}
                     value={scoreboardRecentHours}
-                    onChange={(e) => set(setScoreboardRecentHours)(Number(e.target.value))}
+                    onChange={set(setScoreboardRecentHours)}
                   />
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Label className="text-[10px] whitespace-nowrap">Vote Overlay Font Scale</Label>
-                <Input
+                <NumericInput
                   className="h-7 w-20 text-xs"
-                  type="number"
                   min={0.1}
                   max={5}
                   step={0.1}
                   value={voteOverlayFontScale}
-                  onChange={(e) => set(setVoteOverlayFontScale)(Number(e.target.value))}
+                  onChange={set(setVoteOverlayFontScale)}
                 />
               </div>
             </div>
@@ -870,27 +866,27 @@ export function StreamCard({
                   <Label className="text-[10px] text-muted-foreground">
                     FPS
                   </Label>
-                  <Input
+                  <NumericInput
                     className="h-8 text-xs"
-                    type="number"
+                    integer
                     min={1}
                     max={60}
                     value={fps}
-                    onChange={(e) => set(setFps)(Number(e.target.value))}
+                    onChange={set(setFps)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
                     Bitrate (kbps)
                   </Label>
-                  <Input
+                  <NumericInput
                     className="h-8 text-xs"
-                    type="number"
+                    integer
                     min={500}
                     max={20000}
                     step={500}
                     value={bitrate}
-                    onChange={(e) => set(setBitrate)(Number(e.target.value))}
+                    onChange={set(setBitrate)}
                   />
                 </div>
                 <div className="space-y-1.5">

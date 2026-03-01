@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -20,8 +21,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   // Editable fields
-  const [port, setPort] = useState("8080");
-  const [fps, setFps] = useState("30");
+  const [port, setPort] = useState(8080);
+  const [fps, setFps] = useState(30);
   const [headless, setHeadless] = useState(false);
   const [ffmpegPath, setFfmpegPath] = useState("ffmpeg");
   const [twitchClientId, setTwitchClientId] = useState("");
@@ -38,8 +39,8 @@ export default function SettingsPage() {
         const web = s.web as Record<string, unknown> | undefined;
         const app = s.application as Record<string, unknown> | undefined;
         const streaming = s.streaming as Record<string, unknown> | undefined;
-        if (web?.port) setPort(String(web.port));
-        if (app?.fps) setFps(String(app.fps));
+        if (web?.port) setPort(Number(web.port));
+        if (app?.target_fps) setFps(Number(app.target_fps));
         if (app?.headless !== undefined) setHeadless(Boolean(app.headless));
         if (streaming?.ffmpeg_path) setFfmpegPath(String(streaming.ffmpeg_path));
         const twitch = s.twitch as Record<string, unknown> | undefined;
@@ -54,9 +55,9 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await api.updateSettings({
-        web: { port: parseInt(port) || 8080 },
+        web: { port },
         application: {
-          fps: parseInt(fps) || 30,
+          target_fps: fps,
           headless,
         },
         streaming: {
@@ -116,13 +117,13 @@ export default function SettingsPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="fps">Target FPS</Label>
-              <Input
+              <NumericInput
                 id="fps"
-                type="number"
+                integer
                 min={1}
                 max={120}
                 value={fps}
-                onChange={(e) => setFps(e.target.value)}
+                onChange={setFps}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -149,13 +150,13 @@ export default function SettingsPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="port">Port</Label>
-              <Input
+              <NumericInput
                 id="port"
-                type="number"
+                integer
                 min={1024}
                 max={65535}
                 value={port}
-                onChange={(e) => setPort(e.target.value)}
+                onChange={setPort}
               />
             </div>
           </CardContent>
