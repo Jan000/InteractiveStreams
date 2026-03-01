@@ -56,6 +56,24 @@ bool StreamEncoder::start() {
         return false;
     }
 
+    // Quick check: can we find the FFmpeg binary?
+    {
+        std::string checkCmd = m_ffmpegPath + " -version";
+#ifdef _WIN32
+        checkCmd += " >nul 2>nul";
+#else
+        checkCmd += " >/dev/null 2>/dev/null";
+#endif
+        int rc = std::system(checkCmd.c_str());
+        if (rc != 0) {
+            spdlog::error("[StreamEncoder] FFmpeg not found at '{}'. "
+                          "Install FFmpeg or set the correct path in Settings.",
+                          m_ffmpegPath);
+            m_failed = true;
+            return false;
+        }
+    }
+
     // Build stderr log path next to the executable
     {
         namespace fs = std::filesystem;
@@ -104,7 +122,10 @@ bool StreamEncoder::start() {
 }
 
 void StreamEncoder::stop() {
-    m_running = false;
+    // Guard against double-stop (destructor after explicit stop)
+    bool wasRunning = m_running.exchange(false);
+    if (!wasRunning && !m_pipe && !m_thread.joinable()) return;
+
     m_cv.notify_all();
 
     if (m_thread.joinable()) {
