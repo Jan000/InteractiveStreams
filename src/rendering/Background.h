@@ -29,8 +29,8 @@ private:
     };
 
     std::vector<BackgroundStar> m_stars;
-    float m_width  = 1920;
-    float m_height = 1080;
+    float m_width  = 1080;
+    float m_height = 1920;
     float m_time   = 0.0f;
 
     // Nebula-like color regions

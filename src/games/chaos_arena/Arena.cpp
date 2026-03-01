@@ -46,19 +46,29 @@ void Arena::createMainPlatform(b2World& world) {
 }
 
 void Arena::createFloatingPlatforms(b2World& world) {
-    // Mid-level platforms
+    // Platforms arranged for vertical arena (22.5 wide x 40 tall)
     struct PlatDef { float x, y, hw, hh; };
     std::vector<PlatDef> defs = {
-        {-10.0f,  4.0f, 3.0f, 0.3f},
-        { 10.0f,  4.0f, 3.0f, 0.3f},
-        {  0.0f,  1.0f, 4.0f, 0.3f},
-        { -6.0f, -2.0f, 2.5f, 0.3f},
-        {  6.0f, -2.0f, 2.5f, 0.3f},
-        {  0.0f, -5.0f, 3.0f, 0.3f},
-        {-14.0f,  0.0f, 2.0f, 0.3f},
-        { 14.0f,  0.0f, 2.0f, 0.3f},
-        { -8.0f, -6.0f, 2.0f, 0.3f},
-        {  8.0f, -6.0f, 2.0f, 0.3f},
+        // Lower tier
+        { -6.0f,  14.0f, 3.0f, 0.3f},
+        {  6.0f,  14.0f, 3.0f, 0.3f},
+        // Mid-low tier
+        {  0.0f,  10.0f, 3.5f, 0.3f},
+        { -8.0f,   7.0f, 2.5f, 0.3f},
+        {  8.0f,   7.0f, 2.5f, 0.3f},
+        // Center tier
+        { -4.0f,   3.0f, 3.0f, 0.3f},
+        {  4.0f,   3.0f, 3.0f, 0.3f},
+        {  0.0f,  -1.0f, 3.5f, 0.3f},
+        // Mid-high tier
+        { -7.0f,  -5.0f, 2.5f, 0.3f},
+        {  7.0f,  -5.0f, 2.5f, 0.3f},
+        // Upper tier
+        {  0.0f,  -9.0f, 3.0f, 0.3f},
+        { -5.0f, -13.0f, 2.0f, 0.3f},
+        {  5.0f, -13.0f, 2.0f, 0.3f},
+        // Top tier
+        {  0.0f, -16.0f, 2.5f, 0.3f},
     };
 
     sf::Color platColor(100, 100, 160);
@@ -70,13 +80,17 @@ void Arena::createFloatingPlatforms(b2World& world) {
 }
 
 void Arena::createDestructibleBlocks(b2World& world) {
+    // Destructible blocks spread vertically across the arena
     struct BlockDef { float x, y; };
     std::vector<BlockDef> blocks = {
-        {-4.0f, -1.0f},
-        { 4.0f, -1.0f},
-        { 0.0f, -3.5f},
-        {-12.0f, 2.0f},
-        { 12.0f, 2.0f},
+        { -3.0f,  12.0f},
+        {  3.0f,  12.0f},
+        {  0.0f,   5.0f},
+        { -6.0f,  -2.0f},
+        {  6.0f,  -2.0f},
+        {  0.0f,  -7.0f},
+        { -4.0f, -11.0f},
+        {  4.0f, -11.0f},
     };
 
     float blockHW = 0.6f;

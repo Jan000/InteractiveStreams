@@ -140,7 +140,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Draw-Calls pro Spieler. Dadurch ist es auf ~40-60 Spieler limitiert. Color Conquest wurde von Grund auf für massive Spielerzahlen entworfen:
 
 - **O(1) pro Chat-Nachricht** – Hash-Map-basierte Spieler-Zuordnung
-- **O(Grid) pro Update-Tick** – Nur die 960 Zellen (40×24) werden verarbeitet, nicht die Spieleranzahl
+- **O(Grid) pro Update-Tick** -- Nur die 960 Zellen (24x40) werden verarbeitet, nicht die Spieleranzahl
 - **Keine Physik-Engine** – Kein Box2D, keine dynamischen Bodies
 - **Minimale Draw-Calls** – Grid-basiertes Rendering
 
@@ -232,7 +232,7 @@ InteractiveStreams/
 │   │   │   └── PowerUp.h/cpp        # Power-Up Items
 │   │   └── color_conquest/     # Color Conquest Spiel
 │   │       ├── ColorConquest.h/cpp  # Haupt-Spiellogik
-│   │       ├── Grid.h/cpp           # Spielfeld-Grid (40×24)
+│   │       ├── Grid.h/cpp           # Spielfeld-Grid (24×40)
 │   │       └── Team.h               # Team-Datenstruktur
 │   ├── platform/               # Plattform-Integrationen
 │   │   ├── IPlatform.h         # Plattform-Interface (abstrakt)

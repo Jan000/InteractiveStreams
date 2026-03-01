@@ -15,8 +15,8 @@ StreamEncoder::StreamEncoder(core::Config& config)
 {
     m_ffmpegPath = config.get<std::string>("streaming.ffmpeg_path", "ffmpeg");
     m_outputUrl  = config.get<std::string>("streaming.output_url", "");
-    m_width      = config.get<int>("rendering.width", 1920);
-    m_height     = config.get<int>("rendering.height", 1080);
+    m_width      = config.get<int>("rendering.width", 1080);
+    m_height     = config.get<int>("rendering.height", 1920);
     m_fps        = config.get<int>("streaming.fps", 30);
     m_bitrate    = config.get<int>("streaming.bitrate_kbps", 4500);
     m_preset     = config.get<std::string>("streaming.preset", "fast");

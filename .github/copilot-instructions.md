@@ -133,7 +133,7 @@ Physik und Logik laufen mit festem Zeitschritt (1/60s), Rendering interpoliert m
 ### Config-System (Dotted Keys)
 Zugriff über Punkt-getrennte Schlüssel:
 ```cpp
-auto width = config.get<int>("rendering.width", 1920);
+auto width = config.get<int>("rendering.width", 1080);
 config.set("platforms.twitch.channel", "mein_kanal");
 ```
 Die `navigate()`-Methode traversiert das JSON-Objekt entlang der Punkte.
@@ -182,7 +182,7 @@ Befehle in `ChaosArena::onChatMessage()`:
 `GamePhase::Lobby` → `Countdown` → `Voting` → `RoundEnd` → ... (30 Runden) → `GameOver`
 
 ### Grid-System
-- 40×24 Zellen, jede gehört einem Team oder ist neutral (Owner::None)
+- 24×40 Zellen, jede gehört einem Team oder ist neutral (Owner::None)
 - Teams starten in den Ecken mit 3×3 Blöcken
 - Expansion: Nur Grenzzellen können erobert werden
 - Rendering: Einfache Farbflächen, kein Box2D

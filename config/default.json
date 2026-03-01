@@ -6,8 +6,8 @@
         "default_game": "chaos_arena"
     },
     "rendering": {
-        "width": 1920,
-        "height": 1080,
+        "width": 1080,
+        "height": 1920,
         "title": "InteractiveStreams",
         "antialiasing": 4
     },
@@ -74,8 +74,8 @@
             "round_duration": 8,
             "result_duration": 3,
             "lobby_duration": 10,
-            "grid_width": 40,
-            "grid_height": 24
+            "grid_width": 24,
+            "grid_height": 40
         }
     }
 }

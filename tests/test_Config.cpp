@@ -21,14 +21,14 @@ TEST_SUITE("Config") {
 
     TEST_CASE("Load simple values") {
         auto path = writeTempConfig(R"({
-            "rendering": { "width": 1920, "height": 1080 },
+            "rendering": { "width": 1080, "height": 1920 },
             "application": { "name": "TestApp" }
         })");
 
         is::core::Config cfg(path);
 
-        CHECK(cfg.get<int>("rendering.width") == 1920);
-        CHECK(cfg.get<int>("rendering.height") == 1080);
+        CHECK(cfg.get<int>("rendering.width") == 1080);
+        CHECK(cfg.get<int>("rendering.height") == 1920);
         CHECK(cfg.get<std::string>("application.name") == "TestApp");
 
         fs::remove(path);

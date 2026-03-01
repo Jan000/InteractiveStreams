@@ -8,6 +8,10 @@
 
 namespace is::games::chaos_arena {
 
+// Screen center offsets for world→screen conversion (1080x1920, 9:16 vertical)
+static constexpr float SCREEN_CX = 540.0f;   // 1080 / 2
+static constexpr float SCREEN_CY = 960.0f;   // 1920 / 2
+
 // Auto-register this game
 REGISTER_GAME(ChaosArena);
 
@@ -27,11 +31,11 @@ void ChaosArena::initialize() {
 
     m_arena->generate(m_physics->world(), ARENA_WIDTH, ARENA_HEIGHT);
 
-    // Initialize background (stars, nebulae)
-    m_background.initialize(1920, 1080);
+    // Initialize background (stars, nebulae) — 9:16 vertical
+    m_background.initialize(1080, 1920);
 
-    // Initialize post-processing
-    m_postProcessing.initialize(1920, 1080);
+    // Initialize post-processing — 9:16 vertical
+    m_postProcessing.initialize(1080, 1920);
 
     // Load font for text rendering
     if (m_font.loadFromFile("assets/fonts/JetBrainsMono-Regular.ttf")) {
@@ -43,8 +47,8 @@ void ChaosArena::initialize() {
 
     // Set up collision callback for visual effects
     m_physics->setContactCallback([this](const ContactInfo& info) {
-        sf::Vector2f pos(info.contactPoint.x * PIXELS_PER_METER + 960,
-                         info.contactPoint.y * PIXELS_PER_METER + 540);
+        sf::Vector2f pos(info.contactPoint.x * PIXELS_PER_METER + SCREEN_CX,
+                         info.contactPoint.y * PIXELS_PER_METER + SCREEN_CY);
         if (info.impulse > 3.0f) {
             m_particles->emitDust(pos);
         }
@@ -148,7 +152,7 @@ void ChaosArena::cmdJoin(const std::string& userId, const std::string& displayNa
         reinterpret_cast<uintptr_t>(&m_players[userId]);
 
     // Spawn particle effect
-    sf::Vector2f screenPos(960 + spawnX * PIXELS_PER_METER, 540 + spawnY * PIXELS_PER_METER);
+    sf::Vector2f screenPos(SCREEN_CX + spawnX * PIXELS_PER_METER, SCREEN_CY + spawnY * PIXELS_PER_METER);
     m_particles->emitExplosion(screenPos, m_players[userId].color, 30);
 
     // Initialize leaderboard entry
@@ -202,8 +206,8 @@ void ChaosArena::cmdJump(const std::string& userId) {
 
         // Jump dust particles
         auto pos = p.body->GetPosition();
-        sf::Vector2f screenPos(960 + pos.x * PIXELS_PER_METER,
-                               540 + (pos.y + Player::HALF_HEIGHT) * PIXELS_PER_METER);
+        sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
+                               SCREEN_CY + (pos.y + Player::HALF_HEIGHT) * PIXELS_PER_METER);
         m_particles->emitDust(screenPos);
     }
 }
@@ -242,16 +246,16 @@ void ChaosArena::cmdAttack(const std::string& userId) {
             other.body->ApplyLinearImpulseToCenter(knockback, true);
 
             // Hit particles
-            sf::Vector2f hitPos(960 + (pos.x + dx * 0.5f) * PIXELS_PER_METER,
-                                540 + (pos.y + dy * 0.5f) * PIXELS_PER_METER);
+            sf::Vector2f hitPos(SCREEN_CX + (pos.x + dx * 0.5f) * PIXELS_PER_METER,
+                                SCREEN_CY + (pos.y + dy * 0.5f) * PIXELS_PER_METER);
             sf::Vector2f hitDir(dx, dy);
             m_particles->emitHitSpark(hitPos, hitDir, p.color);
         }
     }
 
     // Attack visual (swing effect)
-    sf::Vector2f swingPos(960 + (pos.x + p.facingDir * 1.0f) * PIXELS_PER_METER,
-                          540 + pos.y * PIXELS_PER_METER);
+    sf::Vector2f swingPos(SCREEN_CX + (pos.x + p.facingDir * 1.0f) * PIXELS_PER_METER,
+                          SCREEN_CY + pos.y * PIXELS_PER_METER);
     ParticleEmitterConfig cfg;
     cfg.position = swingPos;
     cfg.count = 8;
@@ -294,8 +298,8 @@ void ChaosArena::cmdSpecial(const std::string& userId) {
     m_projectiles.push_back(proj);
 
     // Muzzle flash particles
-    sf::Vector2f muzzlePos(960 + (pos.x + p.facingDir * 1.0f) * PIXELS_PER_METER,
-                           540 + (pos.y - 0.2f) * PIXELS_PER_METER);
+    sf::Vector2f muzzlePos(SCREEN_CX + (pos.x + p.facingDir * 1.0f) * PIXELS_PER_METER,
+                           SCREEN_CY + (pos.y - 0.2f) * PIXELS_PER_METER);
     m_particles->emitExplosion(muzzlePos, p.color, 15);
 
     spdlog::debug("[ChaosArena] {} fired special attack!", p.displayName);
@@ -319,7 +323,7 @@ void ChaosArena::cmdDash(const std::string& userId) {
 
     // Trail particles
     auto pos = p.body->GetPosition();
-    sf::Vector2f screenPos(960 + pos.x * PIXELS_PER_METER, 540 + pos.y * PIXELS_PER_METER);
+    sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER, SCREEN_CY + pos.y * PIXELS_PER_METER);
     for (int i = 0; i < 5; ++i) {
         m_particles->emitTrail(screenPos, p.color);
     }
@@ -338,7 +342,7 @@ void ChaosArena::cmdBlock(const std::string& userId) {
 
     // Shield visual
     auto pos = p.body->GetPosition();
-    sf::Vector2f screenPos(960 + pos.x * PIXELS_PER_METER, 540 + pos.y * PIXELS_PER_METER);
+    sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER, SCREEN_CY + pos.y * PIXELS_PER_METER);
     ParticleEmitterConfig cfg;
     cfg.position = screenPos;
     cfg.count = 20;
@@ -400,8 +404,8 @@ void ChaosArena::update(double dt) {
                 auto vel = player.body->GetLinearVelocity();
                 float speed = vel.Length();
                 if (speed > 10.0f) {
-                    sf::Vector2f screenPos(960 + pos.x * PIXELS_PER_METER,
-                                           540 + pos.y * PIXELS_PER_METER);
+                    sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
+                                           SCREEN_CY + pos.y * PIXELS_PER_METER);
                     m_particles->emitTrail(screenPos, player.color);
                 }
 
@@ -440,8 +444,8 @@ void ChaosArena::update(double dt) {
                         }
 
                         // Impact particles
-                        sf::Vector2f impactPos(960 + pos.x * PIXELS_PER_METER,
-                                               540 + pos.y * PIXELS_PER_METER);
+                        sf::Vector2f impactPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
+                                               SCREEN_CY + pos.y * PIXELS_PER_METER);
                         m_particles->emitExplosion(impactPos, proj.color, 20);
                         proj.alive = false;
                         break;
@@ -450,8 +454,8 @@ void ChaosArena::update(double dt) {
 
                 // Trail particle for projectile
                 if (proj.alive) {
-                    sf::Vector2f screenPos(960 + pos.x * PIXELS_PER_METER,
-                                           540 + pos.y * PIXELS_PER_METER);
+                    sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER,
+                                           SCREEN_CY + pos.y * PIXELS_PER_METER);
                     m_particles->emitTrail(screenPos, proj.color);
                 }
             }
@@ -503,8 +507,8 @@ void ChaosArena::update(double dt) {
                                 break;
                         }
 
-                        sf::Vector2f pickupPos(960 + pu.position.x * PIXELS_PER_METER,
-                                               540 + pu.position.y * PIXELS_PER_METER);
+                        sf::Vector2f pickupPos(SCREEN_CX + pu.position.x * PIXELS_PER_METER,
+                                               SCREEN_CY + pu.position.y * PIXELS_PER_METER);
                         m_particles->emitPowerUpPickup(pickupPos, pu.getColor());
                         pu.alive = false;
                         break;
@@ -684,7 +688,7 @@ void ChaosArena::eliminatePlayer(Player& player, const std::string& killerName,
 
     // Death particles
     auto pos = player.body->GetPosition();
-    sf::Vector2f screenPos(960 + pos.x * PIXELS_PER_METER, 540 + pos.y * PIXELS_PER_METER);
+    sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER, SCREEN_CY + pos.y * PIXELS_PER_METER);
     m_particles->emitDeath(screenPos, player.color);
 
     // Kill feed
@@ -1056,8 +1060,9 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
     if (m_phase == GamePhase::Lobby) {
         // Pulsing "waiting" indicator
         float pulse = static_cast<float>(std::sin(m_lobbyTimer * 2.0) * 0.3 + 0.7);
-        sf::RectangleShape waitBox(sf::Vector2f(500, 120));
-        waitBox.setOrigin(250, 60);
+        float boxW = std::min(500.0f, size.x * 0.85f);
+        sf::RectangleShape waitBox(sf::Vector2f(boxW, 120));
+        waitBox.setOrigin(boxW / 2.0f, 60);
         waitBox.setPosition(size.x / 2.0f, size.y / 2.0f);
         waitBox.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(200 * pulse)));
         waitBox.setOutlineThickness(2.0f);

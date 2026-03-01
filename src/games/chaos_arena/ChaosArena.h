@@ -137,8 +137,8 @@ private:
     std::mt19937 m_rng;
 
     // Arena dimensions (world units)
-    static constexpr float ARENA_WIDTH  = 40.0f;
-    static constexpr float ARENA_HEIGHT = 22.5f;
+    static constexpr float ARENA_WIDTH  = 22.5f;
+    static constexpr float ARENA_HEIGHT = 40.0f;
     static constexpr float PIXELS_PER_METER = 48.0f;
 };
 

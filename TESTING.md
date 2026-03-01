@@ -53,7 +53,7 @@ cmake --build build --config Debug
 ```
 
 > Beim Start passieren automatisch:
-> - SFML-Fenster öffnet sich (1920×1080 Live-Vorschau)
+> - SFML-Fenster öffnet sich (1080×1920 Live-Vorschau, 9:16 vertikal)
 > - Web-Dashboard wird auf **http://localhost:8080** gestartet
 > - „Local"-Plattform verbindet sich (Konsoleneingabe aktiv)
 > - Das in `config/default.json` unter `default_game` konfigurierte Spiel wird geladen (Standard: Chaos Arena)

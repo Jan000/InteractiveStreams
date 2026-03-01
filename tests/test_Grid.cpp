@@ -115,7 +115,7 @@ TEST_SUITE("Color Conquest - Grid") {
 
     TEST_CASE("Grid placeStartingPositions") {
         Grid grid;
-        grid.initialize(40, 24);
+        grid.initialize(24, 40);
 
         grid.placeStartingPositions();
 
@@ -131,11 +131,11 @@ TEST_SUITE("Color Conquest - Grid") {
         CHECK(grid.getCell(3, 3) == TeamId::Red);
 
         // Blue should be in top-right corner
-        int bx = 40 - 1 - 3;  // 36
+        int bx = 24 - 1 - 3;  // 20
         CHECK(grid.getCell(bx, 1) == TeamId::Blue);
 
         // Green should be in bottom-left corner
-        int gy = 24 - 1 - 3;  // 20
+        int gy = 40 - 1 - 3;  // 36
         CHECK(grid.getCell(1, gy) == TeamId::Green);
 
         // Yellow should be in bottom-right corner

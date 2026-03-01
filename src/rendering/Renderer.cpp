@@ -6,11 +6,20 @@ namespace is::rendering {
 Renderer::Renderer(int width, int height, const std::string& title)
     : m_width(width), m_height(height)
 {
-    // Create window for local preview
+    // Create window for local preview (scaled down to fit desktop)
     sf::ContextSettings settings;
     settings.antialiasingLevel = 4;
 
-    m_window.create(sf::VideoMode(width, height), title,
+    // For tall/vertical resolutions, scale the preview window to fit screen
+    int previewW = width;
+    int previewH = height;
+    if (height > 1080 || width > 1920) {
+        float scale = std::min(1080.0f / height, 1920.0f / width);
+        previewW = static_cast<int>(width * scale);
+        previewH = static_cast<int>(height * scale);
+    }
+
+    m_window.create(sf::VideoMode(previewW, previewH), title,
         sf::Style::Default, settings);
     m_window.setVerticalSyncEnabled(false);
     m_window.setFramerateLimit(0);  // We manage timing ourselves

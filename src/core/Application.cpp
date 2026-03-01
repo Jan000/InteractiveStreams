@@ -61,8 +61,8 @@ void Application::initialize() {
     auto& cfg = *m_impl->config;
 
     // Rendering
-    int width  = cfg.get<int>("rendering.width", 1920);
-    int height = cfg.get<int>("rendering.height", 1080);
+    int width  = cfg.get<int>("rendering.width", 1080);
+    int height = cfg.get<int>("rendering.height", 1920);
     m_impl->renderer = std::make_unique<rendering::Renderer>(width, height,
         cfg.get<std::string>("rendering.title", "InteractiveStreams"));
 

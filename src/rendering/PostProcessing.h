@@ -22,8 +22,8 @@ public:
     void applyScanlines(sf::RenderTarget& target, float intensity = 0.05f);
 
 private:
-    unsigned int m_width = 1920;
-    unsigned int m_height = 1080;
+    unsigned int m_width = 1080;
+    unsigned int m_height = 1920;
 };
 
 } // namespace is::rendering
