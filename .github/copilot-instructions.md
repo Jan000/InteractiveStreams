@@ -338,6 +338,21 @@ Performance-Metriken mit Ring-Buffer (max 3600 Samples).
 | SQLite3 3.45.3 | Spieler-Datenbank (Scoreboard) | `FetchContent` (URL-Download Amalgamation), `sqlite3_lib` |
 | FFmpeg | RTMP-Encoding | **Extern** (muss im PATH sein), über `popen()` angesteuert |
 
+### Frontend (Web-Dashboard)
+
+| Dependency | Zweck | Zugriff |
+|-----------|-------|--------|
+| Next.js 16.1.6 | React-Framework, Static Export | `bun install`, `web/` |
+| TypeScript | Typsicherheit | In Next.js integriert |
+| shadcn/ui + Radix UI | UI-Komponenten | `web/src/components/ui/` |
+| Tailwind CSS v4 | Styling | `web/postcss.config.mjs` |
+| Recharts 3.7.0 | Performance-Graphen | Import in Dashboard-Seiten |
+| Bun | Package-Manager & Build-Tool | `bun install`, `bun run build` |
+
+Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Build nach `dashboard/` neben die Executable kopiert.
+
+**Dashboard-Build:** `cd web && bun install && bun run build`
+
 ---
 
 ## Dateien modifizieren – Checkliste
@@ -357,7 +372,7 @@ Performance-Metriken mit Ring-Buffer (max 3600 Samples).
 2. [ ] IPlatform-Interface implementieren (Thread-Safe `pollMessages()`)
 3. [ ] In `ChannelManager.cpp` → `createPlatform()` Factory erweitern
 4. [ ] Quelldateien in `CMakeLists.txt` → `PLATFORM_SOURCES` eintragen
-5. [ ] Plattform-spezifische Settings im Dashboard-Formular hinzufügen (index.html + app.js)
+5. [ ] Plattform-spezifische Settings im Dashboard-Formular hinzufügen (`web/src/components/channel-card.tsx`)
 6. [ ] README.md aktualisieren
 7. [ ] Git-Commit erstellen
 
@@ -389,7 +404,7 @@ Performance-Metriken mit Ring-Buffer (max 3600 Samples).
 5. **FFmpeg-Pfad**: FFmpeg wird via `popen("ffmpeg ...")` aufgerufen – muss im System-PATH sein.
 6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
 7. **Config-Persistenz**: Alle Einstellungen werden automatisch in `data/settings.db` (SQLite) persistiert. `POST /api/config/save` schreibt zusätzlich eine JSON-Backup-Datei. SQLite ist die primäre Source of Truth; `config/default.json` dient nur als Erst-Migrations-Template.
-8. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake). Dashboard ist Tab-basiert: Streams, Channels, Settings, Chat Test.
+8. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake). Dashboard ist ein Next.js-Static-Export (`web/`), gebaut mit `bun run build`. Tab-basiert: Streams, Channels, Statistics, Scoreboard, Performance, Settings. **Immer `bun` verwenden** (nicht npm/yarn).
 9. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
 
 ---

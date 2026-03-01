@@ -196,8 +196,12 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 | **Datenbank** | SQLite3 | 3.45.3 |
 | **Charts** | Recharts | 3.7.0 |
 | **Streaming** | FFmpeg (extern) | — |
+| **Dashboard** | Next.js + TypeScript | 16.1.6 |
+| **UI-Komponenten** | shadcn/ui + Tailwind CSS | v4 |
+| **Package-Manager** | Bun | ≥ 1.0 |
 
-Alle Abhängigkeiten werden automatisch über **CMake FetchContent** heruntergeladen und gebaut.
+C++-Abhängigkeiten werden automatisch über **CMake FetchContent** heruntergeladen und gebaut.
+Das Web-Dashboard (`web/`) nutzt **Bun** als Package-Manager und Build-Tool.
 
 ---
 
@@ -289,6 +293,7 @@ InteractiveStreams/
 - **C++20-fähiger Compiler** (GCC 11+, Clang 14+, MSVC 2022+)
 - **CMake** ≥ 3.20
 - **Git** (für FetchContent)
+- **Bun** ≥ 1.0 (für das Web-Dashboard: [bun.sh](https://bun.sh))
 - **FFmpeg** (optional, für Streaming – muss im PATH sein)
 
 ### Build (Windows)
@@ -298,10 +303,16 @@ InteractiveStreams/
 git clone <repo-url> InteractiveStreams
 cd InteractiveStreams
 
+# Web-Dashboard bauen (benötigt Bun)
+cd web
+bun install
+bun run build
+cd ..
+
 # Build-Verzeichnis erstellen und konfigurieren
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# Kompilieren
+# Kompilieren (kopiert web/out/ automatisch nach build/Release/dashboard/)
 cmake --build build --config Release
 
 # Ausführen
@@ -314,6 +325,9 @@ cmake --build build --config Release
 # Zusätzliche Abhängigkeiten (Ubuntu/Debian)
 sudo apt install libx11-dev libxrandr-dev libxcursor-dev \
     libxi-dev libudev-dev libgl1-mesa-dev libfreetype-dev
+
+# Web-Dashboard bauen (benötigt Bun)
+cd web && bun install && bun run build && cd ..
 
 # Build
 cmake -B build -DCMAKE_BUILD_TYPE=Release
