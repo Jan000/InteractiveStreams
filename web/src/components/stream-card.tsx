@@ -353,7 +353,7 @@ export function StreamCard({
           )}
           {!hasValidUrl && (
             <Badge variant="secondary" className="text-[10px] text-yellow-500">
-              No URL
+              No Channels
             </Badge>
           )}
           {dirty && (
@@ -1024,7 +1024,7 @@ export function StreamCard({
                 ? "Stop streaming"
                 : hasValidUrl
                   ? "Start streaming"
-                  : "Configure RTMP URL first"}
+                  : "Assign channels with stream URLs first"}
             </TooltipContent>
           </Tooltip>
         </div>

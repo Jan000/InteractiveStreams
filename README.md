@@ -381,17 +381,15 @@ Streams werden im Dashboard unter dem Tab **Streams** verwaltet. Jeder Stream ha
             "resolution": "mobile",
             "game_mode": "vote",
             "fixed_game": "chaos_arena",
-            "channels": ["local", "twitch-1"],
-            "streaming": {
-                "enabled": false,
-                "output_url": "rtmp://live.twitch.tv/app/STREAM_KEY",
-                "fps": 30,
-                "bitrate_kbps": 4500
-            }
+            "channel_ids": ["local", "twitch-1"],
+            "fps": 30,
+            "bitrate_kbps": 4500
         }
     ]
 }
 ```
+
+> **Hinweis:** Stream-URL und Stream-Key werden pro Kanal konfiguriert (in den Channel-Einstellungen), nicht pro Stream. Ein Stream kann auf mehrere Kanäle gleichzeitig ausgegeben werden.
 
 ### Einstellungen über das Dashboard ändern
 
