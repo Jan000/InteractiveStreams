@@ -1,7 +1,7 @@
 #include "core/StreamInstance.h"
+#include "core/Config.h"
 #include "core/Application.h"
 #include "core/ChannelManager.h"
-#include "core/Config.h"
 #include "rendering/Renderer.h"
 #include "games/GameRegistry.h"
 #include "streaming/StreamEncoder.h"
