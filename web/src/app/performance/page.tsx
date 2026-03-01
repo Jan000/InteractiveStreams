@@ -87,6 +87,9 @@ export default function PerformancePage() {
   const [history, setHistory] = useState<PerfSample[]>([]);
   const [range, setRange] = useState("300");
 
+  // Per-chart Y-axis maxima – only ever increase so the scale never contracts
+  const [yMax, setYMax] = useState({ fps: 80, frameTime: 50, memory: 200, players: 10 });
+
   const fetchData = useCallback(async () => {
     try {
       const [p, h] = await Promise.all([
@@ -94,7 +97,16 @@ export default function PerformancePage() {
         api.getPerfHistory(Number(range)),
       ]);
       setPerf(p);
-      setHistory(h.samples ?? []);
+      const samples = h.samples ?? [];
+      setHistory(samples);
+      if (samples.length > 0) {
+        setYMax(prev => ({
+          fps:       Math.max(prev.fps,       ...samples.map(s => s.fps)),
+          frameTime: Math.max(prev.frameTime, ...samples.map(s => s.frameTimeMs)),
+          memory:    Math.max(prev.memory,    ...samples.map(s => s.memoryMB)),
+          players:   Math.max(prev.players,   ...samples.map(s => Math.max(s.totalPlayers, s.activeStreams, s.activeChannels))),
+        }));
+      }
     } catch {
       /* backend not running */
     }
@@ -106,15 +118,21 @@ export default function PerformancePage() {
     return () => clearInterval(iv);
   }, [fetchData]);
 
-  // Prepare chart data with relative time labels
-  const chartData = history.map((s, i) => ({
+  // Prepare chart data: relSec is seconds relative to now (newest = 0)
+  const now = history.length > 0 ? history[history.length - 1].time : 0;
+  const chartData = history.map((s) => ({
     ...s,
-    label: i,
-    timeLabel:
-      history.length > 0
-        ? `-${Math.round(history[history.length - 1].time - s.time)}s`
-        : "",
+    relSec: Math.round(s.time - now), // e.g. -230, -229, ..., 0
   }));
+
+  const xAxisProps = {
+    dataKey: "relSec" as const,
+    type: "number" as const,
+    domain: [-Number(range), 0] as [number, number],
+    tickFormatter: (v: number) => `${v}s`,
+    tick: { fontSize: 10, fill: "#888" },
+    tickCount: 6,
+  };
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -195,13 +213,9 @@ export default function PerformancePage() {
                 </linearGradient>
               </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis
-                  dataKey="timeLabel"
-                  tick={{ fontSize: 10, fill: "#888" }}
-                  interval="preserveStartEnd"
-                />
+                <XAxis {...xAxisProps} />
                 <YAxis
-                  domain={[0, "auto"]}
+                  domain={[0, yMax.fps]}
                   tick={{ fontSize: 10, fill: "#888" }}
                 />
                 <Tooltip
@@ -240,12 +254,8 @@ export default function PerformancePage() {
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis
-                  dataKey="timeLabel"
-                  tick={{ fontSize: 10, fill: "#888" }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis tick={{ fontSize: 10, fill: "#888" }} />
+                <XAxis {...xAxisProps} />
+                <YAxis domain={[0, yMax.frameTime]} tick={{ fontSize: 10, fill: "#888" }} />
                 <Tooltip
                   contentStyle={{
                     background: "#1a1a2e",
@@ -286,12 +296,8 @@ export default function PerformancePage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis
-                  dataKey="timeLabel"
-                  tick={{ fontSize: 10, fill: "#888" }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis tick={{ fontSize: 10, fill: "#888" }} />
+                <XAxis {...xAxisProps} />
+                <YAxis domain={[0, yMax.memory]} tick={{ fontSize: 10, fill: "#888" }} />
                 <Tooltip
                   contentStyle={{
                     background: "#1a1a2e",
@@ -328,12 +334,8 @@ export default function PerformancePage() {
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-              <XAxis
-                dataKey="timeLabel"
-                tick={{ fontSize: 10, fill: "#888" }}
-                interval="preserveStartEnd"
-              />
-              <YAxis tick={{ fontSize: 10, fill: "#888" }} />
+              <XAxis {...xAxisProps} />
+              <YAxis domain={[0, yMax.players]} tick={{ fontSize: 10, fill: "#888" }} />
               <Tooltip
                 contentStyle={{
                   background: "#1a1a2e",
