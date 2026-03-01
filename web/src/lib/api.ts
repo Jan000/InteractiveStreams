@@ -24,6 +24,12 @@ export interface StreamState {
   preset: string;
   codec: string;
   enabled: boolean;
+  // Per-game descriptions and info messages
+  gameDescriptions?: Record<string, string>;
+  gameInfoMessages?: Record<string, string>;
+  gameInfoIntervals?: Record<string, number>;
+  // Live scoreboard data
+  scoreboard?: Array<{ name: string; points: number; wins: number }>;
   game?: {
     id: string;
     name: string;

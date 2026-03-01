@@ -1,4 +1,6 @@
 #include "core/StreamInstance.h"
+#include "core/Application.h"
+#include "core/ChannelManager.h"
 #include "games/GameRegistry.h"
 #include "streaming/StreamEncoder.h"
 
@@ -70,6 +72,42 @@ void StreamInstance::update(double dt) {
     m_gameManager->update(dt);
     m_gameManager->checkPendingSwitch();
     updateGameMode(dt);
+
+    // Refresh global scoreboard cache periodically
+    m_scoreboardRefreshTimer += dt;
+    if (m_scoreboardRefreshTimer >= SCOREBOARD_REFRESH_INTERVAL) {
+        m_scoreboardRefreshTimer = 0.0;
+        updateScoreboardCache();
+    }
+
+    // Track game changes for description switching
+    auto* game = m_gameManager->activeGame();
+    std::string currentGameId = game ? game->id() : "";
+    if (currentGameId != m_lastGameId) {
+        m_lastGameId = currentGameId;
+        m_infoMessageTimer = 0.0; // Reset info timer on game change
+
+        // Update stream description if per-game description is set
+        if (!currentGameId.empty()) {
+            auto descIt = m_config.gameDescriptions.find(currentGameId);
+            if (descIt != m_config.gameDescriptions.end() && !descIt->second.empty()) {
+                m_config.description = descIt->second;
+            }
+        }
+    }
+
+    // Periodic info message
+    if (game && !m_lastGameId.empty()) {
+        auto intervalIt = m_config.gameInfoIntervals.find(m_lastGameId);
+        int interval = (intervalIt != m_config.gameInfoIntervals.end()) ? intervalIt->second : 0;
+        if (interval > 0) {
+            m_infoMessageTimer += dt;
+            if (m_infoMessageTimer >= static_cast<double>(interval)) {
+                m_infoMessageTimer = 0.0;
+                sendPeriodicInfoMessage();
+            }
+        }
+    }
 }
 
 void StreamInstance::render(double alpha) {
@@ -83,6 +121,9 @@ void StreamInstance::render(double alpha) {
     if (m_voteState.active) {
         renderVoteOverlay();
     }
+
+    // Always draw the global scoreboard overlay
+    renderGlobalScoreboard();
 
     m_renderTexture.display();
 
@@ -341,6 +382,98 @@ void StreamInstance::renderVoteOverlay() {
     }
 }
 
+// ── Global scoreboard overlay ────────────────────────────────────────────────
+
+void StreamInstance::updateScoreboardCache() {
+    auto& db = Application::instance().playerDatabase();
+    m_scoreboardCache = db.getTopAllTime(5);
+}
+
+void StreamInstance::renderGlobalScoreboard() {
+    if (!m_fontLoaded || m_scoreboardCache.empty()) return;
+
+    float w = static_cast<float>(width());
+    float h = static_cast<float>(height());
+
+    // Panel in top-right corner
+    float panelW = w * 0.30f;
+    float lineH  = 32.0f;
+    float headerH = 38.0f;
+    float padX   = 12.0f;
+    float padY   = 8.0f;
+    int   count  = static_cast<int>(m_scoreboardCache.size());
+    float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
+    float panelX = w - panelW - 12.0f;
+    float panelY = 12.0f;
+
+    // Background
+    sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
+    bg.setPosition(panelX, panelY);
+    bg.setFillColor(sf::Color(10, 10, 20, 180));
+    bg.setOutlineColor(sf::Color(80, 130, 200, 150));
+    bg.setOutlineThickness(1.5f);
+    m_renderTexture.draw(bg);
+
+    // Header
+    sf::Text header;
+    header.setFont(m_font);
+    header.setString("SCOREBOARD");
+    header.setCharacterSize(22);
+    header.setFillColor(sf::Color(255, 215, 0));
+    header.setStyle(sf::Text::Bold);
+    auto hb = header.getLocalBounds();
+    header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
+    m_renderTexture.draw(header);
+
+    // Entries
+    float y = panelY + padY + headerH;
+    int rank = 1;
+    for (const auto& entry : m_scoreboardCache) {
+        // Rank + name
+        std::string line = std::to_string(rank) + ". " + entry.displayName;
+
+        sf::Text nameText;
+        nameText.setFont(m_font);
+        nameText.setString(line);
+        nameText.setCharacterSize(20);
+        nameText.setFillColor(rank == 1 ? sf::Color(255, 215, 0) :
+                              rank == 2 ? sf::Color(200, 200, 200) :
+                              rank == 3 ? sf::Color(205, 127, 50) :
+                                          sf::Color(170, 170, 190));
+        nameText.setPosition(panelX + padX, y);
+        m_renderTexture.draw(nameText);
+
+        // Points (right-aligned)
+        sf::Text ptsText;
+        ptsText.setFont(m_font);
+        ptsText.setString(std::to_string(entry.points) + " pts");
+        ptsText.setCharacterSize(20);
+        ptsText.setFillColor(sf::Color(88, 166, 255));
+        auto pb = ptsText.getLocalBounds();
+        ptsText.setPosition(panelX + panelW - pb.width - padX, y);
+        m_renderTexture.draw(ptsText);
+
+        y += lineH;
+        rank++;
+    }
+}
+
+void StreamInstance::sendPeriodicInfoMessage() {
+    if (m_lastGameId.empty()) return;
+
+    auto msgIt = m_config.gameInfoMessages.find(m_lastGameId);
+    if (msgIt == m_config.gameInfoMessages.end() || msgIt->second.empty()) return;
+
+    auto& cm = Application::instance().channelManager();
+
+    // Send to this stream's subscribed channels only
+    for (const auto& chId : m_config.channelIds) {
+        cm.sendMessageToChannel(chId, msgIt->second);
+    }
+
+    spdlog::debug("[Stream '{}'] Sent info message for game '{}'", m_config.name, m_lastGameId);
+}
+
 // ── Streaming control ────────────────────────────────────────────────────────
 
 bool StreamInstance::isStreaming() const {
@@ -412,6 +545,24 @@ nlohmann::json StreamInstance::getState() const {
     s["codec"]      = m_config.codec;
     s["enabled"]    = m_config.enabled;
 
+    // Per-game descriptions & info messages
+    if (!m_config.gameDescriptions.empty())
+        s["gameDescriptions"] = m_config.gameDescriptions;
+    if (!m_config.gameInfoMessages.empty())
+        s["gameInfoMessages"] = m_config.gameInfoMessages;
+    if (!m_config.gameInfoIntervals.empty())
+        s["gameInfoIntervals"] = m_config.gameInfoIntervals;
+
+    // Global scoreboard (top 5)
+    {
+        nlohmann::json sb = nlohmann::json::array();
+        for (const auto& e : m_scoreboardCache) {
+            sb.push_back({{"name", e.displayName}, {"points", e.points},
+                          {"wins", e.wins}});
+        }
+        s["scoreboard"] = sb;
+    }
+
     if (auto* g = m_gameManager->activeGame()) {
         s["game"]["id"]              = g->id();
         s["game"]["name"]            = g->displayName();
@@ -452,6 +603,16 @@ nlohmann::json StreamInstance::toJson() const {
     j["bitrate_kbps"] = m_config.bitrate;
     j["preset"]       = m_config.preset;
     j["codec"]        = m_config.codec;
+
+    // Per-game descriptions
+    if (!m_config.gameDescriptions.empty())
+        j["game_descriptions"] = m_config.gameDescriptions;
+    // Per-game info messages
+    if (!m_config.gameInfoMessages.empty())
+        j["game_info_messages"] = m_config.gameInfoMessages;
+    if (!m_config.gameInfoIntervals.empty())
+        j["game_info_intervals"] = m_config.gameInfoIntervals;
+
     return j;
 }
 
@@ -484,6 +645,21 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.bitrate   = j.value("bitrate_kbps", 4500);
     c.preset    = j.value("preset", "fast");
     c.codec     = j.value("codec", "libx264");
+
+    // Per-game descriptions
+    if (j.contains("game_descriptions") && j["game_descriptions"].is_object()) {
+        for (auto& [k, v] : j["game_descriptions"].items())
+            c.gameDescriptions[k] = v.get<std::string>();
+    }
+    if (j.contains("game_info_messages") && j["game_info_messages"].is_object()) {
+        for (auto& [k, v] : j["game_info_messages"].items())
+            c.gameInfoMessages[k] = v.get<std::string>();
+    }
+    if (j.contains("game_info_intervals") && j["game_info_intervals"].is_object()) {
+        for (auto& [k, v] : j["game_info_intervals"].items())
+            c.gameInfoIntervals[k] = v.get<int>();
+    }
+
     return c;
 }
 

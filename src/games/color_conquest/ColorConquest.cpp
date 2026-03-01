@@ -77,28 +77,44 @@ void ColorConquest::onChatMessage(const platform::ChatMessage& msg) {
     iss >> cmd;
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
+    bool validCommand = false;
+
     if (cmd == "!join" || cmd == "!play") {
         std::string teamArg;
         iss >> teamArg;
         std::transform(teamArg.begin(), teamArg.end(), teamArg.begin(), ::tolower);
         cmdJoin(msg.userId, msg.displayName, teamArg);
+        validCommand = true;
     }
     else if (cmd == "!up"    || cmd == "!u" || cmd == "!w" || cmd == "!north") {
         cmdVote(msg.userId, Direction::Up);
+        validCommand = m_playerTeam.count(msg.userId) > 0;
     }
     else if (cmd == "!down"  || cmd == "!d" || cmd == "!s" || cmd == "!south") {
         cmdVote(msg.userId, Direction::Down);
+        validCommand = m_playerTeam.count(msg.userId) > 0;
     }
     else if (cmd == "!left"  || cmd == "!l" || cmd == "!a" || cmd == "!west") {
         cmdVote(msg.userId, Direction::Left);
+        validCommand = m_playerTeam.count(msg.userId) > 0;
     }
     else if (cmd == "!right" || cmd == "!r" || cmd == "!e" || cmd == "!east") {
         cmdVote(msg.userId, Direction::Right);
+        validCommand = m_playerTeam.count(msg.userId) > 0;
     }
     else if (cmd == "!emote") {
         std::string emote;
         iss >> emote;
         cmdEmote(msg.userId, emote);
+        validCommand = m_playerTeam.count(msg.userId) > 0;
+    }
+
+    // Interaction-based scoring: 1 point per valid command
+    if (validCommand && m_playerTeam.count(msg.userId)) {
+        try {
+            is::core::Application::instance().playerDatabase().recordResult(
+                msg.userId, msg.displayName, "color_conquest", 1, false);
+        } catch (...) {}
     }
 }
 
@@ -329,8 +345,10 @@ void ColorConquest::checkGameOver() {
             for (const auto& [userId, team] : m_playerTeam) {
                 const auto& name = m_playerNames.count(userId) ? m_playerNames.at(userId) : userId;
                 bool isWin = (team == winnerTeam);
-                int points = isWin ? 50 : 5;  // 50 for winners, 5 for participation
-                db.recordResult(userId, name, "color_conquest", points, isWin);
+                int points = isWin ? 20 : 0;  // Win bonus only; interaction points already recorded
+                if (points > 0 || isWin) {
+                    db.recordResult(userId, name, "color_conquest", points, isWin);
+                }
             }
         } catch (...) {}
 
@@ -406,12 +424,12 @@ void ColorConquest::render(sf::RenderTarget& target, double /*alpha*/) {
             sf::Text t;
             t.setFont(m_font);
             t.setString(ev.text);
-            t.setCharacterSize(16);
+            t.setCharacterSize(22);
             t.setFillColor(sf::Color(ev.color.r, ev.color.g, ev.color.b,
                                      static_cast<uint8_t>(alpha * 255)));
             t.setPosition(20.0f, ey);
             target.draw(t);
-            ey -= 22.0f;
+            ey -= 28.0f;
         }
     }
 }
@@ -481,7 +499,7 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
     float gridPixelW = GRID_W * CELL_PX;
     float gap = 8.0f;
     float panelW = (gridPixelW - 3.0f * gap) / 4.0f;
-    float panelH = 100.0f;
+    float panelH = 110.0f;
 
     for (int i = 0; i < 4; i++) {
         auto team = static_cast<TeamId>(i + 1);
@@ -503,7 +521,7 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
         sf::Text nameTxt;
         nameTxt.setFont(m_font);
         nameTxt.setString(getTeamName(team));
-        nameTxt.setCharacterSize(14);
+        nameTxt.setCharacterSize(20);
         nameTxt.setFillColor(getTeamColor(team));
         nameTxt.setStyle(sf::Text::Bold);
         auto nb = nameTxt.getLocalBounds();
@@ -514,10 +532,10 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
         sf::Text playersTxt;
         playersTxt.setFont(m_font);
         playersTxt.setString(std::to_string(td.playerCount) + "P");
-        playersTxt.setCharacterSize(11);
+        playersTxt.setCharacterSize(18);
         playersTxt.setFillColor(sf::Color(180, 180, 200));
         auto ppb = playersTxt.getLocalBounds();
-        playersTxt.setPosition(px + panelW / 2.0f - ppb.width / 2.0f, py + 24.0f);
+        playersTxt.setPosition(px + panelW / 2.0f - ppb.width / 2.0f, py + 28.0f);
         target.draw(playersTxt);
 
         // Cell count + percentage
@@ -528,21 +546,21 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
         cellsTxt.setFont(m_font);
         cellsTxt.setString(std::to_string(td.cellCount) + " (" +
                            std::to_string(static_cast<int>(pct * 100)) + "%)");
-        cellsTxt.setCharacterSize(11);
+        cellsTxt.setCharacterSize(18);
         cellsTxt.setFillColor(sf::Color(180, 180, 200));
         auto cb = cellsTxt.getLocalBounds();
-        cellsTxt.setPosition(px + panelW / 2.0f - cb.width / 2.0f, py + 40.0f);
+        cellsTxt.setPosition(px + panelW / 2.0f - cb.width / 2.0f, py + 48.0f);
         target.draw(cellsTxt);
 
         // Cell bar
         float barW = panelW - 12.0f;
         sf::RectangleShape barBg(sf::Vector2f(barW, 6.0f));
-        barBg.setPosition(px + 6.0f, py + 60.0f);
+        barBg.setPosition(px + 6.0f, py + 72.0f);
         barBg.setFillColor(sf::Color(40, 40, 50));
         target.draw(barBg);
 
         sf::RectangleShape barFill(sf::Vector2f(barW * pct, 6.0f));
-        barFill.setPosition(px + 6.0f, py + 60.0f);
+        barFill.setPosition(px + 6.0f, py + 72.0f);
         barFill.setFillColor(getTeamColor(team));
         target.draw(barFill);
 
@@ -560,10 +578,10 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
             sf::Text voteTxt;
             voteTxt.setFont(m_font);
             voteTxt.setString(voteStr);
-            voteTxt.setCharacterSize(10);
+            voteTxt.setCharacterSize(16);
             voteTxt.setFillColor(sf::Color(140, 140, 160));
             auto vb = voteTxt.getLocalBounds();
-            voteTxt.setPosition(px + panelW / 2.0f - vb.width / 2.0f, py + 76.0f);
+            voteTxt.setPosition(px + panelW / 2.0f - vb.width / 2.0f, py + 86.0f);
             target.draw(voteTxt);
         }
     }
@@ -572,7 +590,7 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
     sf::Text totalTxt;
     totalTxt.setFont(m_font);
     totalTxt.setString("Total Players: " + std::to_string(m_playerTeam.size()));
-    totalTxt.setCharacterSize(13);
+    totalTxt.setCharacterSize(20);
     totalTxt.setFillColor(sf::Color(120, 120, 140));
     auto tb = totalTxt.getLocalBounds();
     totalTxt.setPosition(GRID_OFFSET_X + gridPixelW / 2.0f - tb.width / 2.0f,
@@ -605,7 +623,7 @@ void ColorConquest::renderVoteArrows(sf::RenderTarget& target) {
         sf::Text t;
         t.setFont(m_font);
         t.setString(a.text);
-        t.setCharacterSize(16);
+        t.setCharacterSize(22);
         t.setFillColor(sf::Color(200, 200, 220,
                        static_cast<uint8_t>(pulse * 200)));
         auto bounds = t.getLocalBounds();
@@ -622,7 +640,7 @@ void ColorConquest::renderRoundInfo(sf::RenderTarget& target) {
     sf::Text title;
     title.setFont(m_font);
     title.setString("COLOR CONQUEST");
-    title.setCharacterSize(22);
+    title.setCharacterSize(28);
     title.setFillColor(sf::Color(200, 200, 220));
     title.setStyle(sf::Text::Bold);
     title.setPosition(20.0f, 16.0f);
@@ -641,7 +659,7 @@ void ColorConquest::renderRoundInfo(sf::RenderTarget& target) {
     sf::Text phaseTxt;
     phaseTxt.setFont(m_font);
     phaseTxt.setString(phaseStr);
-    phaseTxt.setCharacterSize(18);
+    phaseTxt.setCharacterSize(24);
     phaseTxt.setFillColor(sf::Color(180, 180, 200));
     auto pb = phaseTxt.getLocalBounds();
     phaseTxt.setPosition(GRID_OFFSET_X + GRID_W * CELL_PX - pb.width, 16.0f);
@@ -668,7 +686,7 @@ void ColorConquest::renderRoundInfo(sf::RenderTarget& target) {
         sf::Text timerTxt;
         timerTxt.setFont(m_font);
         timerTxt.setString(std::to_string(static_cast<int>(m_roundTimer + 0.5f)) + "s");
-        timerTxt.setCharacterSize(14);
+        timerTxt.setCharacterSize(22);
         timerTxt.setFillColor(timerColor);
         float tw = timerTxt.getLocalBounds().width;
         timerTxt.setPosition(GRID_OFFSET_X + GRID_W * CELL_PX / 2.0f - tw / 2.0f,
@@ -697,7 +715,7 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
     sf::Text joinTxt;
     joinTxt.setFont(m_font);
     joinTxt.setString("JOIN A TEAM!");
-    joinTxt.setCharacterSize(26);
+    joinTxt.setCharacterSize(32);
     joinTxt.setFillColor(sf::Color::White);
     joinTxt.setStyle(sf::Text::Bold);
     auto jb = joinTxt.getLocalBounds();
@@ -717,7 +735,7 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
         sf::Text t;
         t.setFont(m_font);
         t.setString(teams[i]);
-        t.setCharacterSize(18);
+        t.setCharacterSize(24);
         t.setFillColor(teamColors[i]);
         auto tb = t.getLocalBounds();
         float tx = centerX + (col == 0 ? -colSpacing / 2.0f - tb.width / 2.0f
@@ -730,7 +748,7 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
     sf::Text autoTxt;
     autoTxt.setFont(m_font);
     autoTxt.setString("or just !join for auto-assign");
-    autoTxt.setCharacterSize(14);
+    autoTxt.setCharacterSize(20);
     autoTxt.setFillColor(sf::Color(140, 140, 160));
     auto ab = autoTxt.getLocalBounds();
     autoTxt.setPosition(centerX - ab.width / 2.0f, centerY + 20.0f);
@@ -751,7 +769,7 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
     sf::Text waitTxt;
     waitTxt.setFont(m_font);
     waitTxt.setString(waitStr);
-    waitTxt.setCharacterSize(16);
+    waitTxt.setCharacterSize(22);
     waitTxt.setFillColor(sf::Color(180, 180, 200));
     auto wb = waitTxt.getLocalBounds();
     waitTxt.setPosition(centerX - wb.width / 2.0f, centerY + 60.0f);
@@ -777,7 +795,7 @@ void ColorConquest::renderGameOver(sf::RenderTarget& target) {
     sf::Text goTxt;
     goTxt.setFont(m_font);
     goTxt.setString("GAME OVER");
-    goTxt.setCharacterSize(32);
+    goTxt.setCharacterSize(40);
     goTxt.setFillColor(sf::Color(255, 215, 0));
     goTxt.setStyle(sf::Text::Bold);
     auto gb = goTxt.getLocalBounds();
@@ -800,7 +818,7 @@ void ColorConquest::renderGameOver(sf::RenderTarget& target) {
         t.setString(std::string(medals[i]) + "  " +
                     getTeamName(results[i].team) + "  " +
                     std::to_string(results[i].cells) + " cells");
-        t.setCharacterSize(18);
+        t.setCharacterSize(22);
         t.setFillColor(i == 0 ? sf::Color(255, 215, 0) : getTeamColor(results[i].team));
         auto tb = t.getLocalBounds();
         t.setPosition(centerX - tb.width / 2.0f, centerY - 60.0f + i * 36.0f);

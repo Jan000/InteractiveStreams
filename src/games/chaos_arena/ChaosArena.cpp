@@ -105,30 +105,51 @@ void ChaosArena::onChatMessage(const platform::ChatMessage& msg) {
     // Convert to lowercase
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
+    bool validCommand = false;
+
     if (cmd == "!join" || cmd == "!play") {
         cmdJoin(msg.userId, msg.displayName);
+        validCommand = true;
     } else if (cmd == "!left" || cmd == "!l" || cmd == "!a") {
         cmdLeft(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!right" || cmd == "!r" || cmd == "!d") {
         cmdRight(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!jump" || cmd == "!j" || cmd == "!w" || cmd == "!up") {
         cmdJump(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!jumpleft" || cmd == "!jl") {
         cmdJumpLeft(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!jumpright" || cmd == "!jr") {
         cmdJumpRight(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!attack" || cmd == "!hit" || cmd == "!atk") {
         cmdAttack(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!special" || cmd == "!sp" || cmd == "!ult") {
         cmdSpecial(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!dash" || cmd == "!dodge") {
         cmdDash(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!block" || cmd == "!shield" || cmd == "!def") {
         cmdBlock(msg.userId);
+        validCommand = m_players.count(msg.userId) > 0;
     } else if (cmd == "!emote") {
         std::string emote;
         iss >> emote;
         cmdEmote(msg.userId, emote);
+        validCommand = m_players.count(msg.userId) > 0;
+    }
+
+    // Interaction-based scoring: 1 point per valid command
+    if (validCommand && m_players.count(msg.userId)) {
+        try {
+            is::core::Application::instance().playerDatabase().recordResult(
+                msg.userId, msg.displayName, "chaos_arena", 1, false);
+        } catch (...) {}
     }
 }
 
@@ -617,9 +638,7 @@ void ChaosArena::update(double dt) {
                 try {
                     auto& db = is::core::Application::instance().playerDatabase();
                     for (const auto& [pid, entry] : m_leaderboard) {
-                        if (entry.totalScore == 0) {
-                            db.recordResult(pid, entry.displayName, "chaos_arena", 1, false);
-                        }
+                        // No flat participation points — scoring is interaction-based
                     }
                 } catch (...) {}
 
@@ -688,10 +707,10 @@ void ChaosArena::checkRoundEnd() {
             m_leaderboard[lastAlive].wins++;
             m_leaderboard[lastAlive].totalScore += 100;
 
-            // Record round win to persistent database
+            // Record round win to persistent database (bonus points)
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
-                    lastAlive, winner.displayName, "chaos_arena", 100, true);
+                    lastAlive, winner.displayName, "chaos_arena", 50, true);
             } catch (...) {}
         }
     }
@@ -753,10 +772,10 @@ void ChaosArena::applyDamage(Player& attacker, Player& victim, float damage,
         m_leaderboard[attacker.userId].kills++;
         m_leaderboard[attacker.userId].totalScore += 25;
 
-        // Record kill points to persistent database
+        // Record kill bonus to persistent database
         try {
             is::core::Application::instance().playerDatabase().recordResult(
-                attacker.userId, attacker.displayName, "chaos_arena", 25, false);
+                attacker.userId, attacker.displayName, "chaos_arena", 10, false);
         } catch (...) {}
     }
 }
@@ -951,7 +970,7 @@ void ChaosArena::renderPlayers(sf::RenderTarget& target, double alpha) {
             std::string name = player.displayName;
             if (name.length() > 12) name = name.substr(0, 10) + "..";
             nameTag.setString(name);
-            nameTag.setCharacterSize(10);
+            nameTag.setCharacterSize(18);
             nameTag.setFillColor(sf::Color(255, 255, 255, 200));
             auto nBounds = nameTag.getLocalBounds();
             nameTag.setOrigin(nBounds.left + nBounds.width / 2, nBounds.top + nBounds.height);
@@ -1042,7 +1061,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
     auto size = target.getSize();
 
     // Round info bar at top
-    sf::RectangleShape topBar(sf::Vector2f(static_cast<float>(size.x), 40.0f));
+    sf::RectangleShape topBar(sf::Vector2f(static_cast<float>(size.x), 60.0f));
     topBar.setFillColor(sf::Color(0, 0, 0, 160));
     target.draw(topBar);
 
@@ -1052,10 +1071,10 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text titleText;
         titleText.setFont(m_font);
         titleText.setString("CHAOS ARENA");
-        titleText.setCharacterSize(18);
+        titleText.setCharacterSize(28);
         titleText.setStyle(sf::Text::Bold);
         titleText.setFillColor(sf::Color(100, 200, 255));
-        titleText.setPosition(15, 8);
+        titleText.setPosition(15, 12);
         target.draw(titleText);
 
         // Phase indicator
@@ -1070,10 +1089,10 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text phaseText;
         phaseText.setFont(m_font);
         phaseText.setString(phaseStr);
-        phaseText.setCharacterSize(16);
+        phaseText.setCharacterSize(26);
         phaseText.setFillColor(sf::Color(255, 220, 100));
         auto pBounds = phaseText.getLocalBounds();
-        phaseText.setPosition(size.x / 2.0f - pBounds.width / 2, 10);
+        phaseText.setPosition(size.x / 2.0f - pBounds.width / 2, 14);
         target.draw(phaseText);
 
         // Round / Player count
@@ -1083,16 +1102,16 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text infoText;
         infoText.setFont(m_font);
         infoText.setString(infoStr);
-        infoText.setCharacterSize(14);
+        infoText.setCharacterSize(22);
         infoText.setFillColor(sf::Color(180, 180, 200));
         auto iBounds = infoText.getLocalBounds();
-        infoText.setPosition(size.x - iBounds.width - 15, 12);
+        infoText.setPosition(size.x - iBounds.width - 15, 16);
         target.draw(infoText);
     }
 
     // Bottom status bar
-    sf::RectangleShape bottomBar(sf::Vector2f(static_cast<float>(size.x), 30.0f));
-    bottomBar.setPosition(0, static_cast<float>(size.y) - 30.0f);
+    sf::RectangleShape bottomBar(sf::Vector2f(static_cast<float>(size.x), 44.0f));
+    bottomBar.setPosition(0, static_cast<float>(size.y) - 44.0f);
     bottomBar.setFillColor(sf::Color(0, 0, 0, 160));
     target.draw(bottomBar);
 
@@ -1100,10 +1119,10 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
         sf::Text cmdHint;
         cmdHint.setFont(m_font);
         cmdHint.setString("!join  !left  !right  !jump  !attack  !special  !dash  !block");
-        cmdHint.setCharacterSize(12);
+        cmdHint.setCharacterSize(20);
         cmdHint.setFillColor(sf::Color(140, 140, 160));
         auto cBounds = cmdHint.getLocalBounds();
-        cmdHint.setPosition(size.x / 2.0f - cBounds.width / 2, size.y - 24.0f);
+        cmdHint.setPosition(size.x / 2.0f - cBounds.width / 2, size.y - 36.0f);
         target.draw(cmdHint);
     }
 
@@ -1111,7 +1130,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
     if (m_phase == GamePhase::Battle && m_roundDuration > 0) {
         float timerRatio = static_cast<float>(m_roundTimer / m_roundDuration);
         sf::RectangleShape timerBar(sf::Vector2f(static_cast<float>(size.x) * timerRatio, 4.0f));
-        timerBar.setPosition(0, 40.0f);
+        timerBar.setPosition(0, 60.0f);
         sf::Color timerColor = timerRatio > 0.3f
             ? sf::Color(50, 200, 255) : sf::Color(255, 80, 50);
         timerBar.setFillColor(timerColor);
@@ -1127,11 +1146,11 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text timerText;
             timerText.setFont(m_font);
             timerText.setString(timeStr);
-            timerText.setCharacterSize(20);
+            timerText.setCharacterSize(30);
             timerText.setStyle(sf::Text::Bold);
             timerText.setFillColor(timerColor);
             auto tBounds = timerText.getLocalBounds();
-            timerText.setPosition(size.x / 2.0f - tBounds.width / 2, 44.0f);
+            timerText.setPosition(size.x / 2.0f - tBounds.width / 2, 64.0f);
             target.draw(timerText);
         }
     }
@@ -1153,7 +1172,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text waitTitle;
             waitTitle.setFont(m_font);
             waitTitle.setString("WAITING FOR PLAYERS");
-            waitTitle.setCharacterSize(22);
+            waitTitle.setCharacterSize(32);
             waitTitle.setStyle(sf::Text::Bold);
             waitTitle.setFillColor(sf::Color(100, 200, 255, static_cast<sf::Uint8>(255 * pulse)));
             auto wBounds = waitTitle.getLocalBounds();
@@ -1164,7 +1183,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text joinText;
             joinText.setFont(m_font);
             joinText.setString(joinStr);
-            joinText.setCharacterSize(14);
+            joinText.setCharacterSize(22);
             joinText.setFillColor(sf::Color(180, 180, 200, static_cast<sf::Uint8>(220 * pulse)));
             auto jBounds = joinText.getLocalBounds();
             joinText.setPosition(size.x / 2.0f - jBounds.width / 2, size.y / 2.0f - 5);
@@ -1175,7 +1194,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             sf::Text countText;
             countText.setFont(m_font);
             countText.setString(countStr);
-            countText.setCharacterSize(14);
+            countText.setCharacterSize(22);
             countText.setFillColor(sf::Color(255, 220, 100, static_cast<sf::Uint8>(220 * pulse)));
             auto cBounds = countText.getLocalBounds();
             countText.setPosition(size.x / 2.0f - cBounds.width / 2, size.y / 2.0f + 22);
@@ -1186,12 +1205,12 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
 
 void ChaosArena::renderKillFeed(sf::RenderTarget& target) {
     auto size = target.getSize();
-    float y = 50.0f;
+    float y = 70.0f;
 
     for (const auto& entry : m_killFeed) {
         float alpha = std::min(1.0f, static_cast<float>(entry.timeRemaining));
-        sf::RectangleShape bg(sf::Vector2f(300, 24));
-        bg.setPosition(static_cast<float>(size.x) - 310, y);
+        sf::RectangleShape bg(sf::Vector2f(440, 32));
+        bg.setPosition(static_cast<float>(size.x) - 450, y);
         bg.setFillColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(140 * alpha)));
         target.draw(bg);
 
@@ -1200,13 +1219,13 @@ void ChaosArena::renderKillFeed(sf::RenderTarget& target) {
             sf::Text feedText;
             feedText.setFont(m_font);
             feedText.setString(feedStr);
-            feedText.setCharacterSize(11);
+            feedText.setCharacterSize(18);
             feedText.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(220 * alpha)));
-            feedText.setPosition(static_cast<float>(size.x) - 305, y + 3);
+            feedText.setPosition(static_cast<float>(size.x) - 445, y + 4);
             target.draw(feedText);
         }
 
-        y += 28.0f;
+        y += 36.0f;
     }
 }
 
@@ -1214,12 +1233,12 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
     if (m_players.empty()) return;
 
     // Background panel on the left
-    float panelWidth = 220.0f;
-    float entryHeight = 22.0f;
-    float panelHeight = std::min(static_cast<float>(m_players.size()), 10.0f) * entryHeight + 40;
+    float panelWidth = 320.0f;
+    float entryHeight = 30.0f;
+    float panelHeight = std::min(static_cast<float>(m_players.size()), 10.0f) * entryHeight + 50;
 
     sf::RectangleShape panel(sf::Vector2f(panelWidth, panelHeight));
-    panel.setPosition(10, 50);
+    panel.setPosition(10, 70);
     panel.setFillColor(sf::Color(0, 0, 0, 140));
     panel.setOutlineThickness(1.0f);
     panel.setOutlineColor(sf::Color(100, 100, 140, 100));
@@ -1230,10 +1249,10 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
         sf::Text header;
         header.setFont(m_font);
         header.setString("LEADERBOARD");
-        header.setCharacterSize(11);
+        header.setCharacterSize(18);
         header.setStyle(sf::Text::Bold);
         header.setFillColor(sf::Color(100, 200, 255));
-        header.setPosition(16, 54);
+        header.setPosition(16, 74);
         target.draw(header);
     }
 
@@ -1246,13 +1265,13 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
     std::sort(entries.begin(), entries.end(),
         [](const auto& a, const auto& b) { return a.score > b.score; });
 
-    float y = 74.0f;
+    float y = 100.0f;
     int rank = 1;
     for (const auto& e : entries) {
         if (rank > 10) break;
 
         // Color indicator
-        sf::RectangleShape colorBar(sf::Vector2f(4, entryHeight - 4));
+        sf::RectangleShape colorBar(sf::Vector2f(5, entryHeight - 4));
         colorBar.setPosition(14, y);
         colorBar.setFillColor(e.alive ? e.color : sf::Color(80, 80, 80));
         target.draw(colorBar);
@@ -1264,18 +1283,18 @@ void ChaosArena::renderLeaderboard(sf::RenderTarget& target) {
             std::string nameStr = std::to_string(rank) + ". " + e.name;
             if (nameStr.length() > 16) nameStr = nameStr.substr(0, 14) + "..";
             nameText.setString(nameStr);
-            nameText.setCharacterSize(11);
+            nameText.setCharacterSize(18);
             nameText.setFillColor(e.alive ? sf::Color(220, 220, 230) : sf::Color(100, 100, 100));
-            nameText.setPosition(24, y + 1);
+            nameText.setPosition(26, y + 2);
             target.draw(nameText);
 
             sf::Text scoreText;
             scoreText.setFont(m_font);
             scoreText.setString(std::to_string(e.score));
-            scoreText.setCharacterSize(11);
+            scoreText.setCharacterSize(18);
             scoreText.setFillColor(sf::Color(255, 220, 100));
             auto sBounds = scoreText.getLocalBounds();
-            scoreText.setPosition(panelWidth - sBounds.width - 15, y + 1);
+            scoreText.setPosition(panelWidth - sBounds.width - 15, y + 2);
             target.draw(scoreText);
         }
 
@@ -1315,7 +1334,7 @@ void ChaosArena::renderCountdown(sf::RenderTarget& target) {
         sf::Text countText;
         countText.setFont(m_font);
         countText.setString(std::to_string(countdown));
-        countText.setCharacterSize(60);
+        countText.setCharacterSize(80);
         countText.setStyle(sf::Text::Bold);
         countText.setFillColor(sf::Color(255, 220, 100, static_cast<sf::Uint8>(255 * pulse)));
         auto cBounds = countText.getLocalBounds();

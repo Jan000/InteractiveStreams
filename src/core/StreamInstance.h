@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/GameManager.h"
+#include "core/PlayerDatabase.h"
 #include "platform/ChatMessage.h"
 
 #include <SFML/Graphics.hpp>
@@ -53,6 +54,16 @@ struct StreamConfig {
         if (streamKey.empty()) return streamUrl;
         return streamUrl + "/" + streamKey;
     }
+
+    // ── Per-game descriptions (optional, overrides stream description) ───
+    /// Map: game_id -> description for that game
+    std::unordered_map<std::string, std::string> gameDescriptions;
+
+    // ── Periodic info messages (optional, per game) ─────────────────────
+    /// Map: game_id -> info message text
+    std::unordered_map<std::string, std::string> gameInfoMessages;
+    /// Map: game_id -> interval in seconds (0 = disabled)
+    std::unordered_map<std::string, int> gameInfoIntervals;
 };
 
 /// A single stream instance – encapsulates game, off-screen render target,
@@ -109,10 +120,13 @@ public:
 private:
     void ensureRenderTexture();
     void renderVoteOverlay();
+    void renderGlobalScoreboard();
     void startNextGameFromVote();
     void startRandomGame();
     void restartCurrentGame();
     void updateJpegBuffer();
+    void updateScoreboardCache();
+    void sendPeriodicInfoMessage();
     std::vector<std::string> getAvailableGameIds() const;
 
     StreamConfig                               m_config;
@@ -148,6 +162,15 @@ private:
     bool   m_waitingForTransition = false;
     double m_transitionTimer      = 0.0;
     double m_transitionDelay      = 3.0; // seconds before next game
+
+    // Global scoreboard overlay (cached from PlayerDatabase)
+    std::vector<ScoreEntry> m_scoreboardCache;
+    double m_scoreboardRefreshTimer = 0.0;
+    static constexpr double SCOREBOARD_REFRESH_INTERVAL = 5.0; // seconds
+
+    // Periodic info message state
+    double m_infoMessageTimer = 0.0;
+    std::string m_lastGameId;
 };
 
 } // namespace is::core

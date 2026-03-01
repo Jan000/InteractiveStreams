@@ -92,6 +92,17 @@ export function StreamCard({
   const [preset, setPreset] = useState(stream.preset ?? "veryfast");
   const [codec, setCodec] = useState(stream.codec ?? "libx264");
 
+  // Per-game descriptions and info messages
+  const [gameDescriptions, setGameDescriptions] = useState<Record<string, string>>(
+    stream.gameDescriptions ?? {}
+  );
+  const [gameInfoMessages, setGameInfoMessages] = useState<Record<string, string>>(
+    stream.gameInfoMessages ?? {}
+  );
+  const [gameInfoIntervals, setGameInfoIntervals] = useState<Record<string, number>>(
+    stream.gameInfoIntervals ?? {}
+  );
+
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -139,6 +150,9 @@ export function StreamCard({
       setBitrate(stream.bitrate ?? 4500);
       setPreset(stream.preset ?? "veryfast");
       setCodec(stream.codec ?? "libx264");
+      setGameDescriptions(stream.gameDescriptions ?? {});
+      setGameInfoMessages(stream.gameInfoMessages ?? {});
+      setGameInfoIntervals(stream.gameInfoIntervals ?? {});
     }
   }, [stream, dirty]);
 
@@ -169,6 +183,9 @@ export function StreamCard({
         bitrate_kbps: bitrate,
         preset,
         codec,
+        game_descriptions: Object.keys(gameDescriptions).length > 0 ? gameDescriptions : undefined,
+        game_info_messages: Object.keys(gameInfoMessages).length > 0 ? gameInfoMessages : undefined,
+        game_info_intervals: Object.keys(gameInfoIntervals).length > 0 ? gameInfoIntervals : undefined,
       });
       toast.success("Stream updated");
       setDirty(false);
@@ -509,6 +526,67 @@ export function StreamCard({
                 </Select>
               </div>
             )}
+
+            {/* Per-game descriptions & info messages */}
+            <div className="space-y-2 rounded-md border p-3">
+              <Label className="text-xs font-semibold">Per-Game Settings</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Set per-game stream descriptions and periodic chat info messages.
+              </p>
+              {games.map((g) => (
+                <div key={g.id} className="space-y-1 rounded border p-2">
+                  <span className="text-xs font-medium">{g.name}</span>
+                  <Input
+                    className="h-7 text-xs"
+                    placeholder="Stream description for this game…"
+                    value={gameDescriptions[g.id] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setGameDescriptions((prev) => {
+                        const next = { ...prev };
+                        if (v) next[g.id] = v; else delete next[g.id];
+                        return next;
+                      });
+                      setDirty(true);
+                    }}
+                  />
+                  <Input
+                    className="h-7 text-xs"
+                    placeholder="Info message to send in chat…"
+                    value={gameInfoMessages[g.id] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setGameInfoMessages((prev) => {
+                        const next = { ...prev };
+                        if (v) next[g.id] = v; else delete next[g.id];
+                        return next;
+                      });
+                      setDirty(true);
+                    }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] whitespace-nowrap">Interval (s)</Label>
+                    <Input
+                      className="h-7 w-20 text-xs"
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                      value={gameInfoIntervals[g.id] ?? ""}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        setGameInfoIntervals((prev) => {
+                          const next = { ...prev };
+                          if (v > 0) next[g.id] = v; else delete next[g.id];
+                          return next;
+                        });
+                        setDirty(true);
+                      }}
+                    />
+                    <span className="text-[10px] text-muted-foreground">0 = disabled</span>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             {/* Channels */}
             <div className="space-y-1.5">
