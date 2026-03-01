@@ -6,6 +6,7 @@
 #include "core/StreamInstance.h"
 #include "core/PlayerDatabase.h"
 #include "core/PerfMonitor.h"
+#include "core/SettingsDatabase.h"
 #include "games/GameRegistry.h"
 
 #include <nlohmann/json.hpp>
@@ -73,6 +74,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             if (body.contains("settings")) cfg.settings = body["settings"];
 
             std::string id = app.channelManager().addChannel(cfg);
+            app.persistChannels();
             res.set_content(nlohmann::json({{"success",true},{"id",id}}).dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -91,6 +93,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             if (body.contains("settings")) cfg.settings = body["settings"];
 
             app.channelManager().updateChannel(id, cfg);
+            app.persistChannels();
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -100,6 +103,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     server.Delete(R"(/api/channels/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
         app.channelManager().removeChannel(pathParam(req));
+        app.persistChannels();
         res.set_content(R"({"success":true})", "application/json");
     });
 
@@ -126,6 +130,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             auto body = nlohmann::json::parse(req.body);
             auto cfg  = core::StreamInstance::configFromJson(body);
             std::string id = app.streamManager().addStream(cfg);
+            app.persistStreams();
             res.set_content(nlohmann::json({{"success",true},{"id",id}}).dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -140,6 +145,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             auto cfg  = core::StreamInstance::configFromJson(body);
             cfg.id = id;  // preserve the path-param ID
             app.streamManager().updateStream(id, cfg);
+            app.persistStreams();
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -149,6 +155,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     server.Delete(R"(/api/streams/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
         app.streamManager().removeStream(pathParam(req));
+        app.persistStreams();
         res.set_content(R"({"success":true})", "application/json");
     });
 
@@ -282,6 +289,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             for (auto it = body.begin(); it != body.end(); ++it) {
                 app.config().rawMut()[it.key()] = it.value();
             }
+            app.persistGlobalConfig();
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -290,7 +298,12 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     });
 
     server.Post("/api/config/save", [&app](const httplib::Request&, httplib::Response& res) {
-        // Synchronise runtime state back to config JSON, then save to disk
+        // Persist to SQLite (primary storage)
+        app.persistChannels();
+        app.persistStreams();
+        app.persistGlobalConfig();
+
+        // Also write to JSON file as a human-readable backup
         app.config().rawMut()["channels"] = app.channelManager().toJson();
         app.config().rawMut()["streams"]  = app.streamManager().toJson();
         app.config().save();
@@ -358,6 +371,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             if (!updated.settings.is_object()) updated.settings = nlohmann::json::object();
             updated.settings["oauth_token"] = token;
             app.channelManager().updateChannel(channelId, updated);
+            app.persistChannels();
 
             spdlog::info("[API] Twitch OAuth token stored for channel '{}'", channelId);
             res.set_content(R"({"success":true})", "application/json");

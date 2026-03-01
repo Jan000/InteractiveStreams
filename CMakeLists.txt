@@ -117,6 +117,7 @@ set(CORE_SOURCES
     src/core/StreamManager.cpp
     src/core/PlayerDatabase.cpp
     src/core/PerfMonitor.cpp
+    src/core/SettingsDatabase.cpp
 )
 
 set(GAME_SOURCES

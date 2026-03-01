@@ -262,6 +262,32 @@ Befehle in `ColorConquest::onChatMessage()`:
 
 ---
 
+## SettingsDatabase (`src/core/SettingsDatabase.h/cpp`)
+
+SQLite-basierte persistente Speicherung **aller** Einstellungen (ersetzt die alte rein-JSON-basierte Persistenz).
+
+### Architektur
+- **Datei**: `data/settings.db` (WAL-Modus, Thread-Safe via Mutex)
+- **Tabelle**: `settings` mit `key TEXT PRIMARY KEY, data TEXT NOT NULL`
+- **Keys**: `config` (globale Settings ohne Channels/Streams), `channels` (JSON-Array), `streams` (JSON-Array)
+
+### Persistenz-Flow
+1. **Startup**: SQLite wird als primäre Quelle geladen. Falls leer (Erststart), wird aus `config/default.json` migriert.
+2. **Auto-Save**: Jede API-Mutation (CRUD auf Channels/Streams, Settings-Änderungen) persistiert automatisch in SQLite.
+3. **Shutdown**: Alle Einstellungen werden nochmals in SQLite gesichert (Safety-Net).
+4. **Backup**: `POST /api/config/save` schreibt zusätzlich die JSON-Datei als menschenlesbares Backup.
+
+### Application-Hilfsmethoden
+- `app.persistChannels()` – Speichert alle Channels in SQLite
+- `app.persistStreams()` – Speichert alle Streams in SQLite
+- `app.persistGlobalConfig()` – Speichert globale Config (ohne Channels/Streams) in SQLite
+
+### Migration
+Beim Erststart (SQLite leer) werden die Daten einmalig aus `config/default.json` importiert.
+Danach ist SQLite die alleinige Source of Truth.
+
+---
+
 ## PlayerDatabase (`src/core/PlayerDatabase.h/cpp`)
 
 SQLite-basierte persistente Spieler-Datenbank für Scoreboard-Funktionalität.
@@ -362,7 +388,7 @@ Performance-Metriken mit Ring-Buffer (max 3600 Samples).
 4. **Thread-Sicherheit**: Plattform-Threads und Web-API-Threads nutzen `std::mutex`-geschützte Queues/States. Stream/Channel-CRUD vom Web-Thread durch Mutex geschützt. RenderTextures werden lazy im Main-Thread erstellt.
 5. **FFmpeg-Pfad**: FFmpeg wird via `popen("ffmpeg ...")` aufgerufen – muss im System-PATH sein.
 6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
-7. **Config-Persistenz**: `POST /api/config/save` serialisiert den Laufzeitzustand (Channels, Streams) zurück in die JSON-Datei.
+7. **Config-Persistenz**: Alle Einstellungen werden automatisch in `data/settings.db` (SQLite) persistiert. `POST /api/config/save` schreibt zusätzlich eine JSON-Backup-Datei. SQLite ist die primäre Source of Truth; `config/default.json` dient nur als Erst-Migrations-Template.
 8. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake). Dashboard ist Tab-basiert: Streams, Channels, Settings, Chat Test.
 9. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
 

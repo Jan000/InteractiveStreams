@@ -35,6 +35,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Modulare Spielarchitektur** – Neue Spiele als eigenständige Module hinzufügbar
 - **Web-Admin-Dashboard** – Next.js + TypeScript + shadcn/ui Dashboard mit Tabs für Streams, Channels, Scoreboard, Performance und Settings, inkl. Live-Stream-Vorschau
 - **SQLite Scoreboard** – Persistente Spieler-Datenbank mit Top 10 (24h) und Top 5 (All-Time), konfigurierbare Anzeige
+- **SQLite Settings-Persistenz** – Alle Einstellungen (Channels, Streams, globale Config) werden automatisch in SQLite gespeichert und überleben Neustarts
 - **Performance-Monitoring** – Live-Graphen für FPS, Frame-Time, Memory und Spieleranzahl mit konfigurierbarem Zeitfenster
 - **Headless Mode** – Betrieb ohne GUI-Fenster (für Server-Deployments, z.B. Ubuntu Server)
 - **Alle Einstellungen via Web** – Kein manuelles Bearbeiten von Konfigurationsdateien nötig
@@ -222,6 +223,7 @@ InteractiveStreams/
 │   │   ├── StreamInstance.h/cpp # Einzelne Stream-Instanz (Game + Render + Encode)
 │   │   ├── GameManager.h/cpp   # Spiel-Verwaltung pro Stream
 │   │   ├── PlayerDatabase.h/cpp # SQLite Spieler-Datenbank & Scoreboard
+│   │   ├── SettingsDatabase.h/cpp # SQLite-basierte persistente Einstellungen
 │   │   ├── PerfMonitor.h/cpp    # Performance-Metriken (FPS, Memory, etc.)
 │   │   └── Logger.h/cpp        # Logging (spdlog)
 │   ├── games/                  # Spiele-Module
@@ -325,7 +327,7 @@ cmake --build build -j$(nproc)
 
 ## ⚙️ Konfiguration
 
-Die Konfiguration erfolgt primär über das **Web-Dashboard** (`http://localhost:8080`). Die zugrunde liegende Datei ist `config/default.json`, die aber nicht manuell bearbeitet werden muss.
+Die Konfiguration erfolgt primär über das **Web-Dashboard** (`http://localhost:8080`). Alle Einstellungen werden automatisch in einer **SQLite-Datenbank** (`data/settings.db`) persistiert – Änderungen über das Dashboard werden sofort gespeichert und überstehen Neustarts. Die Datei `config/default.json` dient nur als Template für den Erststart.
 
 ### Channels (Kanäle)
 
@@ -395,8 +397,8 @@ Streams werden im Dashboard unter dem Tab **Streams** verwaltet. Jeder Stream ha
 
 1. Öffne `http://localhost:8080`
 2. Navigiere zum gewünschten Tab (Streams, Channels, Settings)
-3. Ändere die Einstellungen
-4. Klicke auf **Save Config** um die Änderungen dauerhaft zu speichern
+3. Ändere die Einstellungen – sie werden **automatisch** in SQLite persistiert
+4. Optional: Klicke auf **Save Config** um zusätzlich eine JSON-Backup-Datei zu schreiben
 
 ---
 

@@ -236,6 +236,14 @@ curl http://localhost:8080/api/chat/log
 
 # Einstellungen abrufen
 curl http://localhost:8080/api/settings
+
+# Einstellungen ändern (wird automatisch in SQLite persistiert)
+curl -X PUT http://localhost:8080/api/settings `
+     -H "Content-Type: application/json" `
+     -d '{"application":{"target_fps":30}}'
+
+# Config-Backup als JSON-Datei schreiben
+curl -X POST http://localhost:8080/api/config/save
 ```
 
 ### Spiel wechseln

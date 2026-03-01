@@ -11,6 +11,7 @@ class StreamManager;
 class Logger;
 class PlayerDatabase;
 class PerfMonitor;
+class SettingsDatabase;
 
 }
 
@@ -46,9 +47,17 @@ public:
     ChannelManager&       channelManager();
     StreamManager&        streamManager();
     PlayerDatabase&       playerDatabase();
+    SettingsDatabase&     settingsDb();
     PerfMonitor&          perfMonitor();
     rendering::Renderer&  renderer();
     web::WebServer&       webServer();
+
+    /// Persist channels to SQLite (call after any channel CRUD).
+    void persistChannels();
+    /// Persist streams to SQLite (call after any stream CRUD).
+    void persistStreams();
+    /// Persist global config to SQLite (call after settings change).
+    void persistGlobalConfig();
 
     static Application& instance();
 

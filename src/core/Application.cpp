@@ -5,6 +5,7 @@
 #include "core/Logger.h"
 #include "core/PlayerDatabase.h"
 #include "core/PerfMonitor.h"
+#include "core/SettingsDatabase.h"
 #include "rendering/Renderer.h"
 #include "web/WebServer.h"
 
@@ -21,6 +22,7 @@ Application* Application::s_instance = nullptr;
 struct Application::Impl {
     bool                                       running = false;
     std::unique_ptr<Config>                    config;
+    std::unique_ptr<SettingsDatabase>          settingsDb;
     std::unique_ptr<ChannelManager>            channelManager;
     std::unique_ptr<StreamManager>             streamManager;
     std::unique_ptr<PlayerDatabase>            playerDatabase;
@@ -57,10 +59,34 @@ void Application::initialize() {
     spdlog::info("Initializing subsystems...");
     auto& cfg = *m_impl->config;
 
-    // ── Channel manager (replaces PlatformManager) ───────────────────────
+    // ── Settings database (SQLite – persistent storage for ALL settings) ─
+    m_impl->settingsDb = std::make_unique<SettingsDatabase>();
+    m_impl->settingsDb->open("data/settings.db");
+
+    // Determine data source: SQLite (if populated) or JSON config (first run)
+    bool hasSavedChannels = m_impl->settingsDb->has("channels");
+    bool hasSavedStreams  = m_impl->settingsDb->has("streams");
+    bool hasSavedConfig   = m_impl->settingsDb->has("config");
+
+    // Merge saved global config into the in-memory Config (override defaults)
+    if (hasSavedConfig) {
+        auto savedCfg = m_impl->settingsDb->load("config");
+        if (savedCfg.is_object()) {
+            for (auto it = savedCfg.begin(); it != savedCfg.end(); ++it) {
+                cfg.rawMut()[it.key()] = it.value();
+            }
+            spdlog::info("[SettingsDB] Global config restored from SQLite.");
+        }
+    }
+
+    // ── Channel manager ──────────────────────────────────────────────────
+    auto channelsJson = hasSavedChannels
+        ? m_impl->settingsDb->load("channels")
+        : (cfg.raw().contains("channels") ? cfg.raw()["channels"] : nlohmann::json::array());
+
     m_impl->channelManager = std::make_unique<ChannelManager>();
-    if (cfg.raw().contains("channels") && cfg.raw()["channels"].is_array()) {
-        m_impl->channelManager->loadFromJson(cfg.raw()["channels"]);
+    if (channelsJson.is_array()) {
+        m_impl->channelManager->loadFromJson(channelsJson);
     }
     m_impl->channelManager->connectAllEnabled();
 
@@ -78,10 +104,14 @@ void Application::initialize() {
         cfg.get<std::string>("rendering.title", "InteractiveStreams"),
         headless);
 
-    // ── Stream manager (replaces single GameManager+Renderer+Encoder) ────
+    // ── Stream manager ───────────────────────────────────────────────────
+    auto streamsJson = hasSavedStreams
+        ? m_impl->settingsDb->load("streams")
+        : (cfg.raw().contains("streams") ? cfg.raw()["streams"] : nlohmann::json::array());
+
     m_impl->streamManager = std::make_unique<StreamManager>();
-    if (cfg.raw().contains("streams") && cfg.raw()["streams"].is_array()) {
-        m_impl->streamManager->loadFromJson(cfg.raw()["streams"]);
+    if (streamsJson.is_array()) {
+        m_impl->streamManager->loadFromJson(streamsJson);
     }
 
     // Ensure at least one stream exists
@@ -102,6 +132,14 @@ void Application::initialize() {
     int webPort = cfg.get<int>("web.port", 8080);
     m_impl->webServer = std::make_unique<web::WebServer>(webPort, *this);
     m_impl->webServer->start();
+
+    // ── Persist initial state to SQLite (first run migration) ────────────
+    if (!hasSavedChannels || !hasSavedStreams || !hasSavedConfig) {
+        persistChannels();
+        persistStreams();
+        persistGlobalConfig();
+        spdlog::info("[SettingsDB] Initial state persisted to SQLite.");
+    }
 
     spdlog::info("All subsystems initialised ({} stream(s), {} channel(s)).",
         m_impl->streamManager->count(),
@@ -216,6 +254,15 @@ void Application::requestShutdown() {
 
 void Application::shutdown() {
     spdlog::info("Shutting down...");
+
+    // Persist all settings to SQLite before stopping
+    if (m_impl->settingsDb) {
+        persistChannels();
+        persistStreams();
+        persistGlobalConfig();
+        spdlog::info("[SettingsDB] Settings persisted on shutdown.");
+    }
+
     if (m_impl->webServer)      m_impl->webServer->stop();
     if (m_impl->channelManager) m_impl->channelManager->disconnectAll();
     for (auto* s : m_impl->streamManager->allStreams()) s->stopStreaming();
@@ -226,9 +273,29 @@ Config&               Application::config()         { return *m_impl->config; }
 ChannelManager&       Application::channelManager() { return *m_impl->channelManager; }
 StreamManager&        Application::streamManager()  { return *m_impl->streamManager; }
 PlayerDatabase&       Application::playerDatabase() { return *m_impl->playerDatabase; }
+SettingsDatabase&     Application::settingsDb()     { return *m_impl->settingsDb; }
 PerfMonitor&          Application::perfMonitor()    { return *m_impl->perfMonitor; }
 rendering::Renderer&  Application::renderer()       { return *m_impl->renderer; }
 web::WebServer&       Application::webServer()      { return *m_impl->webServer; }
+
+void Application::persistChannels() {
+    if (m_impl->settingsDb && m_impl->channelManager)
+        m_impl->settingsDb->save("channels", m_impl->channelManager->toJson());
+}
+
+void Application::persistStreams() {
+    if (m_impl->settingsDb && m_impl->streamManager)
+        m_impl->settingsDb->save("streams", m_impl->streamManager->toJson());
+}
+
+void Application::persistGlobalConfig() {
+    if (!m_impl->settingsDb || !m_impl->config) return;
+    // Store global config without channels/streams (those are stored separately)
+    auto cfg = m_impl->config->raw();
+    cfg.erase("channels");
+    cfg.erase("streams");
+    m_impl->settingsDb->save("config", cfg);
+}
 
 Application& Application::instance() { return *s_instance; }
 
