@@ -68,6 +68,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   const [twitchBot, setTwitchBot] = useState("InteractiveStreamsBot");
   const [twitchServer, setTwitchServer] = useState("irc.chat.twitch.tv");
   const [twitchPort, setTwitchPort] = useState(6667);
+  const [twitchClientId, setTwitchClientId] = useState("");
+  const [twitchRedirectUri, setTwitchRedirectUri] = useState("http://localhost:8080/auth/twitch/callback/");
   // Streaming output (Twitch / YouTube)
   const [streamUrl, setStreamUrl] = useState("");
   const [streamKey, setStreamKey] = useState("");
@@ -90,10 +92,12 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   // callback so it never reads stale closure state.
   const formRef = useRef({
     twitchChannel, twitchBot, twitchServer, twitchPort,
+    twitchClientId, twitchRedirectUri,
     streamUrl, streamKey, platform, name, enabled,
   });
   formRef.current = {
     twitchChannel, twitchBot, twitchServer, twitchPort,
+    twitchClientId, twitchRedirectUri,
     streamUrl, streamKey, platform, name, enabled,
   };
 
@@ -121,6 +125,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           bot_username: f.twitchBot,
           server: f.twitchServer,
           port: f.twitchPort,
+          client_id: f.twitchClientId,
+          redirect_uri: f.twitchRedirectUri,
           stream_url: f.streamUrl,
           stream_key: f.streamKey,
         };
@@ -187,6 +193,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       setTwitchBot((s.bot_username as string) ?? "InteractiveStreamsBot");
       setTwitchServer((s.server as string) ?? "irc.chat.twitch.tv");
       setTwitchPort((s.port as number) ?? 6667);
+      setTwitchClientId((s.client_id as string) ?? "");
+      setTwitchRedirectUri((s.redirect_uri as string) ?? "http://localhost:8080/auth/twitch/callback/");
       // Streaming output
       setStreamUrl((s.stream_url as string) ?? "");
       setStreamKey((s.stream_key as string) ?? "");
@@ -217,6 +225,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         bot_username: twitchBot,
         server: twitchServer,
         port: twitchPort,
+        client_id: twitchClientId,
+        redirect_uri: twitchRedirectUri,
         stream_url: streamUrl,
         stream_key: streamKey,
       };
@@ -435,6 +445,47 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
+                    Client ID
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Your Twitch Application Client ID"
+                    value={twitchClientId}
+                    onChange={(e) =>
+                      markDirty(setTwitchClientId)(e.target.value)
+                    }
+                  />
+                  <p className="text-[9px] text-muted-foreground">
+                    From{" "}
+                    <a
+                      href="https://dev.twitch.tv/console/apps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-foreground"
+                    >
+                      dev.twitch.tv/console
+                    </a>
+                    . Required for &quot;Login with Twitch&quot;.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    OAuth Redirect URI
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    value={twitchRedirectUri}
+                    onChange={(e) =>
+                      markDirty(setTwitchRedirectUri)(e.target.value)
+                    }
+                    placeholder="http://localhost:8080/auth/twitch/callback/"
+                  />
+                  <p className="text-[9px] text-muted-foreground">
+                    Must match the redirect URI in your Twitch app settings.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
                     OAuth Token
                   </Label>
                   <div className="flex gap-2">
@@ -465,7 +516,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Open Twitch authorization (requires Client ID in Settings)</p>
+                        <p>Open Twitch authorization (requires Client ID above)</p>
                       </TooltipContent>
                     </Tooltip>
                   </div>

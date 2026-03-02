@@ -15,6 +15,7 @@ import {
   Tv,
   MessageSquare,
   Link as LinkIcon,
+  Layers,
 } from "lucide-react";
 import type { StreamState, GameInfo, ChannelState, StreamProfile } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -137,6 +138,39 @@ export function StreamCard({
   const [chatOpen, setChatOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Resolved profile config (for "from profile" indicators)
+  const [resolvedProfile, setResolvedProfile] = useState<Record<string, unknown> | null>(null);
+
+  // Fetch resolved profile when profileId changes
+  useEffect(() => {
+    if (!profileId) {
+      setResolvedProfile(null);
+      return;
+    }
+    let active = true;
+    api.getResolvedProfile(profileId).then((data) => {
+      if (active) setResolvedProfile(data);
+    }).catch(() => {
+      if (active) setResolvedProfile(null);
+    });
+    return () => { active = false; };
+  }, [profileId]);
+
+  /** Check if a field key exists in the resolved profile config. */
+  const isFromProfile = (key: string): boolean => {
+    return !!resolvedProfile && key in resolvedProfile;
+  };
+
+  /** Small "from profile" badge shown next to labels. */
+  const ProfileBadge = ({ field }: { field: string }) => {
+    if (!isFromProfile(field)) return null;
+    return (
+      <span className="ml-1 rounded bg-violet-500/15 px-1 py-0.5 text-[8px] font-medium text-violet-500" title="Inherited from profile">
+        Profile
+      </span>
+    );
+  };
 
   // Chat state
   const [chatUser, setChatUser] = useState("Player1");
@@ -488,6 +522,7 @@ export function StreamCard({
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
                     Stream Title (Twitch/YouTube)
+                    <ProfileBadge field="title" />
                   </Label>
                   <Input
                     className="h-8 text-xs"
@@ -500,6 +535,7 @@ export function StreamCard({
               <div className="space-y-1.5">
                 <Label className="text-[10px] text-muted-foreground">
                   Stream Description
+                  <ProfileBadge field="description" />
                 </Label>
                 <Textarea
                   className="min-h-[60px] text-xs"
@@ -552,7 +588,10 @@ export function StreamCard({
             {/* Profile */}
             {profiles.length > 0 && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Config Profile</Label>
+                <Label className="text-xs flex items-center gap-1">
+                  <Layers className="size-3" />
+                  Config Profile
+                </Label>
                 <Select
                   value={profileId || "__none__"}
                   onValueChange={(v) =>
@@ -577,7 +616,7 @@ export function StreamCard({
             {/* Resolution / Game Mode */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Resolution</Label>
+                <Label className="text-xs">Resolution <ProfileBadge field="resolution" /></Label>
                 <Select
                   value={resolution}
                   onValueChange={(v) =>
@@ -594,7 +633,7 @@ export function StreamCard({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Game Mode</Label>
+                <Label className="text-xs">Game Mode <ProfileBadge field="game_mode" /></Label>
                 <Select
                   value={gameMode}
                   onValueChange={(v) =>
@@ -615,7 +654,7 @@ export function StreamCard({
 
             {gameMode === "fixed" && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Fixed Game</Label>
+                <Label className="text-xs">Fixed Game <ProfileBadge field="fixed_game" /></Label>
                 <Select
                   value={fixedGame}
                   onValueChange={set(setFixedGame)}
@@ -636,7 +675,7 @@ export function StreamCard({
 
             {/* Per-game descriptions & info messages */}
             <div className="space-y-2 rounded-md border p-3">
-              <Label className="text-xs font-semibold">Per-Game Settings</Label>
+              <Label className="text-xs font-semibold">Per-Game Settings <ProfileBadge field="game_descriptions" /></Label>
               <p className="text-[10px] text-muted-foreground">
                 Set per-game descriptions, info messages, font scales, and player limits.
               </p>
@@ -782,7 +821,7 @@ export function StreamCard({
 
             {/* Scoreboard & Overlay Settings */}
             <div className="space-y-2 rounded-md border p-3">
-              <Label className="text-xs font-semibold">Scoreboard &amp; Overlay</Label>
+              <Label className="text-xs font-semibold">Scoreboard &amp; Overlay <ProfileBadge field="scoreboard_top_n" /></Label>
               <p className="text-[10px] text-muted-foreground">
                 Configure the dual scoreboard overlay and vote overlay font scale.
               </p>
@@ -855,7 +894,7 @@ export function StreamCard({
 
             {/* Encoding Settings */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Encoding</Label>
+              <Label className="text-xs font-medium">Encoding <ProfileBadge field="fps" /></Label>
               <div className="grid grid-cols-4 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">

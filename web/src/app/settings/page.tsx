@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Save, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Save, ShieldCheck, Download, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,16 +19,15 @@ export default function SettingsPage() {
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Editable fields
   const [port, setPort] = useState(8080);
   const [fps, setFps] = useState(30);
   const [headless, setHeadless] = useState(false);
   const [ffmpegPath, setFfmpegPath] = useState("ffmpeg");
-  const [twitchClientId, setTwitchClientId] = useState("");
-  const [twitchRedirectUri, setTwitchRedirectUri] = useState(
-    "http://localhost:8080/auth/twitch/callback/"
-  );
   // API key – stored in localStorage (client-side), sent to server which
   // validates it against its own web.api_key config.  Empty = no auth.
   const [apiKey, setApiKey] = useState("");
@@ -50,9 +49,6 @@ export default function SettingsPage() {
         if (app?.target_fps) setFps(Number(app.target_fps));
         if (app?.headless !== undefined) setHeadless(Boolean(app.headless));
         if (streaming?.ffmpeg_path) setFfmpegPath(String(streaming.ffmpeg_path));
-        const twitch = s.twitch as Record<string, unknown> | undefined;
-        if (twitch?.client_id) setTwitchClientId(String(twitch.client_id));
-        if (twitch?.redirect_uri) setTwitchRedirectUri(String(twitch.redirect_uri));
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed"))
       .finally(() => setLoading(false));
@@ -77,10 +73,6 @@ export default function SettingsPage() {
         streaming: {
           ffmpeg_path: ffmpegPath,
         },
-        twitch: {
-          client_id: twitchClientId,
-          redirect_uri: twitchRedirectUri,
-        },
       });
       await api.saveConfig();
       toast.success("Settings saved");
@@ -89,6 +81,60 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const data = await api.exportConfig();
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `interactive_streams_config_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Config exported");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImport = (file: File) => {
+    setImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (!data._export_version) {
+          toast.error("Invalid config file — missing export version");
+          return;
+        }
+        await api.importConfig(data);
+        toast.success(
+          "Config imported — reloading page…"
+        );
+        // Reload after short delay to let user see the toast
+        setTimeout(() => window.location.reload(), 1200);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Import failed");
+      } finally {
+        setImporting(false);
+        // Reset the file input so the same file can be re-selected
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+    reader.onerror = () => {
+      toast.error("Failed to read file");
+      setImporting(false);
+    };
+    reader.readAsText(file);
   };
 
   if (loading) {
@@ -215,46 +261,49 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Twitch Integration */}
+        {/* Export / Import */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Twitch Integration</CardTitle>
+            <CardTitle className="text-sm">Export / Import</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="twitch-client-id">Client ID</Label>
-              <Input
-                id="twitch-client-id"
-                value={twitchClientId}
-                onChange={(e) => setTwitchClientId(e.target.value)}
-                placeholder="Your Twitch Application Client ID"
-              />
               <p className="text-xs text-muted-foreground">
-                From{" "}
-                <a
-                  href="https://dev.twitch.tv/console/apps"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-foreground"
+                Download all settings (channels, streams, profiles, audio) as a
+                JSON file, or restore from a previously exported file.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={handleExport}
+                  disabled={exporting}
                 >
-                  dev.twitch.tv/console
-                </a>
-                . Required for the &quot;Login with Twitch&quot; button on
-                Channel cards.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="twitch-redirect-uri">OAuth Redirect URI</Label>
-              <Input
-                id="twitch-redirect-uri"
-                value={twitchRedirectUri}
-                onChange={(e) => setTwitchRedirectUri(e.target.value)}
-                placeholder="http://localhost:8080/auth/twitch/callback/"
-              />
-              <p className="text-xs text-muted-foreground">
-                Must match the redirect URI registered in your Twitch
-                application.
-              </p>
+                  <Download className="size-4" />
+                  {exporting ? "Exporting…" : "Export"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importing}
+                >
+                  <Upload className="size-4" />
+                  {importing ? "Importing…" : "Import"}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleImport(f);
+                  }}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

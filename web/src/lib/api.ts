@@ -278,6 +278,9 @@ export const api = {
   updateSettings: (data: Record<string, unknown>) =>
     put<{ success: boolean }>("/api/settings", data),
   saveConfig: () => post<{ success: boolean }>("/api/config/save"),
+  exportConfig: () => get<Record<string, unknown>>("/api/config/export"),
+  importConfig: (data: Record<string, unknown>) =>
+    post<{ success: boolean }>("/api/config/import", data),
 
   // Chat
   sendChat: (username: string, text: string) =>

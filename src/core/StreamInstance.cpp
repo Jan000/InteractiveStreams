@@ -632,7 +632,6 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
     }
 
     auto& cm = Application::instance().channelManager();
-    std::string clientId = Application::instance().config().get<std::string>("twitch.client_id", "");
 
     // Update Twitch channels subscribed to this stream
     if (!twitchCategory.empty() || !twitchTitle.empty()) {
@@ -640,10 +639,16 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
             const auto* cfg = cm.getChannelConfig(chId);
             if (!cfg || cfg->platform != "twitch") continue;
 
+            // Read client_id from channel settings, fallback to global config
+            std::string clientId = cfg->settings.value("client_id", "");
+            if (clientId.empty()) {
+                clientId = Application::instance().config().get<std::string>("twitch.client_id", "");
+            }
+
             std::string token = cfg->settings.value("oauth_token", "");
             if (token.empty() || clientId.empty()) {
                 spdlog::warn("[Stream '{}'] Twitch channel '{}' missing oauth_token or client_id – "
-                             "cannot update stream info. Set client_id in Settings page.",
+                             "cannot update stream info. Set client_id in channel settings.",
                              m_config.name, chId);
                 continue;
             }
@@ -828,6 +833,7 @@ nlohmann::json StreamInstance::getState() const {
                       m_config.gameMode == GameModeType::Vote   ? "vote"  : "random";
     s["streaming"]  = isStreaming();
     s["channelIds"] = m_config.channelIds;
+    s["profileId"]  = m_config.profileId;
 
     // Editable config fields (so the dashboard can show/modify them)
     s["title"]      = m_config.title;

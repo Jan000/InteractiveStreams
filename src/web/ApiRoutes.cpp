@@ -430,21 +430,132 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     });
 
     // ══════════════════════════════════════════════════════════════════════
+    //  Config Export / Import
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Export: returns a full JSON snapshot of ALL settings (config, channels,
+    // streams, profiles, audio).  Secrets (tokens, keys) are included so the
+    // export file can be used for a 1:1 restore.
+    server.Get("/api/config/export", [&app](const httplib::Request&, httplib::Response& res) {
+        nlohmann::json out;
+        // Global config (without channels/streams – those come separately)
+        out["config"] = app.config().raw();
+        // Remove channels/streams from the config copy (exported separately)
+        out["config"].erase("channels");
+        out["config"].erase("streams");
+        out["config"].erase("profiles");
+        // Channels, Streams, Profiles as top-level arrays
+        out["channels"] = app.channelManager().toJson();
+        out["streams"]  = app.streamManager().toJson();
+        out["profiles"] = app.profileManager().toJson();
+        // Audio settings
+        nlohmann::json audio;
+        audio["music_volume"] = app.audioManager().musicVolume();
+        audio["sfx_volume"]   = app.audioManager().sfxVolume();
+        audio["muted"]        = app.audioManager().isMuted();
+        out["audio"] = audio;
+        // Metadata
+        out["_export_version"] = 1;
+        out["_exported_at"] = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        res.set_header("Content-Disposition",
+                       "attachment; filename=\"interactive_streams_config.json\"");
+        res.set_content(out.dump(2), "application/json");
+    });
+
+    // Import: accepts a full JSON snapshot and replaces current settings.
+    server.Post("/api/config/import", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+
+            // Validate export version
+            int version = body.value("_export_version", 0);
+            if (version < 1) {
+                res.status = 400;
+                res.set_content(R"({"error":"Invalid or missing _export_version in import file"})", "application/json");
+                return;
+            }
+
+            // 1. Import global config
+            if (body.contains("config") && body["config"].is_object()) {
+                auto& raw = app.config().rawMut();
+                auto importCfg = body["config"];
+                // Preserve channels/streams/profiles keys (they are handled separately)
+                importCfg.erase("channels");
+                importCfg.erase("streams");
+                importCfg.erase("profiles");
+                for (auto it = importCfg.begin(); it != importCfg.end(); ++it) {
+                    raw[it.key()] = it.value();
+                }
+            }
+
+            // 2. Import channels (loadFromJson clears existing and re-adds)
+            if (body.contains("channels") && body["channels"].is_array()) {
+                app.channelManager().loadFromJson(body["channels"]);
+            }
+
+            // 3. Import streams (loadFromJson clears existing and re-adds)
+            if (body.contains("streams") && body["streams"].is_array()) {
+                app.streamManager().loadFromJson(body["streams"]);
+            }
+
+            // 4. Import profiles (loadFromJson clears existing and re-adds)
+            if (body.contains("profiles") && body["profiles"].is_array()) {
+                app.profileManager().loadFromJson(body["profiles"]);
+            }
+
+            // 5. Import audio settings
+            if (body.contains("audio") && body["audio"].is_object()) {
+                auto& a = body["audio"];
+                if (a.contains("music_volume")) app.audioManager().setMusicVolume(a["music_volume"].get<float>());
+                if (a.contains("sfx_volume"))   app.audioManager().setSfxVolume(a["sfx_volume"].get<float>());
+                if (a.contains("muted"))        app.audioManager().setMuted(a["muted"].get<bool>());
+            }
+
+            // Persist everything
+            app.persistGlobalConfig();
+            app.persistChannels();
+            app.persistStreams();
+            app.settingsDb().save("profiles", app.profileManager().toJson());
+
+            spdlog::info("[API] Config imported successfully");
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            spdlog::error("[API] Config import failed: {}", e.what());
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
     //  Twitch OAuth (Implicit Grant Flow)
     // ══════════════════════════════════════════════════════════════════════
 
     // Returns the Twitch authorize URL for the Implicit Grant Flow.
     // Frontend opens this in a popup; Twitch redirects back with the token.
     server.Get("/api/auth/twitch/url", [&app](const httplib::Request& req, httplib::Response& res) {
-        std::string clientId    = app.config().get<std::string>("twitch.client_id", "");
-        std::string redirectUri = app.config().get<std::string>("twitch.redirect_uri",
-                                     "http://localhost:8080/auth/twitch/callback/");
         std::string channelId   = req.has_param("channel_id")
                                     ? req.get_param_value("channel_id") : "";
 
+        // Read client_id and redirect_uri from the channel's own settings
+        std::string clientId;
+        std::string redirectUri = "http://localhost:8080/auth/twitch/callback/";
+        if (!channelId.empty()) {
+            const auto* cfg = app.channelManager().getChannelConfig(channelId);
+            if (cfg && cfg->settings.is_object()) {
+                clientId    = cfg->settings.value("client_id", "");
+                redirectUri = cfg->settings.value("redirect_uri", redirectUri);
+            }
+        }
+        // Fallback to global config for backwards compatibility
+        if (clientId.empty()) {
+            clientId = app.config().get<std::string>("twitch.client_id", "");
+        }
+
         if (clientId.empty()) {
             res.status = 400;
-            res.set_content(R"({"error":"twitch.client_id not configured"})", "application/json");
+            res.set_content(R"({"error":"client_id not configured — set it in the Twitch channel settings"})", "application/json");
             return;
         }
 
@@ -516,10 +627,6 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         std::string chId = pathParam(req);
         nlohmann::json result;
 
-        std::string clientId = app.config().get<std::string>("twitch.client_id", "");
-        result["client_id_set"]  = !clientId.empty();
-        result["curl_available"] = platform::TwitchApi::isCurlAvailable();
-
         const auto* cfg = app.channelManager().getChannelConfig(chId);
         if (!cfg || cfg->platform != "twitch") {
             result["error"] = "Channel not found or not a Twitch channel.";
@@ -527,11 +634,19 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             return;
         }
 
+        // Read client_id from channel settings, fallback to global config
+        std::string clientId = cfg->settings.value("client_id", "");
+        if (clientId.empty()) {
+            clientId = app.config().get<std::string>("twitch.client_id", "");
+        }
+        result["client_id_set"]  = !clientId.empty();
+        result["curl_available"] = platform::TwitchApi::isCurlAvailable();
+
         std::string token = cfg->settings.value("oauth_token", "");
         result["oauth_token_set"] = !token.empty();
 
         if (token.empty() || clientId.empty()) {
-            result["error"] = "Missing oauth_token or client_id. Set client_id in Settings.";
+            result["error"] = "Missing oauth_token or client_id. Set them in the channel settings.";
             res.set_content(result.dump(), "application/json");
             return;
         }
