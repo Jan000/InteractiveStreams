@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug InteractiveStreams",
+            "name": "Debug",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/Debug/InteractiveStreams.exe",
@@ -14,7 +14,7 @@
             "preLaunchTask": "CMake: Build (Debug)"
         },
         {
-            "name": "Release InteractiveStreams",
+            "name": "Release",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/Release/InteractiveStreams.exe",

@@ -2,12 +2,12 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake: Configure (Debug)",
+            "label": "CMake: Configure",
             "type": "shell",
-            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+            "command": "cmake",
             "args": [
                 "--preset",
-                "msvc-debug"
+                "msvc-x64"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -18,7 +18,7 @@
         {
             "label": "CMake: Build (Debug)",
             "type": "shell",
-            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+            "command": "cmake",
             "args": [
                 "--build",
                 "build",
@@ -34,13 +34,12 @@
             },
             "problemMatcher": [
                 "$msCompile"
-            ],
-            "dependsOn": []
+            ]
         },
         {
             "label": "CMake: Build (Release)",
             "type": "shell",
-            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+            "command": "cmake",
             "args": [
                 "--build",
                 "build",
@@ -58,7 +57,7 @@
         {
             "label": "CMake: Clean & Rebuild (Debug)",
             "type": "shell",
-            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+            "command": "cmake",
             "args": [
                 "--build",
                 "build",
@@ -73,6 +72,21 @@
             "problemMatcher": [
                 "$msCompile"
             ]
+        },
+        {
+            "label": "CMake: Run Tests",
+            "type": "shell",
+            "command": "ctest",
+            "args": [
+                "--output-on-failure",
+                "-C",
+                "Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": "test",
+            "problemMatcher": []
         }
     ]
 }
