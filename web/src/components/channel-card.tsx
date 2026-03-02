@@ -554,19 +554,6 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] text-muted-foreground">
-                      Live Chat ID
-                    </Label>
-                    <Input
-                      className="h-8 text-xs"
-                      placeholder="Cg0KC..."
-                      value={ytLiveChatId}
-                      onChange={(e) =>
-                        markDirty(setYtLiveChatId)(e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[10px] text-muted-foreground">
                       Channel ID
                     </Label>
                     <Input
@@ -577,6 +564,28 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                         markDirty(setYtChannelId)(e.target.value)
                       }
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Live Chat ID{" "}
+                      <span className="text-muted-foreground/60">(optional)</span>
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="auto-detect from live stream"
+                      value={ytLiveChatId}
+                      onChange={(e) =>
+                        markDirty(setYtLiveChatId)(e.target.value)
+                      }
+                    />
+                    <p className="text-[9px] text-muted-foreground">
+                      Leave empty to auto-detect from the active livestream.
+                      {channel.connected && !!channel.details?.autoDetectedChatId && (
+                        <span className="ml-1 text-green-500">
+                          ✓ Auto-detected
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-1.5">

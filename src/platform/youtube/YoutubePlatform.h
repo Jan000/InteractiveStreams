@@ -29,11 +29,17 @@ public:
 private:
     void pollLoop();
 
+    /// Auto-detect the activeLiveChatId for the current live stream.
+    /// Uses search.list (eventType=live) + videos.list (liveStreamingDetails).
+    /// Returns the chat ID or an empty string on failure.
+    std::string fetchLiveChatId();
+
     // Configuration
     std::string m_apiKey;
     std::string m_liveChatId;
     std::string m_channelId;
     int         m_pollIntervalMs = 2000;
+    bool        m_autoDetectedChatId = false; ///< true if liveChatId was resolved automatically
 
     // State
     std::atomic<bool> m_connected{false};

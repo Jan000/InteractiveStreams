@@ -75,6 +75,7 @@ export interface ChannelState {
   enabled: boolean;
   connected: boolean;
   settings?: Record<string, unknown>;
+  details?: Record<string, unknown>;
 }
 
 export interface GameInfo {
