@@ -16,7 +16,7 @@ import {
   MessageSquare,
   Link as LinkIcon,
 } from "lucide-react";
-import type { StreamState, GameInfo, ChannelState } from "@/lib/api";
+import type { StreamState, GameInfo, ChannelState, StreamProfile } from "@/lib/api";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +51,7 @@ interface StreamCardProps {
   stream: StreamState;
   games: GameInfo[];
   channels: ChannelState[];
+  profiles?: StreamProfile[];
   selected?: boolean;
   onSelect?: () => void;
   onRefresh?: () => void;
@@ -71,6 +72,7 @@ export function StreamCard({
   stream,
   games,
   channels,
+  profiles = [],
   selected,
   onSelect,
   onRefresh,
@@ -91,6 +93,7 @@ export function StreamCard({
   const [bitrate, setBitrate] = useState(stream.bitrate ?? 4500);
   const [preset, setPreset] = useState(stream.preset ?? "veryfast");
   const [codec, setCodec] = useState(stream.codec ?? "libx264");
+  const [profileId, setProfileId] = useState(stream.profileId ?? "");
 
   // Per-game descriptions and info messages
   const [gameDescriptions, setGameDescriptions] = useState<Record<string, string>>(
@@ -188,6 +191,7 @@ export function StreamCard({
       setScoreboardRecentTitle(stream.scoreboardRecentTitle ?? "LAST 24H");
       setScoreboardRecentHours(stream.scoreboardRecentHours ?? 24);
       setVoteOverlayFontScale(stream.voteOverlayFontScale ?? 1.0);
+      setProfileId(stream.profileId ?? "");
     }
   }, [stream, dirty]);
 
@@ -230,6 +234,7 @@ export function StreamCard({
         scoreboard_recent_title: scoreboardRecentTitle,
         scoreboard_recent_hours: scoreboardRecentHours,
         vote_overlay_font_scale: voteOverlayFontScale,
+        profile_id: profileId || undefined,
       });
       toast.success("Stream updated");
       setDirty(false);
@@ -543,6 +548,31 @@ export function StreamCard({
                 </p>
               )}
             </div>
+
+            {/* Profile */}
+            {profiles.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Config Profile</Label>
+                <Select
+                  value={profileId || "__none__"}
+                  onValueChange={(v) =>
+                    set(setProfileId)(v === "__none__" ? "" : v)
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="No profile" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No profile</SelectItem>
+                    {profiles.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Resolution / Game Mode */}
             <div className="grid grid-cols-2 gap-3">

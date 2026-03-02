@@ -2,6 +2,7 @@
 #include "core/Config.h"
 #include "core/ChannelManager.h"
 #include "core/StreamManager.h"
+#include "core/StreamProfile.h"
 #include "core/Logger.h"
 #include "core/PlayerDatabase.h"
 #include "core/PerfMonitor.h"
@@ -26,6 +27,7 @@ struct Application::Impl {
     std::unique_ptr<SettingsDatabase>          settingsDb;
     std::unique_ptr<ChannelManager>            channelManager;
     std::unique_ptr<StreamManager>             streamManager;
+    std::unique_ptr<ProfileManager>            profileManager;
     std::unique_ptr<PlayerDatabase>            playerDatabase;
     std::unique_ptr<PerfMonitor>               perfMonitor;
     std::unique_ptr<AudioManager>              audioManager;
@@ -108,6 +110,12 @@ void Application::initialize() {
         cfg.get<float>("audio.sfx_volume", 70.0f));
     m_impl->audioManager->setMuted(
         cfg.get<bool>("audio.muted", false));
+    m_impl->audioManager->setFadeInDuration(
+        cfg.get<float>("audio.fade_in_seconds", 2.0f));
+    m_impl->audioManager->setFadeOutDuration(
+        cfg.get<float>("audio.fade_out_seconds", 2.0f));
+    m_impl->audioManager->setCrossfadeOverlap(
+        cfg.get<float>("audio.crossfade_overlap", 1.5f));
     m_impl->audioManager->playMusic();
     spdlog::info("AudioManager initialised ({} tracks found).",
         m_impl->audioManager->trackCount());
@@ -119,6 +127,18 @@ void Application::initialize() {
         cfg.get<std::string>("rendering.title", "InteractiveStreams"),
         headless);
 
+    // ── Profile manager ─────────────────────────────────────────────────
+    bool hasSavedProfiles = m_impl->settingsDb->has("profiles");
+    auto profilesJson = hasSavedProfiles
+        ? m_impl->settingsDb->load("profiles")
+        : nlohmann::json::array();
+
+    m_impl->profileManager = std::make_unique<ProfileManager>();
+    if (profilesJson.is_array()) {
+        m_impl->profileManager->loadFromJson(profilesJson);
+    }
+    spdlog::info("[ProfileManager] Loaded {} profile(s).", m_impl->profileManager->count());
+
     // ── Stream manager ───────────────────────────────────────────────────
     auto streamsJson = hasSavedStreams
         ? m_impl->settingsDb->load("streams")
@@ -126,7 +146,12 @@ void Application::initialize() {
 
     m_impl->streamManager = std::make_unique<StreamManager>();
     if (streamsJson.is_array()) {
-        m_impl->streamManager->loadFromJson(streamsJson);
+        // Resolve profile inheritance before loading streams
+        nlohmann::json resolvedStreams = nlohmann::json::array();
+        for (const auto& s : streamsJson) {
+            resolvedStreams.push_back(m_impl->profileManager->resolveStreamConfig(s));
+        }
+        m_impl->streamManager->loadFromJson(resolvedStreams);
     }
 
     // Ensure at least one stream exists
@@ -149,9 +174,10 @@ void Application::initialize() {
     m_impl->webServer->start();
 
     // ── Persist initial state to SQLite (first run migration) ────────────
-    if (!hasSavedChannels || !hasSavedStreams || !hasSavedConfig) {
+    if (!hasSavedChannels || !hasSavedStreams || !hasSavedConfig || !hasSavedProfiles) {
         persistChannels();
         persistStreams();
+        persistProfiles();
         persistGlobalConfig();
         spdlog::info("[SettingsDB] Initial state persisted to SQLite.");
     }
@@ -251,8 +277,8 @@ void Application::mainLoop() {
         bool wantHeadless = m_impl->config->get<bool>("application.headless", false);
         m_impl->renderer->setHeadless(wantHeadless);
 
-        // Update audio (auto-advance tracks, clean finished sounds)
-        if (m_impl->audioManager) m_impl->audioManager->update();
+        // Update audio (auto-advance tracks, crossfade, clean finished sounds)
+        if (m_impl->audioManager) m_impl->audioManager->update(frameTime);
 
         // Frame limiter: sleep to hit target FPS
         auto endTime = clock::now();
@@ -277,6 +303,7 @@ void Application::shutdown() {
     if (m_impl->settingsDb) {
         persistChannels();
         persistStreams();
+        persistProfiles();
         persistGlobalConfig();
         spdlog::info("[SettingsDB] Settings persisted on shutdown.");
     }
@@ -294,6 +321,7 @@ void Application::shutdown() {
 Config&               Application::config()         { return *m_impl->config; }
 ChannelManager&       Application::channelManager() { return *m_impl->channelManager; }
 StreamManager&        Application::streamManager()  { return *m_impl->streamManager; }
+ProfileManager&       Application::profileManager() { return *m_impl->profileManager; }
 PlayerDatabase&       Application::playerDatabase() { return *m_impl->playerDatabase; }
 SettingsDatabase&     Application::settingsDb()     { return *m_impl->settingsDb; }
 PerfMonitor&          Application::perfMonitor()    { return *m_impl->perfMonitor; }
@@ -309,6 +337,11 @@ void Application::persistChannels() {
 void Application::persistStreams() {
     if (m_impl->settingsDb && m_impl->streamManager)
         m_impl->settingsDb->save("streams", m_impl->streamManager->toJson());
+}
+
+void Application::persistProfiles() {
+    if (m_impl->settingsDb && m_impl->profileManager)
+        m_impl->settingsDb->save("profiles", m_impl->profileManager->toJson());
 }
 
 void Application::persistGlobalConfig() {

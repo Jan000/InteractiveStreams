@@ -920,6 +920,7 @@ nlohmann::json StreamInstance::toJson() const {
     j["name"]         = m_config.name;
     j["title"]        = m_config.title;
     j["description"]  = m_config.description;
+    j["profile_id"]   = m_config.profileId;
     j["resolution"]   = m_config.resolution == ResolutionPreset::Mobile ? "mobile" : "desktop";
     j["game_mode"]    = m_config.gameMode == GameModeType::Fixed ? "fixed" :
                         m_config.gameMode == GameModeType::Vote  ? "vote"  : "random";
@@ -974,6 +975,7 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.name        = j.value("name", "Stream");
     c.title       = j.value("title", "");
     c.description = j.value("description", "");
+    c.profileId   = j.value("profile_id", "");
 
     std::string res = j.value("resolution", "mobile");
     c.resolution = (res == "desktop") ? ResolutionPreset::Desktop : ResolutionPreset::Mobile;

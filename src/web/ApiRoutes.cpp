@@ -4,6 +4,7 @@
 #include "core/ChannelManager.h"
 #include "core/StreamManager.h"
 #include "core/StreamInstance.h"
+#include "core/StreamProfile.h"
 #include "core/PlayerDatabase.h"
 #include "core/PerfMonitor.h"
 #include "core/SettingsDatabase.h"
@@ -153,7 +154,9 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     server.Post("/api/streams", [&app](const httplib::Request& req, httplib::Response& res) {
         try {
             auto body = nlohmann::json::parse(req.body);
-            auto cfg  = core::StreamInstance::configFromJson(body);
+            // Resolve profile inheritance before parsing config
+            auto resolved = app.profileManager().resolveStreamConfig(body);
+            auto cfg  = core::StreamInstance::configFromJson(resolved);
             std::string id = app.streamManager().addStream(cfg);
             app.persistStreams();
             res.set_content(nlohmann::json({{"success",true},{"id",id}}).dump(), "application/json");
@@ -167,8 +170,12 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         try {
             std::string id = pathParam(req);
             auto body = nlohmann::json::parse(req.body);
-            auto cfg  = core::StreamInstance::configFromJson(body);
+            // Resolve profile inheritance before parsing config
+            auto resolved = app.profileManager().resolveStreamConfig(body);
+            auto cfg  = core::StreamInstance::configFromJson(resolved);
             cfg.id = id;  // preserve the path-param ID
+            // Preserve the profile_id from the raw body (not from resolved)
+            cfg.profileId = body.value("profile_id", "");
             app.streamManager().updateStream(id, cfg);
             app.persistStreams();
 
@@ -267,6 +274,89 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
         res.set_header("Pragma", "no-cache");
         res.set_content(std::string(jpeg.begin(), jpeg.end()), "image/jpeg");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Profiles (config inheritance / templates)
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Get("/api/profiles", [&app](const httplib::Request&, httplib::Response& res) {
+        res.set_content(app.profileManager().toJson().dump(2), "application/json");
+    });
+
+    server.Post("/api/profiles", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            core::StreamProfile p;
+            p.id       = body.value("id", "");
+            p.name     = body.value("name", "Profile");
+            p.parentId = body.value("parent_id", "");
+            p.config   = body.value("config", nlohmann::json::object());
+
+            std::string id = app.profileManager().addProfile(p);
+            app.persistProfiles();
+            res.set_content(nlohmann::json({{"success",true},{"id",id}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Put(R"(/api/profiles/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string id = pathParam(req);
+            auto body = nlohmann::json::parse(req.body);
+
+            core::StreamProfile p;
+            p.name     = body.value("name", "Profile");
+            p.parentId = body.value("parent_id", "");
+            p.config   = body.value("config", nlohmann::json::object());
+
+            app.profileManager().updateProfile(id, p);
+            app.persistProfiles();
+
+            // Re-resolve all streams referencing this profile
+            for (auto* s : app.streamManager().allStreams()) {
+                if (s->config().profileId == id) {
+                    auto rawJson = s->toJson();
+                    auto resolved = app.profileManager().resolveStreamConfig(rawJson);
+                    auto newCfg = core::StreamInstance::configFromJson(resolved);
+                    newCfg.id = s->config().id; // preserve ID
+                    s->updateConfig(newCfg);
+                }
+            }
+            app.persistStreams();
+
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error",e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Delete(R"(/api/profiles/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string id = pathParam(req);
+        app.profileManager().removeProfile(id);
+        app.persistProfiles();
+
+        // Clear profileId from streams that referenced this profile
+        for (auto* s : app.streamManager().allStreams()) {
+            if (s->config().profileId == id) {
+                auto cfg       = s->config();
+                cfg.profileId  = "";
+                s->updateConfig(cfg);
+            }
+        }
+        app.persistStreams();
+
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // Resolve: preview what a profile chain produces
+    server.Get(R"(/api/profiles/([^/]+)/resolved)", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string id = pathParam(req);
+        auto resolved = app.profileManager().resolveProfileChain(id);
+        res.set_content(resolved.dump(2), "application/json");
     });
 
     // ══════════════════════════════════════════════════════════════════════
@@ -672,12 +762,15 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
     server.Get("/api/audio", [&app](const httplib::Request&, httplib::Response& res) {
         auto& audio = app.audioManager();
         nlohmann::json j;
-        j["playing"]       = audio.isMusicPlaying();
-        j["muted"]         = audio.isMuted();
-        j["musicVolume"]   = audio.musicVolume();
-        j["sfxVolume"]     = audio.sfxVolume();
-        j["currentTrack"]  = audio.currentTrackName();
-        j["trackCount"]    = audio.trackCount();
+        j["playing"]            = audio.isMusicPlaying();
+        j["muted"]              = audio.isMuted();
+        j["musicVolume"]        = audio.musicVolume();
+        j["sfxVolume"]          = audio.sfxVolume();
+        j["currentTrack"]       = audio.currentTrackName();
+        j["trackCount"]         = audio.trackCount();
+        j["fadeInSeconds"]      = audio.fadeInDuration();
+        j["fadeOutSeconds"]     = audio.fadeOutDuration();
+        j["crossfadeOverlap"]   = audio.crossfadeOverlap();
         res.set_content(j.dump(), "application/json");
     });
 
@@ -695,12 +788,21 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             audio.setSfxVolume(body["sfxVolume"].get<float>());
         if (body.contains("muted"))
             audio.setMuted(body["muted"].get<bool>());
+        if (body.contains("fadeInSeconds"))
+            audio.setFadeInDuration(body["fadeInSeconds"].get<float>());
+        if (body.contains("fadeOutSeconds"))
+            audio.setFadeOutDuration(body["fadeOutSeconds"].get<float>());
+        if (body.contains("crossfadeOverlap"))
+            audio.setCrossfadeOverlap(body["crossfadeOverlap"].get<float>());
 
         // Persist to config
         auto& cfg = app.config();
-        cfg.set("audio.music_volume", audio.musicVolume());
-        cfg.set("audio.sfx_volume",   audio.sfxVolume());
-        cfg.set("audio.muted",        audio.isMuted());
+        cfg.set("audio.music_volume",      audio.musicVolume());
+        cfg.set("audio.sfx_volume",        audio.sfxVolume());
+        cfg.set("audio.muted",             audio.isMuted());
+        cfg.set("audio.fade_in_seconds",   audio.fadeInDuration());
+        cfg.set("audio.fade_out_seconds",  audio.fadeOutDuration());
+        cfg.set("audio.crossfade_overlap", audio.crossfadeOverlap());
         app.persistGlobalConfig();
 
         res.set_content(R"({"success":true})", "application/json");

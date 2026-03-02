@@ -9,6 +9,7 @@ export interface StreamState {
   name: string;
   title: string;
   description: string;
+  profileId: string;
   resolution: "mobile" | "desktop";
   width: number;
   height: number;
@@ -163,6 +164,25 @@ export interface StatusResponse {
   games: GameInfo[];
 }
 
+export interface AudioState {
+  playing: boolean;
+  muted: boolean;
+  musicVolume: number;
+  sfxVolume: number;
+  currentTrack: string;
+  trackCount: number;
+  fadeInSeconds: number;
+  fadeOutSeconds: number;
+  crossfadeOverlap: number;
+}
+
+export interface StreamProfile {
+  id: string;
+  name: string;
+  parent_id: string;
+  config: Record<string, unknown>;
+}
+
 // ── Generic fetch helpers ─────────────────────────────────────────────────
 
 /** Read the saved API key (set in Settings page and persisted in localStorage). */
@@ -286,6 +306,32 @@ export const api = {
     get<PerfData>(`/api/perf?seconds=${seconds}`),
   getPerfHistory: (seconds = 300) =>
     get<{ samples: PerfSample[] }>(`/api/perf/history?seconds=${seconds}`),
+
+  // Audio
+  getAudio: () =>
+    get<AudioState>("/api/audio"),
+  updateAudio: (data: Partial<AudioState>) =>
+    put<{ success: boolean }>("/api/audio", data),
+  nextTrack: () =>
+    post<{ success: boolean }>("/api/audio/next"),
+  pauseMusic: () =>
+    post<{ success: boolean }>("/api/audio/pause"),
+  resumeMusic: () =>
+    post<{ success: boolean }>("/api/audio/resume"),
+  rescanAudio: () =>
+    post<{ success: boolean; trackCount: number }>("/api/audio/rescan"),
+
+  // Profiles (config inheritance)
+  getProfiles: () =>
+    get<StreamProfile[]>("/api/profiles"),
+  createProfile: (data: Partial<StreamProfile>) =>
+    post<{ success: boolean; id: string }>("/api/profiles", data),
+  updateProfile: (id: string, data: Partial<StreamProfile>) =>
+    put<{ success: boolean }>(`/api/profiles/${id}`, data),
+  deleteProfile: (id: string) =>
+    del<{ success: boolean }>(`/api/profiles/${id}`),
+  getResolvedProfile: (id: string) =>
+    get<Record<string, unknown>>(`/api/profiles/${id}/resolved`),
 
   // Statistics
   getChannelStats: () => get<ChannelStatsEntry[]>("/api/stats/channels"),

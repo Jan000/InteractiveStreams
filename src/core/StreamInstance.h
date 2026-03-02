@@ -37,6 +37,7 @@ struct StreamConfig {
     std::string name = "Stream";
     std::string title;                     ///< Stream title (shown on Twitch/YouTube)
     std::string description;               ///< Stream description / about
+    std::string profileId;                 ///< Optional parent profile (inheritance)
     ResolutionPreset resolution = ResolutionPreset::Mobile;
     GameModeType gameMode = GameModeType::Fixed;
     std::string fixedGame = "chaos_arena";

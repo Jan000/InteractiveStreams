@@ -8,6 +8,7 @@ namespace is::core {
 class Config;
 class ChannelManager;
 class StreamManager;
+class ProfileManager;
 class Logger;
 class PlayerDatabase;
 class PerfMonitor;
@@ -47,6 +48,7 @@ public:
     Config&               config();
     ChannelManager&       channelManager();
     StreamManager&        streamManager();
+    ProfileManager&       profileManager();
     PlayerDatabase&       playerDatabase();
     SettingsDatabase&     settingsDb();
     PerfMonitor&          perfMonitor();
@@ -58,6 +60,8 @@ public:
     void persistChannels();
     /// Persist streams to SQLite (call after any stream CRUD).
     void persistStreams();
+    /// Persist profiles to SQLite (call after any profile CRUD).
+    void persistProfiles();
     /// Persist global config to SQLite (call after settings change).
     void persistGlobalConfig();
 

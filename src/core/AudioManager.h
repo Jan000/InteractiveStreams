@@ -15,6 +15,9 @@ namespace is::core {
 /// shuffle order.  New tracks can be dropped into the directory at any
 /// time – call rescan() to pick them up.
 ///
+/// Supports crossfade between tracks: the outgoing track fades out while
+/// the incoming track fades in, with a configurable overlap duration.
+///
 /// SFX are loaded once and played via short-lived sf::Sound instances.
 class AudioManager {
 public:
@@ -39,11 +42,11 @@ public:
     /// Stop playback and reset playlist position.
     void stopMusic();
 
-    /// Skip to the next track.
+    /// Skip to the next track (triggers crossfade if enabled).
     void nextTrack();
 
-    /// Must be called every frame to detect when a track ends.
-    void update();
+    /// Must be called every frame with elapsed time since last call.
+    void update(double dt);
 
     /// Set music volume (0–100).
     void setMusicVolume(float volume);
@@ -53,6 +56,20 @@ public:
     bool isMusicPlaying() const;
     std::string currentTrackName() const;
     int trackCount() const;
+
+    // ── Crossfade ────────────────────────────────────────────────────────
+
+    /// Set fade-in duration in seconds (0 = instant).
+    void setFadeInDuration(float seconds);
+    float fadeInDuration() const { return m_fadeInSeconds; }
+
+    /// Set fade-out duration in seconds (0 = instant).
+    void setFadeOutDuration(float seconds);
+    float fadeOutDuration() const { return m_fadeOutSeconds; }
+
+    /// Set crossfade overlap in seconds (how long both tracks play together).
+    void setCrossfadeOverlap(float seconds);
+    float crossfadeOverlap() const { return m_crossfadeOverlap; }
 
     // ── SFX ──────────────────────────────────────────────────────────────
 
@@ -73,16 +90,37 @@ public:
 
 private:
     void shufflePlaylist();
-    void loadTrack(int index);
+    bool loadTrackInto(sf::Music& music, int index);
+    int  nextTrackIndex() const;
+    void beginCrossfade();
+    void finishCrossfade();
 
     // Music
     std::string              m_musicDirectory;
     std::vector<std::string> m_playlist;       ///< shuffled file paths
     std::vector<std::string> m_allFiles;       ///< all discovered file paths
     int                      m_currentIndex = -1;
-    sf::Music                m_music;
-    float                    m_musicVolume = 50.0f;
-    bool                     m_musicPaused = false;
+    int                      m_nextIndex    = -1;
+    float                    m_musicVolume  = 50.0f;
+    bool                     m_musicPaused  = false;
+
+    // Two music streams for crossfade
+    std::unique_ptr<sf::Music> m_musicCurrent;
+    std::unique_ptr<sf::Music> m_musicNext;
+
+    // Crossfade parameters
+    float m_fadeInSeconds     = 2.0f;
+    float m_fadeOutSeconds    = 2.0f;
+    float m_crossfadeOverlap = 1.5f;
+
+    // Crossfade state
+    enum class FadeState {
+        None,         ///< Normal playback, no fading
+        FadingIn,     ///< Single track fading in (first play)
+        Crossfading,  ///< Two tracks overlapping (old fading out, new fading in)
+    };
+    FadeState m_fadeState = FadeState::None;
+    float     m_fadeTimer = 0.0f;  ///< elapsed time since fade started
 
     // SFX
     struct SfxEntry {

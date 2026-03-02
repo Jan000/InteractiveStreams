@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { useStatus } from "@/hooks/use-status";
-import { api } from "@/lib/api";
+import { api, type StreamProfile } from "@/lib/api";
 import { StreamCard } from "@/components/stream-card";
 import { StreamPreview } from "@/components/stream-preview";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,23 @@ export default function StreamsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [previewFps, setPreviewFps] = useState(10);
+  const [profiles, setProfiles] = useState<StreamProfile[]>([]);
+
+  // Fetch profiles once and on refresh
+  const loadProfiles = useCallback(async () => {
+    try {
+      setProfiles(await api.getProfiles());
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
+
+  const handleRefresh = useCallback(() => {
+    refresh();
+    loadProfiles();
+  }, [refresh, loadProfiles]);
 
   // New stream form state
   const [newName, setNewName] = useState("");
@@ -61,7 +78,7 @@ export default function StreamsPage() {
       toast.success("Stream created");
       setDialogOpen(false);
       setNewName("");
-      refresh();
+      handleRefresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create stream");
     }
@@ -197,9 +214,10 @@ export default function StreamsPage() {
               stream={s}
               games={data.games}
               channels={data.channels}
+              profiles={profiles}
               selected={selectedStream?.id === s.id}
               onSelect={() => setSelectedId(s.id)}
-              onRefresh={refresh}
+              onRefresh={handleRefresh}
             />
           ))}
         </div>

@@ -2,6 +2,7 @@
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <algorithm>
+#include <cmath>
 
 namespace fs = std::filesystem;
 
@@ -86,22 +87,30 @@ void AudioManager::shufflePlaylist() {
     std::shuffle(m_playlist.begin(), m_playlist.end(), m_rng);
 }
 
-void AudioManager::loadTrack(int index) {
+bool AudioManager::loadTrackInto(sf::Music& music, int index) {
     // caller must hold m_mutex
-    if (index < 0 || index >= static_cast<int>(m_playlist.size())) return;
+    if (index < 0 || index >= static_cast<int>(m_playlist.size())) return false;
 
     const auto& path = m_playlist[index];
-    if (!m_music.openFromFile(path)) {
+    if (!music.openFromFile(path)) {
         spdlog::error("[Audio] Failed to open music file: {}", path);
-        return;
+        return false;
     }
 
-    m_music.setVolume(m_muted ? 0.0f : m_musicVolume);
-    m_music.setLoop(false);
-    m_currentIndex = index;
-
+    music.setLoop(false);
     auto filename = fs::path(path).filename().string();
-    spdlog::info("[Audio] Now playing: {} ({}/{})", filename, index + 1, m_playlist.size());
+    spdlog::info("[Audio] Loaded track: {} ({}/{})", filename, index + 1, m_playlist.size());
+    return true;
+}
+
+int AudioManager::nextTrackIndex() const {
+    // caller must hold m_mutex
+    if (m_playlist.empty()) return -1;
+    int next = m_currentIndex + 1;
+    if (next >= static_cast<int>(m_playlist.size())) {
+        return -1; // signal re-shuffle needed
+    }
+    return next;
 }
 
 void AudioManager::playMusic() {
@@ -114,67 +123,217 @@ void AudioManager::playMusic() {
 
     shufflePlaylist();
     m_currentIndex = 0;
-    loadTrack(0);
-    m_music.play();
+
+    m_musicCurrent = std::make_unique<sf::Music>();
+    if (!loadTrackInto(*m_musicCurrent, 0)) return;
+
+    // Start with fade-in if configured
+    if (m_fadeInSeconds > 0.01f) {
+        m_musicCurrent->setVolume(0.0f);
+        m_fadeState = FadeState::FadingIn;
+        m_fadeTimer = 0.0f;
+    } else {
+        m_musicCurrent->setVolume(m_muted ? 0.0f : m_musicVolume);
+        m_fadeState = FadeState::None;
+    }
+
+    m_musicCurrent->play();
     m_musicPaused = false;
+
+    spdlog::info("[Audio] Now playing: {} ({}/{})",
+        fs::path(m_playlist[0]).filename().string(), 1, m_playlist.size());
 }
 
 void AudioManager::pauseMusic() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_music.getStatus() == sf::Music::Playing) {
-        m_music.pause();
+    if (m_musicCurrent && m_musicCurrent->getStatus() == sf::Music::Playing) {
+        m_musicCurrent->pause();
         m_musicPaused = true;
+    }
+    // Also pause the next track if crossfading
+    if (m_musicNext && m_musicNext->getStatus() == sf::Music::Playing) {
+        m_musicNext->pause();
     }
 }
 
 void AudioManager::resumeMusic() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_musicPaused && m_music.getStatus() == sf::Music::Paused) {
-        m_music.play();
+    if (m_musicPaused) {
+        if (m_musicCurrent && m_musicCurrent->getStatus() == sf::Music::Paused) {
+            m_musicCurrent->play();
+        }
+        if (m_musicNext && m_musicNext->getStatus() == sf::Music::Paused) {
+            m_musicNext->play();
+        }
         m_musicPaused = false;
     }
 }
 
 void AudioManager::stopMusic() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_music.stop();
+    if (m_musicCurrent) m_musicCurrent->stop();
+    if (m_musicNext)    m_musicNext->stop();
+    m_musicCurrent.reset();
+    m_musicNext.reset();
     m_currentIndex = -1;
-    m_musicPaused = false;
+    m_nextIndex    = -1;
+    m_musicPaused  = false;
+    m_fadeState     = FadeState::None;
+    m_fadeTimer     = 0.0f;
 }
 
 void AudioManager::nextTrack() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_playlist.empty()) return;
 
-    int next = m_currentIndex + 1;
-    if (next >= static_cast<int>(m_playlist.size())) {
-        // Re-shuffle and restart
+    // If already crossfading, finish immediately
+    if (m_fadeState == FadeState::Crossfading) {
+        finishCrossfade();
+    }
+
+    beginCrossfade();
+}
+
+void AudioManager::beginCrossfade() {
+    // caller must hold m_mutex
+    int next = nextTrackIndex();
+    if (next < 0) {
+        // Re-shuffle and restart from beginning
         shufflePlaylist();
         next = 0;
     }
 
-    m_music.stop();
-    loadTrack(next);
-    m_music.play();
-    m_musicPaused = false;
-}
-
-void AudioManager::update() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    // Auto-advance to next track when current finishes
-    if (m_currentIndex >= 0 && !m_musicPaused &&
-        m_music.getStatus() == sf::Music::Stopped) {
-        int next = m_currentIndex + 1;
-        if (next >= static_cast<int>(m_playlist.size())) {
-            shufflePlaylist();
-            next = 0;
-        }
-        loadTrack(next);
-        m_music.play();
+    m_nextIndex = next;
+    m_musicNext = std::make_unique<sf::Music>();
+    if (!loadTrackInto(*m_musicNext, next)) {
+        m_musicNext.reset();
+        m_nextIndex = -1;
+        return;
     }
 
-    // Clean up finished sounds
+    // Start fade-in of new track at 0 volume
+    m_musicNext->setVolume(0.0f);
+    m_musicNext->play();
+
+    m_fadeState = FadeState::Crossfading;
+    m_fadeTimer = 0.0f;
+
+    spdlog::info("[Audio] Crossfade started → {} ({}/{})",
+        fs::path(m_playlist[next]).filename().string(), next + 1, m_playlist.size());
+}
+
+void AudioManager::finishCrossfade() {
+    // caller must hold m_mutex
+    if (m_musicCurrent) {
+        m_musicCurrent->stop();
+    }
+
+    // Swap next → current
+    m_musicCurrent = std::move(m_musicNext);
+    m_musicNext.reset();
+    m_currentIndex = m_nextIndex;
+    m_nextIndex    = -1;
+
+    // Set to full volume
+    if (m_musicCurrent) {
+        m_musicCurrent->setVolume(m_muted ? 0.0f : m_musicVolume);
+    }
+
+    m_fadeState = FadeState::None;
+    m_fadeTimer = 0.0f;
+}
+
+void AudioManager::update(double dt) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    float fdt = static_cast<float>(dt);
+
+    // ── Handle fade states ───────────────────────────────────────────────
+    if (m_fadeState == FadeState::FadingIn && m_musicCurrent) {
+        m_fadeTimer += fdt;
+        float progress = (m_fadeInSeconds > 0.01f)
+            ? std::min(m_fadeTimer / m_fadeInSeconds, 1.0f) : 1.0f;
+        float vol = m_muted ? 0.0f : (m_musicVolume * progress);
+        m_musicCurrent->setVolume(vol);
+
+        if (progress >= 1.0f) {
+            m_fadeState = FadeState::None;
+            m_fadeTimer = 0.0f;
+        }
+    }
+    else if (m_fadeState == FadeState::Crossfading) {
+        m_fadeTimer += fdt;
+
+        // Fade-out duration for the old track
+        float fadeOutDur = std::max(m_fadeOutSeconds, 0.01f);
+        // Fade-in duration for the new track
+        float fadeInDur  = std::max(m_fadeInSeconds, 0.01f);
+        // The crossfade takes as long as the longer fade
+        float totalDur   = std::max(fadeOutDur, fadeInDur);
+
+        // Fade out old track
+        if (m_musicCurrent) {
+            float outProgress = std::min(m_fadeTimer / fadeOutDur, 1.0f);
+            float vol = m_muted ? 0.0f : (m_musicVolume * (1.0f - outProgress));
+            m_musicCurrent->setVolume(vol);
+        }
+
+        // Fade in new track
+        if (m_musicNext) {
+            float inProgress = std::min(m_fadeTimer / fadeInDur, 1.0f);
+            float vol = m_muted ? 0.0f : (m_musicVolume * inProgress);
+            m_musicNext->setVolume(vol);
+        }
+
+        // Crossfade complete
+        if (m_fadeTimer >= totalDur) {
+            finishCrossfade();
+        }
+    }
+
+    // ── Auto-advance: detect when current track is about to end ──────────
+    if (m_fadeState == FadeState::None && m_musicCurrent && !m_musicPaused &&
+        m_currentIndex >= 0) {
+
+        auto status = m_musicCurrent->getStatus();
+
+        if (status == sf::Music::Playing && m_crossfadeOverlap > 0.01f) {
+            // Check remaining time
+            sf::Time duration = m_musicCurrent->getDuration();
+            sf::Time offset   = m_musicCurrent->getPlayingOffset();
+            float remaining   = duration.asSeconds() - offset.asSeconds();
+
+            if (remaining <= m_crossfadeOverlap && remaining > 0.0f) {
+                beginCrossfade();
+            }
+        }
+        else if (status == sf::Music::Stopped) {
+            // Track ended without crossfade (crossfadeOverlap == 0 or very short track)
+            int next = nextTrackIndex();
+            if (next < 0) {
+                shufflePlaylist();
+                next = 0;
+            }
+            m_currentIndex = next;
+            m_musicCurrent = std::make_unique<sf::Music>();
+            if (loadTrackInto(*m_musicCurrent, next)) {
+                if (m_fadeInSeconds > 0.01f) {
+                    m_musicCurrent->setVolume(0.0f);
+                    m_fadeState = FadeState::FadingIn;
+                    m_fadeTimer = 0.0f;
+                } else {
+                    m_musicCurrent->setVolume(m_muted ? 0.0f : m_musicVolume);
+                }
+                m_musicCurrent->play();
+
+                spdlog::info("[Audio] Now playing: {} ({}/{})",
+                    fs::path(m_playlist[next]).filename().string(),
+                    next + 1, m_playlist.size());
+            }
+        }
+    }
+
+    // ── Clean up finished sounds ─────────────────────────────────────────
     m_activeSounds.erase(
         std::remove_if(m_activeSounds.begin(), m_activeSounds.end(),
             [](const std::unique_ptr<sf::Sound>& s) {
@@ -186,26 +345,51 @@ void AudioManager::update() {
 void AudioManager::setMusicVolume(float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_musicVolume = std::clamp(volume, 0.0f, 100.0f);
-    if (!m_muted) {
-        m_music.setVolume(m_musicVolume);
+    if (!m_muted && m_fadeState == FadeState::None) {
+        if (m_musicCurrent) m_musicCurrent->setVolume(m_musicVolume);
     }
+    // During fading, the volume is managed by the fade logic
 }
 
 bool AudioManager::isMusicPlaying() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_music.getStatus() == sf::Music::Playing;
+    if (m_musicCurrent && m_musicCurrent->getStatus() == sf::Music::Playing)
+        return true;
+    if (m_musicNext && m_musicNext->getStatus() == sf::Music::Playing)
+        return true;
+    return false;
 }
 
 std::string AudioManager::currentTrackName() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_playlist.size()))
+    // During crossfade, show the incoming track name
+    int idx = (m_fadeState == FadeState::Crossfading && m_nextIndex >= 0)
+        ? m_nextIndex : m_currentIndex;
+    if (idx < 0 || idx >= static_cast<int>(m_playlist.size()))
         return "";
-    return fs::path(m_playlist[m_currentIndex]).stem().string();
+    return fs::path(m_playlist[idx]).stem().string();
 }
 
 int AudioManager::trackCount() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return static_cast<int>(m_allFiles.size());
+}
+
+// ── Crossfade settings ───────────────────────────────────────────────────────
+
+void AudioManager::setFadeInDuration(float seconds) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_fadeInSeconds = std::max(seconds, 0.0f);
+}
+
+void AudioManager::setFadeOutDuration(float seconds) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_fadeOutSeconds = std::max(seconds, 0.0f);
+}
+
+void AudioManager::setCrossfadeOverlap(float seconds) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_crossfadeOverlap = std::max(seconds, 0.0f);
 }
 
 // ── SFX ──────────────────────────────────────────────────────────────────────
@@ -250,8 +434,13 @@ void AudioManager::setSfxVolume(float volume) {
 void AudioManager::setMuted(bool muted) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_muted = muted;
-    m_music.setVolume(muted ? 0.0f : m_musicVolume);
-    // Active sounds will be cleaned up naturally
+    if (muted) {
+        if (m_musicCurrent) m_musicCurrent->setVolume(0.0f);
+        if (m_musicNext)    m_musicNext->setVolume(0.0f);
+    } else if (m_fadeState == FadeState::None) {
+        if (m_musicCurrent) m_musicCurrent->setVolume(m_musicVolume);
+    }
+    // During fading, unmute effect will be handled by next update() tick
 }
 
 } // namespace is::core

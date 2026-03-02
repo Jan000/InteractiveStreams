@@ -115,6 +115,7 @@ set(CORE_SOURCES
     src/core/ChannelManager.cpp
     src/core/StreamInstance.cpp
     src/core/StreamManager.cpp
+    src/core/StreamProfile.cpp
     src/core/PlayerDatabase.cpp
     src/core/PerfMonitor.cpp
     src/core/SettingsDatabase.cpp
