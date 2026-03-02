@@ -248,10 +248,15 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:box2d> $<TARGET_FILE_DIR:${PROJECT_NAME}>
     )
-    # OpenAL DLL (required by SFML Audio)
+    # OpenAL DLL (required by SFML Audio) – pick correct architecture
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_OPENAL_ARCH "x64")
+    else()
+        set(_OPENAL_ARCH "x86")
+    endif()
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/build/_deps/sfml-src/extlibs/bin/x64/openal32.dll
+        ${CMAKE_BINARY_DIR}/_deps/sfml-src/extlibs/bin/${_OPENAL_ARCH}/openal32.dll
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
     )
 endif()
