@@ -199,15 +199,69 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
 )
 
-# Copy web dashboard to build directory (Next.js static export)
-# Build with: cd web && bun run build   (produces web/out/)
-if(EXISTS ${CMAKE_SOURCE_DIR}/web/out)
+# ─── Web Dashboard (Next.js static export) ───────────────────────────────────
+# Incrementally rebuild the dashboard whenever any source file in web/src/
+# changes.  Uses a stamp file so the build is skipped when nothing changed.
+#
+# New files added to web/src/ are picked up after the next `cmake --preset`.
+# The bun executable must be in PATH (install from https://bun.sh).
+find_program(BUN_EXECUTABLE NAMES bun bun.exe DOC "Bun package manager / bundler")
+
+if(BUN_EXECUTABLE)
+    # Collect web source files at configure time for dependency tracking.
+    # NOTE: add new top-level config files here if needed.
+    file(GLOB_RECURSE WEB_SOURCE_FILES
+        "${CMAKE_SOURCE_DIR}/web/src/*.tsx"
+        "${CMAKE_SOURCE_DIR}/web/src/*.ts"
+        "${CMAKE_SOURCE_DIR}/web/src/*.css"
+        "${CMAKE_SOURCE_DIR}/web/public/*"
+    )
+    list(APPEND WEB_SOURCE_FILES
+        "${CMAKE_SOURCE_DIR}/web/package.json"
+        "${CMAKE_SOURCE_DIR}/web/next.config.ts"
+        "${CMAKE_SOURCE_DIR}/web/tsconfig.json"
+        "${CMAKE_SOURCE_DIR}/web/postcss.config.mjs"
+    )
+
+    set(WEB_BUILD_STAMP "${CMAKE_BINARY_DIR}/web_dashboard.stamp")
+
+    # Step 1: custom command – runs bun run build only when sources change.
+    add_custom_command(
+        OUTPUT  "${WEB_BUILD_STAMP}"
+        COMMAND "${BUN_EXECUTABLE}" run build
+        COMMAND "${CMAKE_COMMAND}" -E touch "${WEB_BUILD_STAMP}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/web"
+        DEPENDS ${WEB_SOURCE_FILES}
+        COMMENT "Building web dashboard (bun run build)..."
+        VERBATIM
+    )
+
+    # Step 2: custom target – always evaluated by the build system.
+    add_custom_target(WebDashboard ALL DEPENDS "${WEB_BUILD_STAMP}")
+
+    # Step 3: make the main executable wait for the dashboard before copying.
+    add_dependencies(${PROJECT_NAME} WebDashboard)
+
+    # Step 4: copy the freshly built output next to the executable.
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/web/out $<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${CMAKE_SOURCE_DIR}/web/out"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard"
+        COMMENT "Copying web dashboard to build directory..."
     )
 else()
-    message(WARNING "web/out/ not found – dashboard will not be available. Run: cd web && bun run build")
+    message(WARNING
+        "bun not found in PATH – web dashboard will NOT be rebuilt automatically.\n"
+        "Install bun (https://bun.sh) and re-run cmake --preset msvc-x64.")
+
+    # Fallback: copy whatever is already in web/out/ if it exists.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/web/out")
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                    "${CMAKE_SOURCE_DIR}/web/out"
+                    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard"
+        )
+    endif()
 endif()
 
 # Copy config to build directory
@@ -277,7 +331,5 @@ endif()
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 install(DIRECTORY assets/ DESTINATION bin/assets)
-if(EXISTS ${CMAKE_SOURCE_DIR}/web/out/)
-    install(DIRECTORY web/out/ DESTINATION bin/dashboard)
-endif()
+install(DIRECTORY web/out/ DESTINATION bin/dashboard)
 install(DIRECTORY config/ DESTINATION bin/config)
