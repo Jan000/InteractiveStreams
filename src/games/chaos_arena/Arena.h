@@ -3,6 +3,7 @@
 #include <box2d/box2d.h>
 #include <SFML/Graphics.hpp>
 #include <vector>
+#include <random>
 
 namespace is::games::chaos_arena {
 
@@ -23,8 +24,11 @@ public:
     Arena() = default;
     ~Arena() = default;
 
-    /// Generate the arena layout in the given physics world.
+    /// Generate the arena layout in the given physics world (random seed).
     void generate(b2World& world, float width, float height);
+
+    /// Generate the arena with a specific seed for reproducible layouts.
+    void generate(b2World& world, float width, float height, unsigned int seed);
 
     /// Update arena state (e.g., crumbling platforms).
     void update(double dt);
@@ -41,17 +45,24 @@ public:
 
     const std::vector<ArenaPlatform>& platforms() const { return m_platforms; }
 
+    /// Get the seed used for the current layout.
+    unsigned int currentSeed() const { return m_seed; }
+
 private:
     void createBoundary(b2World& world);
     void createMainPlatform(b2World& world);
-    void createFloatingPlatforms(b2World& world);
-    void createDestructibleBlocks(b2World& world);
+    void generateProceduralPlatforms(b2World& world, std::mt19937& rng);
+    void generateProceduralBlocks(b2World& world, std::mt19937& rng);
 
     b2Body* createStaticBox(b2World& world, float x, float y, float hw, float hh);
+
+    /// Check if a rectangle overlaps with existing platforms
+    bool overlapsExisting(float x, float y, float hw, float hh, float margin) const;
 
     std::vector<ArenaPlatform> m_platforms;
     float m_width  = 40.0f;
     float m_height = 22.5f;
+    unsigned int m_seed = 0;
 
     // Visual
     sf::Color m_bgColor{20, 20, 35};

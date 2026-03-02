@@ -248,6 +248,21 @@ Jeder Stream hat eigene EncoderSettings; `StreamEncoder` akzeptiert diesen Struc
 - Spieler sind dynamische Bodies mit Foot-Sensor für Bodenerkennung
 - Projektile nutzen CCD (Continuous Collision Detection)
 
+### Prozedurale Arena-Generierung
+- `Arena::generate(world, width, height)` erzeugt ein zufälliges Layout mit Random-Seed
+- `Arena::generate(world, width, height, seed)` erzeugt reproduzierbares Layout
+- **Tier-System**: Die Arena wird vertikal in 6 Tiers unterteilt (Lower → Top)
+- Jeder Tier hat min/max Plattform-Anzahl, Überlappungsprüfung (`overlapsExisting()`)
+- Destructible Blocks werden ebenfalls prozedural platziert (5–10 Stück, variable HP)
+- Boundary + Main-Platform bleiben statisch (Wände, Decke, Bodenfläche)
+
+### Animierte Spieler-Sprites
+- `SpriteAnimator::draw()` ersetzt die alten `sf::RectangleShape`-Spieler
+- AnimState wird aus Spieler-Zustand abgeleitet (Velocity, Cooldowns, Blocking, HitFlash)
+- Komponenten: Kopf mit Augen+Blinzel, Torso mit Gürtel, Arme mit Händen, Beine mit Schuhen
+- Squash-and-Stretch bei Jump/Dash, Idle-Bob, Eye-Blink alle ~4s
+- Accessoires: Schwert-Swing bei Attack, Energieschild bei Block, Speed-Lines bei Dash
+
 ### Chat-Befehl-Parsing
 Befehle in `ChaosArena::onChatMessage()`:
 - `!join` / `!play` → Spieler hinzufügen
@@ -430,7 +445,7 @@ Optionale API-Key-basierte Authentifizierung für alle REST-Endpunkte.
 
 | Dependency | Zweck | Zugriff |
 |-----------|-------|---------|
-| SFML 2.6.1 | Rendering, Fenster | `FetchContent`, Namespace `sf::` |
+| SFML 2.6.1 | Rendering, Fenster, Audio | `FetchContent`, Namespace `sf::`, Module: graphics, window, system, network, audio |
 | Box2D 2.4.1 | 2D-Physik | `FetchContent`, Prefix `b2` |
 | nlohmann/json 3.11.3 | JSON-Konfiguration | `FetchContent`, `nlohmann::json` |
 | cpp-httplib 0.15.3 | HTTP-Server (Regex-Pfadmuster) | `FetchContent`, `httplib::Server` |
@@ -480,6 +495,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 - Haupt-Renderer: `src/rendering/Renderer.h/cpp` – SFML-Window und Vorschau
 - Jeder Stream hat eigene `sf::RenderTexture` (in `StreamInstance`)
 - `Renderer::displayPreview()` zeigt die Textur eines ausgewählten Streams im Vorschau-Fenster
+- **SpriteAnimator**: `src/rendering/SpriteAnimator.h/cpp` – Prozeduraler Charakter-Renderer mit Kopf, Körper, Armen, Beinen. Animationszustände: Idle, Walk, Jump, Attack, Dash, Block, Hit, Death. Ersetzt die alten `sf::RectangleShape`-Spieler in ChaosArena. Zeichnet Accessoires (Schwert bei Attack, Schild bei Block, Speed-Lines bei Dash). Squash-and-Stretch, Eye-Blink, Idle-Bob.
 - **Post-Processing**: `src/rendering/PostProcessing.h/cpp` – GLSL-Shader in `assets/shaders/` (Vignette, Bloom, Chromatic Aberration, CRT). `applyShaderPass()` nutzt eine temporäre RenderTexture für Multi-Pass-Rendering. Software-Fallback für Vignette wenn keine Shader verfügbar.
 - Neue visuelle Effekte: Neuen Shader in `assets/shaders/` erstellen, in `PostProcessing` laden und in `StreamInstance::render()` oder Spiel-`render()` aufrufen
 
@@ -499,7 +515,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 ## Wichtige Hinweise
 
 1. **GLSL-Shader**: Post-Processing nutzt GPU-Shader (`assets/shaders/`) mit Software-Fallback. `PostProcessing::initialize()` lädt alle Shader; `applyShaderPass()` rendert über temporäre `sf::RenderTexture`. Verfügbare Effekte: Vignette, Bloom, Chromatic Aberration, CRT, Scanlines.
-2. **Kein Sound**: Aktuell stumm. Ein Sound-System ist für eine spätere Phase geplant.
+2. **Sound-System**: `AudioManager` (`src/core/AudioManager.h/cpp`) verwaltet Hintergrundmusik (Playlist mit Shuffle, auto-advance) und SFX. Musikdateien werden aus `assets/audio/` gescannt (.mp3/.ogg/.wav/.flac). Neue Tracks einfach ins Verzeichnis legen und `rescan()` aufrufen. Web-API: `GET/PUT /api/audio`, `POST /api/audio/next|pause|resume|rescan`. Config-Keys: `audio.music_volume`, `audio.sfx_volume`, `audio.muted`.
 3. **Pixel-Format**: Jeder Stream hat eigene `sf::RenderTexture`, der Encoder erwartet RGBA-Pixeldaten.
 4. **Thread-Sicherheit**: Plattform-Threads und Web-API-Threads nutzen `std::mutex`-geschützte Queues/States. Stream/Channel-CRUD vom Web-Thread durch Mutex geschützt. RenderTextures werden lazy im Main-Thread erstellt.
 5. **FFmpeg-Pfad**: FFmpeg wird via `popen("ffmpeg ...")` aufgerufen – muss im System-PATH sein.

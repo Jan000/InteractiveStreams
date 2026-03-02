@@ -12,6 +12,7 @@ class Logger;
 class PlayerDatabase;
 class PerfMonitor;
 class SettingsDatabase;
+class AudioManager;
 
 }
 
@@ -49,6 +50,7 @@ public:
     PlayerDatabase&       playerDatabase();
     SettingsDatabase&     settingsDb();
     PerfMonitor&          perfMonitor();
+    AudioManager&         audioManager();
     rendering::Renderer&  renderer();
     web::WebServer&       webServer();
 

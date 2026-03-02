@@ -2,6 +2,7 @@
 #include "games/GameRegistry.h"
 #include "core/Application.h"
 #include "core/PlayerDatabase.h"
+#include "core/AudioManager.h"
 
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -193,6 +194,9 @@ void ChaosArena::cmdJoin(const std::string& userId, const std::string& displayNa
     sendChatFeedback("⚔️ " + displayName + " joined the arena! (" +
                      std::to_string(m_players.size()) + "/" +
                      std::to_string(m_maxPlayers) + " players)");
+
+    // SFX: player join
+    try { is::core::Application::instance().audioManager().playSfx("join"); } catch (...) {}
 }
 
 void ChaosArena::cmdLeft(const std::string& userId) {
@@ -334,6 +338,9 @@ void ChaosArena::cmdAttack(const std::string& userId) {
                                 SCREEN_CY + (pos.y + dy * 0.5f) * PIXELS_PER_METER);
             sf::Vector2f hitDir(dx, dy);
             m_particles->emitHitSpark(hitPos, hitDir, p.color);
+
+            // SFX: melee hit
+            try { is::core::Application::instance().audioManager().playSfx("hit"); } catch (...) {}
         }
     }
 
@@ -386,6 +393,9 @@ void ChaosArena::cmdSpecial(const std::string& userId) {
                            SCREEN_CY + (pos.y - 0.2f) * PIXELS_PER_METER);
     m_particles->emitExplosion(muzzlePos, p.color, 15);
 
+    // SFX: projectile fire
+    try { is::core::Application::instance().audioManager().playSfx("shoot"); } catch (...) {}
+
     spdlog::debug("[ChaosArena] {} fired special attack!", p.displayName);
 }
 
@@ -411,6 +421,9 @@ void ChaosArena::cmdDash(const std::string& userId) {
     for (int i = 0; i < 5; ++i) {
         m_particles->emitTrail(screenPos, p.color);
     }
+
+    // SFX: dash
+    try { is::core::Application::instance().audioManager().playSfx("dash"); } catch (...) {}
 }
 
 void ChaosArena::cmdBlock(const std::string& userId) {
@@ -689,6 +702,9 @@ void ChaosArena::startBattle() {
     }
 
     spdlog::info("[ChaosArena] Round {} – FIGHT! ({} players)", m_roundNumber, m_players.size());
+
+    // SFX: battle start
+    try { is::core::Application::instance().audioManager().playSfx("battle_start"); } catch (...) {}
 }
 
 void ChaosArena::checkRoundEnd() {
@@ -799,6 +815,9 @@ void ChaosArena::eliminatePlayer(Player& player, const std::string& killerName,
     sf::Vector2f screenPos(SCREEN_CX + pos.x * PIXELS_PER_METER, SCREEN_CY + pos.y * PIXELS_PER_METER);
     m_particles->emitDeath(screenPos, player.color);
 
+    // SFX: player eliminated
+    try { is::core::Application::instance().audioManager().playSfx("death"); } catch (...) {}
+
     // Kill feed
     m_killFeed.push_back({killerName, player.displayName, method, 5.0});
     if (m_killFeed.size() > 8) m_killFeed.pop_front();
@@ -893,59 +912,43 @@ void ChaosArena::renderPlayers(sf::RenderTarget& target, double alpha) {
         float pw = Player::HALF_WIDTH * 2 * PIXELS_PER_METER;
         float ph = Player::HALF_HEIGHT * 2 * PIXELS_PER_METER;
 
-        // Player body
-        sf::RectangleShape body(sf::Vector2f(pw, ph));
-        body.setOrigin(pw / 2, ph / 2);
-        body.setPosition(x, y);
-
-        sf::Color bodyColor = player.color;
-        if (player.hitFlashTimer > 0) {
-            bodyColor = sf::Color::White;
+        // Determine animation state from player state
+        rendering::AnimState animState = rendering::AnimState::Idle;
+        {
+            auto vel = player.body->GetLinearVelocity();
+            if (player.hitFlashTimer > 0) {
+                animState = rendering::AnimState::Hit;
+            } else if (player.blocking) {
+                animState = rendering::AnimState::Block;
+            } else if (player.attackCooldown > Player::ATTACK_CD - 0.3f) {
+                animState = rendering::AnimState::Attack;
+            } else if (player.dashCooldown > Player::DASH_CD - 0.3f) {
+                animState = rendering::AnimState::Dash;
+            } else if (std::abs(vel.y) > 2.0f) {
+                animState = rendering::AnimState::Jump;
+            } else if (std::abs(vel.x) > 1.0f) {
+                animState = rendering::AnimState::Walk;
+            }
         }
+
+        // Compute alpha (opacity) for invulnerability flicker
+        sf::Uint8 spriteAlpha = 255;
         if (player.isInvulnerable()) {
-            bodyColor.a = static_cast<sf::Uint8>(128 + 127 * std::sin(player.animTimer * 10));
-        }
-        body.setFillColor(bodyColor);
-
-        // Outline glow
-        body.setOutlineThickness(2.0f);
-        sf::Color outlineColor = player.color;
-        outlineColor.a = 100;
-        body.setOutlineColor(outlineColor);
-
-        target.draw(body);
-
-        // Eyes (facing direction)
-        float eyeOffsetX = player.facingDir * pw * 0.15f;
-        sf::CircleShape eye(3.0f);
-        eye.setOrigin(3, 3);
-        eye.setFillColor(sf::Color::White);
-        eye.setPosition(x + eyeOffsetX - 4, y - ph * 0.15f);
-        target.draw(eye);
-        eye.setPosition(x + eyeOffsetX + 4, y - ph * 0.15f);
-        target.draw(eye);
-
-        // Pupils
-        sf::CircleShape pupil(1.5f);
-        pupil.setOrigin(1.5f, 1.5f);
-        pupil.setFillColor(sf::Color::Black);
-        pupil.setPosition(x + eyeOffsetX - 4 + player.facingDir * 1.5f, y - ph * 0.15f);
-        target.draw(pupil);
-        pupil.setPosition(x + eyeOffsetX + 4 + player.facingDir * 1.5f, y - ph * 0.15f);
-        target.draw(pupil);
-
-        // Blocking shield visual
-        if (player.blocking) {
-            sf::CircleShape shield(pw * 0.8f);
-            shield.setOrigin(pw * 0.8f, pw * 0.8f);
-            shield.setPosition(x, y);
-            shield.setFillColor(sf::Color(100, 200, 255, 40));
-            shield.setOutlineThickness(2.0f);
-            shield.setOutlineColor(sf::Color(100, 200, 255, 150));
-            target.draw(shield);
+            spriteAlpha = static_cast<sf::Uint8>(128 + 127 * std::sin(player.animTimer * 10));
         }
 
-        // Shield timer visual
+        // Draw animated sprite
+        rendering::SpriteAnimator::draw(
+            target,
+            sf::Vector2f(x, y),
+            pw, ph,
+            player.color,
+            animState,
+            player.animTimer,
+            player.facingDir,
+            spriteAlpha);
+
+        // Shield timer visual (power-up shield)
         if (player.shieldTimer > 0) {
             sf::CircleShape shieldBubble(pw * 0.9f);
             shieldBubble.setOrigin(pw * 0.9f, pw * 0.9f);

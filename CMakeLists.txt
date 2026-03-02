@@ -118,6 +118,7 @@ set(CORE_SOURCES
     src/core/PlayerDatabase.cpp
     src/core/PerfMonitor.cpp
     src/core/SettingsDatabase.cpp
+    src/core/AudioManager.cpp
 )
 
 set(GAME_SOURCES
@@ -144,6 +145,7 @@ set(RENDERING_SOURCES
     src/rendering/Renderer.cpp
     src/rendering/Background.cpp
     src/rendering/PostProcessing.cpp
+    src/rendering/SpriteAnimator.cpp
 )
 
 set(STREAMING_SOURCES
@@ -177,6 +179,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     sfml-window
     sfml-system
     sfml-network
+    sfml-audio
     box2d
     nlohmann_json::nlohmann_json
     httplib::httplib
@@ -229,6 +232,11 @@ if(WIN32)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:sfml-network> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    )
+    # SFML Audio DLL
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:sfml-audio> $<TARGET_FILE_DIR:${PROJECT_NAME}>
     )
     # spdlog DLL
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

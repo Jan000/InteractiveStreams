@@ -1,17 +1,31 @@
 #include "games/chaos_arena/Arena.h"
+#include <spdlog/spdlog.h>
 #include <cmath>
+#include <algorithm>
 
 namespace is::games::chaos_arena {
 
 void Arena::generate(b2World& world, float width, float height) {
+    // Use a random seed
+    std::random_device rd;
+    generate(world, width, height, rd());
+}
+
+void Arena::generate(b2World& world, float width, float height, unsigned int seed) {
     m_width = width;
     m_height = height;
+    m_seed = seed;
     m_platforms.clear();
+
+    std::mt19937 rng(seed);
 
     createBoundary(world);
     createMainPlatform(world);
-    createFloatingPlatforms(world);
-    createDestructibleBlocks(world);
+    generateProceduralPlatforms(world, rng);
+    generateProceduralBlocks(world, rng);
+
+    spdlog::info("[Arena] Generated procedural layout (seed={}, {} platforms).",
+                 seed, m_platforms.size());
 }
 
 void Arena::createBoundary(b2World& world) {
@@ -45,63 +59,136 @@ void Arena::createMainPlatform(b2World& world) {
         {groundHW * 2, groundHH * 2}, sf::Color(80, 80, 120), false});
 }
 
-void Arena::createFloatingPlatforms(b2World& world) {
-    // Platforms arranged for vertical arena (22.5 wide x 40 tall)
-    struct PlatDef { float x, y, hw, hh; };
-    std::vector<PlatDef> defs = {
-        // Lower tier
-        { -6.0f,  14.0f, 3.0f, 0.3f},
-        {  6.0f,  14.0f, 3.0f, 0.3f},
-        // Mid-low tier
-        {  0.0f,  10.0f, 3.5f, 0.3f},
-        { -8.0f,   7.0f, 2.5f, 0.3f},
-        {  8.0f,   7.0f, 2.5f, 0.3f},
-        // Center tier
-        { -4.0f,   3.0f, 3.0f, 0.3f},
-        {  4.0f,   3.0f, 3.0f, 0.3f},
-        {  0.0f,  -1.0f, 3.5f, 0.3f},
-        // Mid-high tier
-        { -7.0f,  -5.0f, 2.5f, 0.3f},
-        {  7.0f,  -5.0f, 2.5f, 0.3f},
-        // Upper tier
-        {  0.0f,  -9.0f, 3.0f, 0.3f},
-        { -5.0f, -13.0f, 2.0f, 0.3f},
-        {  5.0f, -13.0f, 2.0f, 0.3f},
-        // Top tier
-        {  0.0f, -16.0f, 2.5f, 0.3f},
+void Arena::generateProceduralPlatforms(b2World& world, std::mt19937& rng) {
+    // Divide arena vertically into tiers.  Each tier gets a random number
+    // of platforms placed with constraints to ensure reachability:
+    //   - maximum vertical gap ≤ ~5m  (player jump reach)
+    //   - platforms don't overlap and have minimum spacing
+    //   - at least one platform per tier for reachability
+
+    float hh = m_height / 2.0f;
+    float hw = m_width  / 2.0f;
+
+    // Define tier Y-ranges (from bottom to top)
+    // Arena Y goes from -hh (top) to +hh (bottom), ground is at +hh-1
+    struct Tier { float yMin; float yMax; int minPlats; int maxPlats; };
+    std::vector<Tier> tiers = {
+        { hh * 0.5f,   hh * 0.8f,  1, 3 },   // Lower tier
+        { hh * 0.1f,   hh * 0.45f, 2, 3 },   // Mid-low tier
+        {-hh * 0.25f,  hh * 0.05f, 2, 4 },   // Center tier
+        {-hh * 0.6f,  -hh * 0.1f,  2, 3 },   // Mid-high tier
+        {-hh * 0.9f,  -hh * 0.5f,  1, 3 },   // Upper tier
+        {-hh * 1.0f,  -hh * 0.8f,  0, 2 },   // Top tier (optional)
     };
 
-    sf::Color platColor(100, 100, 160);
-    for (auto& d : defs) {
-        auto* body = createStaticBox(world, d.x, d.y, d.hw, d.hh);
-        m_platforms.push_back({body, {d.x, d.y},
-            {d.hw * 2, d.hh * 2}, platColor, false});
+    // Platform width and color distributions
+    std::uniform_real_distribution<float> widthDist(1.8f, 3.5f);
+    const float platHH = 0.3f;
+    const float safeMargin = 1.5f; // minimum gap between platforms
+
+    // Color palette for platforms (varied blues/purples)
+    std::vector<sf::Color> palette = {
+        sf::Color(100, 100, 160),
+        sf::Color(90, 110, 150),
+        sf::Color(110, 90, 160),
+        sf::Color(80, 100, 140),
+        sf::Color(100, 80, 150),
+    };
+    std::uniform_int_distribution<int> colorDist(0, static_cast<int>(palette.size()) - 1);
+
+    for (const auto& tier : tiers) {
+        std::uniform_int_distribution<int> countDist(tier.minPlats, tier.maxPlats);
+        int count = countDist(rng);
+
+        std::uniform_real_distribution<float> yDist(tier.yMin, tier.yMax);
+        // X range: stay inside walls with margin
+        float xMargin = 3.0f;
+
+        for (int i = 0; i < count; ++i) {
+            float platHW = widthDist(rng);
+            std::uniform_real_distribution<float> xDist(-hw + xMargin, hw - xMargin);
+
+            // Try to place the platform (avoid overlaps)
+            bool placed = false;
+            for (int attempt = 0; attempt < 20; ++attempt) {
+                float px = xDist(rng);
+                float py = yDist(rng);
+
+                if (!overlapsExisting(px, py, platHW, platHH, safeMargin)) {
+                    auto* body = createStaticBox(world, px, py, platHW, platHH);
+                    m_platforms.push_back({body, {px, py},
+                        {platHW * 2, platHH * 2}, palette[colorDist(rng)], false});
+                    placed = true;
+                    break;
+                }
+            }
+
+            // If mandatory platform wasn't placed and this is a required tier,
+            // force-place in the center region
+            if (!placed && i < tier.minPlats) {
+                float py = (tier.yMin + tier.yMax) / 2.0f;
+                float px = (i % 2 == 0) ? -hw * 0.3f : hw * 0.3f;
+                auto* body = createStaticBox(world, px, py, platHW, platHH);
+                m_platforms.push_back({body, {px, py},
+                    {platHW * 2, platHH * 2}, palette[colorDist(rng)], false});
+            }
+        }
     }
 }
 
-void Arena::createDestructibleBlocks(b2World& world) {
-    // Destructible blocks spread vertically across the arena
-    struct BlockDef { float x, y; };
-    std::vector<BlockDef> blocks = {
-        { -3.0f,  12.0f},
-        {  3.0f,  12.0f},
-        {  0.0f,   5.0f},
-        { -6.0f,  -2.0f},
-        {  6.0f,  -2.0f},
-        {  0.0f,  -7.0f},
-        { -4.0f, -11.0f},
-        {  4.0f, -11.0f},
-    };
+void Arena::generateProceduralBlocks(b2World& world, std::mt19937& rng) {
+    // Place destructible blocks in gaps between platforms
+    float hh = m_height / 2.0f;
+    float hw = m_width  / 2.0f;
+
+    std::uniform_int_distribution<int> countDist(5, 10);
+    int count = countDist(rng);
+
+    std::uniform_real_distribution<float> xDist(-hw + 3.0f, hw - 3.0f);
+    std::uniform_real_distribution<float> yDist(-hh + 2.0f, hh - 3.0f);
 
     float blockHW = 0.6f;
     float blockHH = 0.6f;
-    sf::Color blockColor(160, 100, 80);
 
-    for (auto& b : blocks) {
-        auto* body = createStaticBox(world, b.x, b.y, blockHW, blockHH);
-        m_platforms.push_back({body, {b.x, b.y},
-            {blockHW * 2, blockHH * 2}, blockColor, true, 50.0f, 50.0f});
+    // Block color palette (warm tones)
+    std::vector<sf::Color> blockPalette = {
+        sf::Color(160, 100, 80),
+        sf::Color(150, 110, 70),
+        sf::Color(170, 90, 85),
+        sf::Color(140, 100, 90),
+    };
+    std::uniform_int_distribution<int> colorDist(0, static_cast<int>(blockPalette.size()) - 1);
+
+    std::uniform_real_distribution<float> healthDist(35.0f, 75.0f);
+
+    for (int i = 0; i < count; ++i) {
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            float bx = xDist(rng);
+            float by = yDist(rng);
+
+            if (!overlapsExisting(bx, by, blockHW, blockHH, 1.2f)) {
+                auto* body = createStaticBox(world, bx, by, blockHW, blockHH);
+                float hp = healthDist(rng);
+                sf::Color col = blockPalette[colorDist(rng)];
+                m_platforms.push_back({body, {bx, by},
+                    {blockHW * 2, blockHH * 2}, col, true, hp, hp});
+                break;
+            }
+        }
     }
+}
+
+bool Arena::overlapsExisting(float x, float y, float hw, float hh, float margin) const {
+    for (const auto& plat : m_platforms) {
+        float pHW = plat.size.x / 2.0f + margin;
+        float pHH = plat.size.y / 2.0f + margin;
+        float dx = std::abs(x - plat.position.x);
+        float dy = std::abs(y - plat.position.y);
+        if (dx < (hw + pHW) && dy < (hh + pHH)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 b2Body* Arena::createStaticBox(b2World& world, float x, float y, float hw, float hh) {

@@ -9,6 +9,7 @@
 #include "games/chaos_arena/PowerUp.h"
 #include "rendering/Background.h"
 #include "rendering/PostProcessing.h"
+#include "rendering/SpriteAnimator.h"
 
 #include <SFML/Graphics/Font.hpp>
 #include <vector>

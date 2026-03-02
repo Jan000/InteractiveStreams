@@ -6,6 +6,7 @@
 #include "core/PlayerDatabase.h"
 #include "core/PerfMonitor.h"
 #include "core/SettingsDatabase.h"
+#include "core/AudioManager.h"
 #include "rendering/Renderer.h"
 #include "web/WebServer.h"
 
@@ -27,6 +28,7 @@ struct Application::Impl {
     std::unique_ptr<StreamManager>             streamManager;
     std::unique_ptr<PlayerDatabase>            playerDatabase;
     std::unique_ptr<PerfMonitor>               perfMonitor;
+    std::unique_ptr<AudioManager>              audioManager;
     std::unique_ptr<rendering::Renderer>       renderer;
     std::unique_ptr<web::WebServer>            webServer;
 
@@ -96,6 +98,19 @@ void Application::initialize() {
 
     // ── Performance monitor ──────────────────────────────────────────────
     m_impl->perfMonitor = std::make_unique<PerfMonitor>();
+
+    // ── Audio manager ────────────────────────────────────────────────────
+    m_impl->audioManager = std::make_unique<AudioManager>();
+    m_impl->audioManager->scanMusicDirectory("assets/audio");
+    m_impl->audioManager->setMusicVolume(
+        cfg.get<float>("audio.music_volume", 50.0f));
+    m_impl->audioManager->setSfxVolume(
+        cfg.get<float>("audio.sfx_volume", 70.0f));
+    m_impl->audioManager->setMuted(
+        cfg.get<bool>("audio.muted", false));
+    m_impl->audioManager->playMusic();
+    spdlog::info("AudioManager initialised ({} tracks found).",
+        m_impl->audioManager->trackCount());
 
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
@@ -236,6 +251,9 @@ void Application::mainLoop() {
         bool wantHeadless = m_impl->config->get<bool>("application.headless", false);
         m_impl->renderer->setHeadless(wantHeadless);
 
+        // Update audio (auto-advance tracks, clean finished sounds)
+        if (m_impl->audioManager) m_impl->audioManager->update();
+
         // Frame limiter: sleep to hit target FPS
         auto endTime = clock::now();
         double elapsed = std::chrono::duration<double>(endTime - currentTime).count();
@@ -263,6 +281,10 @@ void Application::shutdown() {
         spdlog::info("[SettingsDB] Settings persisted on shutdown.");
     }
 
+    if (m_impl->audioManager) {
+        m_impl->audioManager->stopMusic();
+        spdlog::info("Audio stopped.");
+    }
     if (m_impl->webServer)      m_impl->webServer->stop();
     if (m_impl->channelManager) m_impl->channelManager->disconnectAll();
     for (auto* s : m_impl->streamManager->allStreams()) s->stopStreaming();
@@ -275,6 +297,7 @@ StreamManager&        Application::streamManager()  { return *m_impl->streamMana
 PlayerDatabase&       Application::playerDatabase() { return *m_impl->playerDatabase; }
 SettingsDatabase&     Application::settingsDb()     { return *m_impl->settingsDb; }
 PerfMonitor&          Application::perfMonitor()    { return *m_impl->perfMonitor; }
+AudioManager&         Application::audioManager()   { return *m_impl->audioManager; }
 rendering::Renderer&  Application::renderer()       { return *m_impl->renderer; }
 web::WebServer&       Application::webServer()      { return *m_impl->webServer; }
 

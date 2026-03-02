@@ -7,6 +7,7 @@
 #include "core/PlayerDatabase.h"
 #include "core/PerfMonitor.h"
 #include "core/SettingsDatabase.h"
+#include "core/AudioManager.h"
 #include "games/GameRegistry.h"
 #include "platform/twitch/TwitchApi.h"
 
@@ -662,6 +663,70 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         for (auto* stream : app.streamManager().allStreams())
             stream->resetStats();
         res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Audio
+    // ══════════════════════════════════════════════════════════════════════
+
+    server.Get("/api/audio", [&app](const httplib::Request&, httplib::Response& res) {
+        auto& audio = app.audioManager();
+        nlohmann::json j;
+        j["playing"]       = audio.isMusicPlaying();
+        j["muted"]         = audio.isMuted();
+        j["musicVolume"]   = audio.musicVolume();
+        j["sfxVolume"]     = audio.sfxVolume();
+        j["currentTrack"]  = audio.currentTrackName();
+        j["trackCount"]    = audio.trackCount();
+        res.set_content(j.dump(), "application/json");
+    });
+
+    server.Put("/api/audio", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto body = nlohmann::json::parse(req.body, nullptr, false);
+        if (body.is_discarded()) {
+            res.status = 400;
+            res.set_content(R"({"error":"invalid json"})", "application/json");
+            return;
+        }
+        auto& audio = app.audioManager();
+        if (body.contains("musicVolume"))
+            audio.setMusicVolume(body["musicVolume"].get<float>());
+        if (body.contains("sfxVolume"))
+            audio.setSfxVolume(body["sfxVolume"].get<float>());
+        if (body.contains("muted"))
+            audio.setMuted(body["muted"].get<bool>());
+
+        // Persist to config
+        auto& cfg = app.config();
+        cfg.set("audio.music_volume", audio.musicVolume());
+        cfg.set("audio.sfx_volume",   audio.sfxVolume());
+        cfg.set("audio.muted",        audio.isMuted());
+        app.persistGlobalConfig();
+
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post("/api/audio/next", [&app](const httplib::Request&, httplib::Response& res) {
+        app.audioManager().nextTrack();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post("/api/audio/pause", [&app](const httplib::Request&, httplib::Response& res) {
+        app.audioManager().pauseMusic();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post("/api/audio/resume", [&app](const httplib::Request&, httplib::Response& res) {
+        app.audioManager().resumeMusic();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    server.Post("/api/audio/rescan", [&app](const httplib::Request&, httplib::Response& res) {
+        app.audioManager().rescan();
+        nlohmann::json j;
+        j["success"]    = true;
+        j["trackCount"] = app.audioManager().trackCount();
+        res.set_content(j.dump(), "application/json");
     });
 
     // ══════════════════════════════════════════════════════════════════════

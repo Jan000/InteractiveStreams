@@ -835,9 +835,9 @@ public:
 ### Phase 3 – Polish ✅
 - [x] GLSL-Shader für Bloom, CRT-Effekt, Chromatic Aberration, Vignette (GPU + Software-Fallback)
 - [x] Chat-Feedback (Bestätigungen an Zuschauer senden bei Join, Win, Game Over)
-- [ ] Sound-System (Hintergrundmusik, SFX)
-- [ ] Animierte Spieler-Sprites statt Rectangles
-- [ ] Verbesserte Arena-Generierung (prozedural)
+- [x] Sound-System (Hintergrundmusik-Playlist mit Shuffle, SFX-Hooks für Spiel-Events, Web-API `/api/audio`)
+- [x] Animierte Spieler-Sprites statt Rectangles (prozeduraler `SpriteAnimator` mit Kopf, Körper, Armen, Beinen, Schwert, Schild, Dash-Effekt)
+- [x] Verbesserte Arena-Generierung (prozedural, Seed-basiert, Tier-System mit Overlap-Prüfung)
 
 ### Phase 4 – Content
 - [ ] Weiteres Spiel: Marble Race
