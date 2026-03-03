@@ -86,12 +86,16 @@ bool StreamEncoder::start() {
     cmd << m_ffmpegPath
         << " -y"
         << " -loglevel warning"
+        // Video input: raw RGBA frames from stdin
         << " -f rawvideo"
         << " -vcodec rawvideo"
         << " -pix_fmt rgba"
         << " -s " << m_width << "x" << m_height
         << " -r " << m_fps
-        << " -i -"  // Read from stdin
+        << " -i -"
+        // Silent audio input (many platforms like YouTube reject video-only RTMP)
+        << " -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100"
+        // Video encoding
         << " -c:v " << m_codec
         << " -pix_fmt yuv420p"
         << " -preset " << m_preset
@@ -100,6 +104,9 @@ bool StreamEncoder::start() {
         << " -bufsize " << m_bitrate * 2 << "k"
         << " -g " << m_fps * 2  // Keyframe interval
         << " -tune zerolatency"  // Low-latency encoding for streaming
+        // Audio encoding (silence)
+        << " -c:a aac -b:a 128k -ar 44100"
+        << " -shortest"  // Stop when the shortest input (video) ends
         << " -f flv"
         << " \"" << m_outputUrl << "\""
         << " 2>\"" << m_stderrLogPath << "\"";
