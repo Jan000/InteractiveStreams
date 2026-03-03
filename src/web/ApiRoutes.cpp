@@ -206,10 +206,10 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             res.set_content(R"({"error":"Stream not found"})", "application/json");
             return;
         }
-        bool ok = app.streamManager().startStreaming(id);
-        if (!ok) {
+        std::string err = app.streamManager().startStreaming(id);
+        if (!err.empty()) {
             res.status = 400;
-            res.set_content(R"({"error":"Cannot start streaming: no assigned channels have a stream URL configured."})", "application/json");
+            res.set_content(nlohmann::json({{"error", "Cannot start streaming: " + err}}).dump(), "application/json");
             return;
         }
         res.set_content(R"({"success":true})", "application/json");

@@ -40,7 +40,8 @@ public:
     // ── Streaming control ────────────────────────────────────────────────
 
     /// Start streaming. Returns false if stream not found or config invalid.
-    bool startStreaming(const std::string& id);
+    /// Returns empty string on success, error message on failure.
+    std::string startStreaming(const std::string& id);
     void stopStreaming(const std::string& id);
 
     // ── Serialisation ────────────────────────────────────────────────────

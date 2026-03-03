@@ -26,19 +26,16 @@ bool YoutubePlatform::connect() {
     }
 
     // Auto-detect live chat ID if not manually provided
-    if (m_liveChatId.empty()) {
-        if (m_channelId.empty()) {
-            spdlog::warn("[YouTube] Cannot connect: need either live_chat_id or channel_id for auto-detection.");
-            return false;
-        }
+    if (m_liveChatId.empty() && !m_channelId.empty()) {
         spdlog::info("[YouTube] No live_chat_id configured — auto-detecting from channel '{}'...", m_channelId);
         m_liveChatId = fetchLiveChatId();
         if (m_liveChatId.empty()) {
-            spdlog::warn("[YouTube] Auto-detection failed. Is there an active livestream on channel '{}'?", m_channelId);
-            return false;
+            spdlog::info("[YouTube] No active livestream found yet on channel '{}'. "
+                         "Will connect and retry auto-detection periodically.", m_channelId);
+        } else {
+            m_autoDetectedChatId = true;
+            spdlog::info("[YouTube] Auto-detected liveChatId: {}", m_liveChatId);
         }
-        m_autoDetectedChatId = true;
-        spdlog::info("[YouTube] Auto-detected liveChatId: {}", m_liveChatId);
     }
 
     // Guard: disconnect first if already running (prevents assigning to a
@@ -170,6 +167,7 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"channelId", m_channelId},
         {"liveChatId", m_liveChatId},
         {"autoDetectedChatId", m_autoDetectedChatId},
+        {"waitingForLivestream", m_connected.load() && m_liveChatId.empty()},
         {"messagesReceived", m_messagesReceived},
         {"messagesSent", m_messagesSent}
     };
@@ -178,7 +176,30 @@ nlohmann::json YoutubePlatform::getStatus() const {
 void YoutubePlatform::pollLoop() {
     spdlog::info("[YouTube] Starting poll loop (interval: {}ms)...", m_pollIntervalMs);
 
+    constexpr int RETRY_INTERVAL_MS = 30000; // retry auto-detection every 30s
+
     while (m_shouldRun) {
+        // If we don't have a liveChatId yet, periodically retry auto-detection
+        if (m_liveChatId.empty()) {
+            if (!m_channelId.empty()) {
+                spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection for channel '{}'...", m_channelId);
+                std::string chatId = fetchLiveChatId();
+                if (!chatId.empty()) {
+                    m_liveChatId = chatId;
+                    m_autoDetectedChatId = true;
+                    spdlog::info("[YouTube] Livestream detected! liveChatId: {}", m_liveChatId);
+                }
+            }
+
+            if (m_liveChatId.empty()) {
+                // Still no livestream — wait and retry
+                for (int waited = 0; waited < RETRY_INTERVAL_MS && m_shouldRun; waited += 500) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+                continue;
+            }
+        }
+
         // YouTube Data API v3: liveChatMessages.list
         // GET https://www.googleapis.com/youtube/v3/liveChat/messages
         //   ?liveChatId={liveChatId}&part=snippet,authorDetails&key={apiKey}&pageToken={pageToken}

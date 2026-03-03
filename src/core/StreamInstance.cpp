@@ -752,17 +752,29 @@ void StreamInstance::triggerPlatformInfoUpdate() {
     }
 }
 
-bool StreamInstance::startStreaming() {
+std::string StreamInstance::startStreaming() {
     auto& cm = Application::instance().channelManager();
     bool anyStarted = false;
 
+    if (m_config.channelIds.empty()) {
+        return "No channels assigned to this stream.";
+    }
+
+    std::string diagnostics;
     for (const auto& chId : m_config.channelIds) {
         const auto* cfg = cm.getChannelConfig(chId);
-        if (!cfg) continue;
+        if (!cfg) {
+            diagnostics += "Channel '" + chId + "' not found. ";
+            continue;
+        }
 
         std::string url = cfg->settings.value("stream_url", "");
         std::string key = cfg->settings.value("stream_key", "");
-        if (url.empty()) continue;
+        if (url.empty()) {
+            spdlog::debug("[Stream '{}'] Channel '{}' ({}) has no stream_url – skipping.",
+                          m_config.name, chId, cfg->name);
+            continue;
+        }
 
         std::string fullUrl = key.empty() ? url : url + "/" + key;
 
@@ -784,14 +796,15 @@ bool StreamInstance::startStreaming() {
     }
 
     if (!anyStarted) {
-        spdlog::warn("[Stream '{}'] Cannot start: no channels with stream URLs configured.",
-                     m_config.name);
-        return false;
+        std::string msg = "No assigned channels have a stream URL configured.";
+        if (!diagnostics.empty()) msg += " " + diagnostics;
+        spdlog::warn("[Stream '{}'] Cannot start: {}", m_config.name, msg);
+        return msg;
     }
 
     // Update Twitch/YouTube stream info immediately when going live
     triggerPlatformInfoUpdate();
-    return true;
+    return {}; // success
 }
 
 void StreamInstance::stopStreaming() {

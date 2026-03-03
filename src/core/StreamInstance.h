@@ -134,7 +134,9 @@ public:
 
     bool isStreaming() const;
     /// Start streaming. Returns true on success, false if config is invalid.
-    bool startStreaming();
+    /// Start streaming to all assigned channels that have an RTMP URL.
+    /// Returns an empty string on success, or an error message on failure.
+    std::string startStreaming();
     void stopStreaming();
 
     /// Immediately push current game title/category to Twitch/YouTube.

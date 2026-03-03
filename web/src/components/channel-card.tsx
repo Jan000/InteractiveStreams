@@ -321,15 +321,24 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
             className={cn(
               "text-[10px]",
               channel.connected
-                ? "bg-green-600 hover:bg-green-600"
+                ? channel.details?.waitingForLivestream
+                  ? "bg-amber-600 hover:bg-amber-600"
+                  : "bg-green-600 hover:bg-green-600"
                 : "bg-muted text-muted-foreground hover:bg-muted"
             )}
           >
             {channel.connected ? (
-              <>
-                <Radio className="mr-1 size-3" />
-                Connected
-              </>
+              channel.details?.waitingForLivestream ? (
+                <>
+                  <Radio className="mr-1 size-3 animate-pulse" />
+                  Waiting for livestream
+                </>
+              ) : (
+                <>
+                  <Radio className="mr-1 size-3" />
+                  Connected
+                </>
+              )
             ) : (
               "Disconnected"
             )}

@@ -162,12 +162,45 @@ export function StreamCard({
     return !!resolvedProfile && key in resolvedProfile;
   };
 
-  /** Small "from profile" badge shown next to labels. */
+  /** Get the local (stream-level) value for a profile config key. */
+  const getLocalValue = (key: string): unknown => {
+    const map: Record<string, unknown> = {
+      title, description, resolution, game_mode: gameMode, fixed_game: fixedGame,
+      fps, bitrate_kbps: bitrate, preset, codec,
+      scoreboard_top_n: scoreboardTopN, scoreboard_font_size: scoreboardFontSize,
+      scoreboard_alltime_title: scoreboardAllTimeTitle, scoreboard_recent_title: scoreboardRecentTitle,
+      scoreboard_recent_hours: scoreboardRecentHours, vote_overlay_font_scale: voteOverlayFontScale,
+      game_descriptions: gameDescriptions, game_info_messages: gameInfoMessages,
+      game_info_intervals: gameInfoIntervals, game_font_scales: gameFontScales,
+      game_player_limits: gamePlayerLimits, game_twitch_categories: gameTwitchCategories,
+      game_twitch_titles: gameTwitchTitles, game_youtube_titles: gameYoutubeTitles,
+    };
+    return map[key];
+  };
+
+  /** Check if the local value matches the profile value (not overridden). */
+  const isInherited = (key: string): boolean => {
+    if (!resolvedProfile || !(key in resolvedProfile)) return false;
+    const profileVal = resolvedProfile[key];
+    const localVal = getLocalValue(key);
+    // For objects (maps), compare stringified
+    if (typeof profileVal === "object" && profileVal !== null) {
+      return JSON.stringify(profileVal) === JSON.stringify(localVal);
+    }
+    return profileVal === localVal;
+  };
+
+  /** Small badge showing whether a value comes from profile or is overridden. */
   const ProfileBadge = ({ field }: { field: string }) => {
     if (!isFromProfile(field)) return null;
-    return (
+    const inherited = isInherited(field);
+    return inherited ? (
       <span className="ml-1 rounded bg-violet-500/15 px-1 py-0.5 text-[8px] font-medium text-violet-500" title="Inherited from profile">
         Profile
+      </span>
+    ) : (
+      <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-medium text-amber-500" title="Overrides profile value">
+        Overridden
       </span>
     );
   };
