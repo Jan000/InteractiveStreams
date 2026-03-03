@@ -817,12 +817,29 @@ void StreamInstance::stopStreaming() {
 // ── Configuration update ─────────────────────────────────────────────────────
 
 void StreamInstance::updateConfig(const StreamConfig& c) {
-    bool resChanged  = (c.resolution != m_config.resolution);
-    bool gameChanged = (c.fixedGame != m_config.fixedGame &&
-                        c.gameMode == GameModeType::Fixed);
+    bool resChanged = (c.resolution != m_config.resolution);
+
+    // Detect whether a game switch is needed.  This covers:
+    //   1) fixed_game changed while mode is Fixed
+    //   2) mode just switched TO Fixed and the currently loaded game differs
+    bool needGameSwitch = false;
+    if (c.gameMode == GameModeType::Fixed && !c.fixedGame.empty()) {
+        if (c.fixedGame != m_config.fixedGame) {
+            needGameSwitch = true;   // case 1
+        } else if (c.gameMode != m_config.gameMode &&
+                   c.fixedGame != m_gameManager->activeGameName()) {
+            needGameSwitch = true;   // case 2
+        }
+    }
+
     m_config = c;
     if (resChanged) { m_rtReady = false; }
-    if (gameChanged) { m_gameManager->loadGame(m_config.fixedGame); }
+
+    // Never call loadGame() directly from the web-API thread – queue the
+    // switch so the main loop executes it via checkPendingSwitch().
+    if (needGameSwitch) {
+        m_gameManager->requestSwitch(m_config.fixedGame, SwitchMode::Immediate);
+    }
 
     // Re-apply font scale to the running game (so dashboard changes take effect)
     auto* game = m_gameManager->activeGame();
