@@ -55,6 +55,8 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
           -DCMAKE_BUILD_TYPE=Release \
           -DIS_BUILD_TESTS=OFF \
           -DFETCHCONTENT_BASE_DIR=/fetchcontent-cache \
+          -DSFML_BUILD_SHARED_LIBS=OFF \
+          -DBUILD_SHARED_LIBS=OFF \
     && cmake --build build --config Release -j$(nproc)
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
@@ -80,7 +82,10 @@ COPY --from=cpp-builder /app/build/config/ config/
 COPY --from=cpp-builder /app/build/dashboard/ dashboard/
 
 # Data directory for SQLite databases (persist via volume)
-RUN mkdir -p data && chown -R streams:streams /home/streams/app
+# Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
+RUN mkdir -p data /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix \
+    && chown -R streams:streams /home/streams/app
 
 USER streams
 
