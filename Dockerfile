@@ -38,20 +38,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 WORKDIR /app
 
-# ── Step 1: Configure only (downloads FetchContent deps: SFML, Box2D, etc.)
-# This layer is invalidated ONLY when CMakeLists.txt or CMakePresets.json change.
-# As long as build files are unchanged, all FetchContent downloads are fully cached
-# in the Docker layer and never re-fetched, even when source code changes.
+# Copy all sources (src/ must exist at configure time for add_executable validation)
 COPY CMakeLists.txt CMakePresets.json ./
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DIS_BUILD_TESTS=OFF
-
-# ── Step 2: Compile (only invalidated when source files actually change)
-# FetchContent deps in build/_deps are already present from the cached layer above.
 COPY src/ src/
 COPY config/ config/
 COPY assets/ assets/
 COPY --from=dashboard-builder /app/web/out/ web/out/
-RUN cmake --build build --config Release -j$(nproc)
+
+# Configure + Build with FetchContent cache mount.
+# FETCHCONTENT_BASE_DIR points to a persistent BuildKit cache volume so that
+# all external dependencies (SFML, Box2D, spdlog, etc.) are downloaded and
+# compiled ONCE and reused across every subsequent build – even when src/ changes.
+# Only the application code itself is re-compiled on source changes.
+RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
+    cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DIS_BUILD_TESTS=OFF \
+          -DFETCHCONTENT_BASE_DIR=/fetchcontent-cache \
+    && cmake --build build --config Release -j$(nproc)
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM ubuntu:24.04 AS runtime
