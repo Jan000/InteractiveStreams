@@ -488,21 +488,32 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
                 for (auto it = importCfg.begin(); it != importCfg.end(); ++it) {
                     raw[it.key()] = it.value();
                 }
+                app.persistGlobalConfig();
             }
 
-            // 2. Import channels (loadFromJson clears existing and re-adds)
+            // 2. Import channels
+            // ChannelManager::loadFromJson is mutex-protected and safe from web thread.
             if (body.contains("channels") && body["channels"].is_array()) {
                 app.channelManager().loadFromJson(body["channels"]);
+                app.persistChannels();
             }
 
-            // 3. Import streams (loadFromJson clears existing and re-adds)
+            // 3. Import streams – persist to SQLite only.
+            // StreamManager::loadFromJson() destroys and recreates StreamInstance
+            // objects (which own games, render textures, etc.). Doing this on the
+            // web-server thread while the main loop is running causes data races
+            // and potential use-after-free crashes.
+            // Instead, write the new stream config to SQLite and request a restart.
+            bool needsRestart = false;
             if (body.contains("streams") && body["streams"].is_array()) {
-                app.streamManager().loadFromJson(body["streams"]);
+                app.settingsDb().save("streams", body["streams"]);
+                needsRestart = true;
             }
 
-            // 4. Import profiles (loadFromJson clears existing and re-adds)
+            // 4. Import profiles
             if (body.contains("profiles") && body["profiles"].is_array()) {
                 app.profileManager().loadFromJson(body["profiles"]);
+                app.settingsDb().save("profiles", app.profileManager().toJson());
             }
 
             // 5. Import audio settings
@@ -513,14 +524,15 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
                 if (a.contains("muted"))        app.audioManager().setMuted(a["muted"].get<bool>());
             }
 
-            // Persist everything
-            app.persistGlobalConfig();
-            app.persistChannels();
-            app.persistStreams();
-            app.settingsDb().save("profiles", app.profileManager().toJson());
-
-            spdlog::info("[API] Config imported successfully");
-            res.set_content(R"({"success":true})", "application/json");
+            spdlog::info("[API] Config imported successfully (restart_required={})", needsRestart);
+            nlohmann::json result = {{"success", true}};
+            if (needsRestart) {
+                result["restart_required"] = true;
+                result["message"] = "Streams config updated. Restart the application to apply stream changes.";
+                // Request graceful shutdown so the container orchestrator restarts us
+                app.requestShutdown();
+            }
+            res.set_content(result.dump(), "application/json");
         } catch (const std::exception& e) {
             spdlog::error("[API] Config import failed: {}", e.what());
             res.status = 400;

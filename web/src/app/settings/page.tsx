@@ -118,10 +118,10 @@ export default function SettingsPage() {
         }
         await api.importConfig(data);
         toast.success(
-          "Config imported — reloading page…"
+          "Config imported — the app will restart to apply changes…"
         );
-        // Reload after short delay to let user see the toast
-        setTimeout(() => window.location.reload(), 1200);
+        // Wait for the restart, then reload
+        setTimeout(() => window.location.reload(), 5000);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Import failed");
       } finally {
