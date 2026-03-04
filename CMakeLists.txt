@@ -196,6 +196,16 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # vorkompiliert. Das spart bei inkrementellen Builds mehrere Sekunden pro TU.
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
+# ─── Linux: allow duplicate stb symbols ──────────────────────────────────────
+# When SFML is built as a static library, its ImageLoader.cpp bundles stb_image
+# and stb_image_write internally. Our stb_impl.cpp also defines them (needed for
+# JPEG frame capture). GCC's linker treats this as an error; --allow-multiple-definition
+# tells it to silently pick the first definition. Both copies are identical
+# (same stb version), so the result is correct on all platforms.
+if(UNIX AND NOT APPLE)
+    target_link_options(${PROJECT_NAME} PRIVATE -Wl,--allow-multiple-definition)
+endif()
+
 # Copy assets to build directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
