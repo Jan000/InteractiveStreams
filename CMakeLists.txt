@@ -111,6 +111,7 @@ endif()
 
 # ─── Source files ─────────────────────────────────────────────────────────────
 set(CORE_SOURCES
+    src/crash_handler.cpp
     src/core/Application.cpp
     src/core/Config.cpp
     src/core/GameManager.cpp
@@ -203,7 +204,10 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 # tells it to silently pick the first definition. Both copies are identical
 # (same stb version), so the result is correct on all platforms.
 if(UNIX AND NOT APPLE)
-    target_link_options(${PROJECT_NAME} PRIVATE -Wl,--allow-multiple-definition)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        -Wl,--allow-multiple-definition
+        -rdynamic  # export symbol table for backtrace_symbols() in crash_handler.cpp
+    )
 endif()
 
 # Copy assets to build directory
