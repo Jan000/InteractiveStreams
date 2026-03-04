@@ -14,7 +14,6 @@ FROM oven/bun:1 AS dashboard-builder
 WORKDIR /app/web
 COPY web/package.json web/bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
-RUN bun add tw-animate-css shadcn
 COPY web/ .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN bun run build
