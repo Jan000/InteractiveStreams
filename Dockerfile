@@ -69,7 +69,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg xvfb curl \
     libx11-6 libxrandr2 libxcursor1 libxi6 \
-    libudev1 libgl1 libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12
+    libudev1 libgl1 libgl1-mesa-dri libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12
 
 # Create non-root user
 RUN useradd -m -s /bin/bash streams
@@ -80,6 +80,10 @@ COPY --from=cpp-builder /app/build/InteractiveStreams ./
 COPY --from=cpp-builder /app/build/assets/ assets/
 COPY --from=cpp-builder /app/build/config/ config/
 COPY --from=cpp-builder /app/build/dashboard/ dashboard/
+
+# Force headless mode in the server config (no SFML preview window on a headless server).
+# SFML still needs an OpenGL context for RenderTexture – supplied by Xvfb + Mesa DRI.
+RUN sed -i 's/"headless": false/"headless": true/' config/default.json
 
 # Data directory for SQLite databases (persist via volume)
 # Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
