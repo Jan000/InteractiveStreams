@@ -32,7 +32,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake git ca-certificates \
+    build-essential cmake git ca-certificates mold \
     libx11-dev libxrandr-dev libxcursor-dev libxi-dev \
     libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev
 
@@ -57,7 +57,8 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
           -DFETCHCONTENT_BASE_DIR=/fetchcontent-cache \
           -DSFML_BUILD_SHARED_LIBS=OFF \
           -DBUILD_SHARED_LIBS=OFF \
-    && cmake --build build --config Release -j$(nproc)
+          -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" \
+    && cmake --build build --config Release -j2
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM ubuntu:24.04 AS runtime
