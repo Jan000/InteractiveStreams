@@ -42,10 +42,15 @@ struct GameRegistrar {
 };
 
 /// Macro to auto-register a game class. Use in the .cpp file.
-/// Usage: REGISTER_GAME(ChaosArena)
-#define REGISTER_GAME(GameClass) \
+/// The ID must match what IGame::id() returns for this class.
+/// Usage: REGISTER_GAME(ChaosArena, "chaos_arena")
+/// IMPORTANT: Do NOT use GameClass().id() here – constructing a game instance
+/// during static initialization causes SIGSEGV on Linux because game classes
+/// have SFML/PostProcessing members that require an OpenGL context and
+/// spdlog to be initialized first (static init order fiasco).
+#define REGISTER_GAME(GameClass, GameId) \
     static is::games::GameRegistrar s_registrar_##GameClass( \
-        GameClass().id(), \
+        GameId, \
         []() -> std::unique_ptr<is::games::IGame> { return std::make_unique<GameClass>(); } \
     )
 

@@ -12,7 +12,7 @@ namespace is::games::color_conquest {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Auto-registration with GameRegistry
 // ═══════════════════════════════════════════════════════════════════════════════
-REGISTER_GAME(ColorConquest);
+REGISTER_GAME(ColorConquest, "color_conquest");
 
 // ─── Constants (9:16 vertical layout, 1080x1920) ────────────────────────────
 static constexpr int   GRID_W  = 24;    // Grid width in cells

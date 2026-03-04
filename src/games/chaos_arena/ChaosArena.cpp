@@ -16,7 +16,7 @@ static constexpr float SCREEN_CX = 540.0f;   // 1080 / 2
 static constexpr float SCREEN_CY = 960.0f;   // 1920 / 2
 
 // Auto-register this game
-REGISTER_GAME(ChaosArena);
+REGISTER_GAME(ChaosArena, "chaos_arena");
 
 ChaosArena::ChaosArena()
     : m_rng(std::random_device{}())
