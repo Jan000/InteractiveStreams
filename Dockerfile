@@ -102,6 +102,10 @@ USER streams
 # and falls back to nothing instead of llvmpipe.
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
+# Force OpenAL-Soft to use the null (silent) audio backend.
+# Without this, OpenAL-Soft calls abort() when no audio device is found
+# (ALSA/PulseAudio are not present in the container).
+ENV ALSOFT_DRIVERS=null
 
 EXPOSE 8080
 
@@ -116,15 +120,14 @@ ENV DISPLAY=:99
 # before starting a fresh Xvfb instance, otherwise it reports "Server is already
 # active for display 99" and the app never gets a display.
 ENTRYPOINT ["sh", "-c", "\
-  rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 && \
+  rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; \
   Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb.log 2>&1 & \
-  sleep 2 && \
-  echo '=== [startup] binary check ===' && \
-  ls -lh ./InteractiveStreams && \
-  echo '=== [startup] missing shared libs ===' && \
-  ldd ./InteractiveStreams 2>&1 | grep -i 'not found' || echo 'all libs found' && \
-  echo '=== [startup] config headless ===' && \
-  grep headless config/default.json || true && \
-  echo '=== [startup] launching app ===' && \
-  exec ./InteractiveStreams \
+  sleep 2; \
+  echo '=== [startup] binary check ==='; \
+  ls -lh ./InteractiveStreams; \
+  echo '=== [startup] ALSOFT_DRIVERS ==='; \
+  echo \"ALSOFT_DRIVERS=$ALSOFT_DRIVERS\"; \
+  echo '=== [startup] launching app (stderr+stdout merged) ==='; \
+  ./InteractiveStreams 2>&1; \
+  RC=$?; echo \"=== APP EXITED: rc=$RC (134=SIGABRT 139=SIGSEGV 132=SIGILL) ===\"; exit $RC \
 "]
