@@ -65,6 +65,10 @@ public:
     /// Persist global config to SQLite (call after settings change).
     void persistGlobalConfig();
 
+    /// Tell shutdown() to skip persistStreams() because an import has already
+    /// written new stream data to SQLite that is not yet in memory.
+    void setSkipStreamPersistOnShutdown(bool skip);
+
     static Application& instance();
 
 private:

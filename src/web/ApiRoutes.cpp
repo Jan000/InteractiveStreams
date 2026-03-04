@@ -511,6 +511,9 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             bool needsRestart = false;
             if (body.contains("streams") && body["streams"].is_array()) {
                 app.settingsDb().save("streams", body["streams"]);
+                // Prevent shutdown() from overwriting the imported streams
+                // with the old in-memory state.
+                app.setSkipStreamPersistOnShutdown(true);
                 needsRestart = true;
             }
 

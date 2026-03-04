@@ -38,6 +38,7 @@ struct Application::Impl {
     int    targetFps      = 60;
     double fixedDeltaTime = 1.0 / 60.0;
     std::string previewStreamId;
+    std::atomic<bool> skipStreamPersistOnShutdown{false};
 };
 
 Application::Application(int argc, char* argv[])
@@ -314,7 +315,15 @@ void Application::shutdown() {
     // Persist all settings to SQLite before stopping
     if (m_impl->settingsDb) {
         persistChannels();
-        persistStreams();
+        // Skip stream persistence when an import saved new streams to SQLite
+        // but they were NOT loaded into the in-memory StreamManager (to avoid
+        // OpenGL thread issues).  Without this guard the old in-memory state
+        // would overwrite the freshly imported data.
+        if (!m_impl->skipStreamPersistOnShutdown.load()) {
+            persistStreams();
+        } else {
+            spdlog::info("[SettingsDB] Skipping stream persist (import pending restart).");
+        }
         persistProfiles();
         persistGlobalConfig();
         spdlog::info("[SettingsDB] Settings persisted on shutdown.");
@@ -364,6 +373,10 @@ void Application::persistGlobalConfig() {
     cfg.erase("streams");
     cfg.erase("profiles");
     m_impl->settingsDb->save("config", cfg);
+}
+
+void Application::setSkipStreamPersistOnShutdown(bool skip) {
+    m_impl->skipStreamPersistOnShutdown.store(skip);
 }
 
 Application& Application::instance() { return *s_instance; }
