@@ -83,7 +83,10 @@ COPY --from=cpp-builder /app/build/dashboard/ dashboard/
 
 # Force headless mode in the server config (no SFML preview window on a headless server).
 # SFML still needs an OpenGL context for RenderTexture – supplied by Xvfb + Mesa DRI.
-RUN sed -i 's/"headless": false/"headless": true/' config/default.json
+# Also mute audio since there is no sound card in the container.
+RUN sed -i 's/"headless": false/"headless": true/' config/default.json \
+    && sed -i 's/"muted": false/"muted": true/' config/default.json \
+    && grep -E '"headless"|"muted"' config/default.json
 
 # Data directory for SQLite databases (persist via volume)
 # Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
@@ -112,4 +115,16 @@ ENV DISPLAY=:99
 # Remove stale Xvfb lock file (left over from a previous crashed container run)
 # before starting a fresh Xvfb instance, otherwise it reports "Server is already
 # active for display 99" and the app never gets a display.
-ENTRYPOINT ["sh", "-c", "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 && Xvfb :99 -screen 0 1920x1080x24 &>/dev/null & sleep 1 && exec ./InteractiveStreams"]
+ENTRYPOINT ["sh", "-c", "\
+  rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 && \
+  Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb.log 2>&1 & \
+  sleep 2 && \
+  echo '=== [startup] binary check ===' && \
+  ls -lh ./InteractiveStreams && \
+  echo '=== [startup] missing shared libs ===' && \
+  ldd ./InteractiveStreams 2>&1 | grep -i 'not found' || echo 'all libs found' && \
+  echo '=== [startup] config headless ===' && \
+  grep headless config/default.json || true && \
+  echo '=== [startup] launching app ===' && \
+  exec ./InteractiveStreams \
+"]
