@@ -9,8 +9,11 @@ services:
   app:
     build: .
     container_name: interactive-streams
-    ports:
-      - "8080:8080"       # Web dashboard & API
+    # No ports: mapping – Coolify's Traefik reverse proxy handles routing
+    # based on the EXPOSE 8080 in the Dockerfile and the configured FQDN.
+    # For local docker compose usage outside Coolify, uncomment the line below:
+    # ports:
+    #   - "8080:8080"
     volumes:
       - streams-data:/home/streams/app/data          # SQLite databases (persistent)
     environment:
