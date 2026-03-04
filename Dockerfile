@@ -26,7 +26,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates \
     libx11-dev libxrandr-dev libxcursor-dev libxi-dev \
-    libudev-dev libgl1-mesa-dev libfreetype-dev \
+    libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -54,7 +54,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg xvfb curl \
     libx11-6 libxrandr2 libxcursor1 libxi6 \
-    libudev1 libgl1 libfreetype6 \
+    libudev1 libgl1 libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
