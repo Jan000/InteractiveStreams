@@ -358,10 +358,11 @@ void Application::persistProfiles() {
 
 void Application::persistGlobalConfig() {
     if (!m_impl->settingsDb || !m_impl->config) return;
-    // Store global config without channels/streams (those are stored separately)
+    // Store global config without channels/streams/profiles (those are stored separately)
     auto cfg = m_impl->config->raw();
     cfg.erase("channels");
     cfg.erase("streams");
+    cfg.erase("profiles");
     m_impl->settingsDb->save("config", cfg);
 }
 

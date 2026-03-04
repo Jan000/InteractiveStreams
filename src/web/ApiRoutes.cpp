@@ -450,9 +450,12 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         out["profiles"] = app.profileManager().toJson();
         // Audio settings
         nlohmann::json audio;
-        audio["music_volume"] = app.audioManager().musicVolume();
-        audio["sfx_volume"]   = app.audioManager().sfxVolume();
-        audio["muted"]        = app.audioManager().isMuted();
+        audio["music_volume"]      = app.audioManager().musicVolume();
+        audio["sfx_volume"]        = app.audioManager().sfxVolume();
+        audio["muted"]             = app.audioManager().isMuted();
+        audio["fade_in_seconds"]   = app.audioManager().fadeInDuration();
+        audio["fade_out_seconds"]  = app.audioManager().fadeOutDuration();
+        audio["crossfade_overlap"] = app.audioManager().crossfadeOverlap();
         out["audio"] = audio;
         // Metadata
         out["_export_version"] = 1;
@@ -495,6 +498,7 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             // ChannelManager::loadFromJson is mutex-protected and safe from web thread.
             if (body.contains("channels") && body["channels"].is_array()) {
                 app.channelManager().loadFromJson(body["channels"]);
+                app.channelManager().connectAllEnabled();
                 app.persistChannels();
             }
 
@@ -516,12 +520,25 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
                 app.settingsDb().save("profiles", app.profileManager().toJson());
             }
 
-            // 5. Import audio settings
+            // 5. Import audio settings (apply in-memory + sync to config + persist)
             if (body.contains("audio") && body["audio"].is_object()) {
                 auto& a = body["audio"];
-                if (a.contains("music_volume")) app.audioManager().setMusicVolume(a["music_volume"].get<float>());
-                if (a.contains("sfx_volume"))   app.audioManager().setSfxVolume(a["sfx_volume"].get<float>());
-                if (a.contains("muted"))        app.audioManager().setMuted(a["muted"].get<bool>());
+                auto& audio = app.audioManager();
+                if (a.contains("music_volume"))      audio.setMusicVolume(a["music_volume"].get<float>());
+                if (a.contains("sfx_volume"))        audio.setSfxVolume(a["sfx_volume"].get<float>());
+                if (a.contains("muted"))             audio.setMuted(a["muted"].get<bool>());
+                if (a.contains("fade_in_seconds"))   audio.setFadeInDuration(a["fade_in_seconds"].get<float>());
+                if (a.contains("fade_out_seconds"))  audio.setFadeOutDuration(a["fade_out_seconds"].get<float>());
+                if (a.contains("crossfade_overlap")) audio.setCrossfadeOverlap(a["crossfade_overlap"].get<float>());
+                // Sync to config and persist so values survive restart
+                auto& cfg = app.config();
+                cfg.set("audio.music_volume",      audio.musicVolume());
+                cfg.set("audio.sfx_volume",        audio.sfxVolume());
+                cfg.set("audio.muted",             audio.isMuted());
+                cfg.set("audio.fade_in_seconds",   audio.fadeInDuration());
+                cfg.set("audio.fade_out_seconds",  audio.fadeOutDuration());
+                cfg.set("audio.crossfade_overlap", audio.crossfadeOverlap());
+                app.persistGlobalConfig();
             }
 
             spdlog::info("[API] Config imported successfully (restart_required={})", needsRestart);
