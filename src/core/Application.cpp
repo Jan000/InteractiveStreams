@@ -127,7 +127,14 @@ void Application::initialize() {
 
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
+    // IS_HEADLESS env var (set in Docker) always wins over config/SQLite,
+    // so that a config import with "headless": false cannot break headless mode.
     bool headless = cfg.get<bool>("application.headless", false);
+    const char* envHeadless = std::getenv("IS_HEADLESS");
+    if (envHeadless && std::string(envHeadless) == "1") {
+        headless = true;
+        spdlog::info("Headless mode forced by IS_HEADLESS=1 environment variable.");
+    }
     m_impl->renderer = std::make_unique<rendering::Renderer>(1080, 1920,
         cfg.get<std::string>("rendering.title", "InteractiveStreams"),
         headless);

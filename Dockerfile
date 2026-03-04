@@ -107,11 +107,15 @@ ENV GALLIUM_DRIVER=llvmpipe
 # Without this, OpenAL-Soft calls abort() when no audio device is found
 # (ALSA/PulseAudio are not present in the container).
 ENV ALSOFT_DRIVERS=null
+# Force headless mode at the application level, regardless of what the
+# config/SQLite says.  A config-import with "headless": false must not
+# create an sf::RenderWindow inside a container.
+ENV IS_HEADLESS=1
 
 EXPOSE 8080
 
 # Health check for monitoring / Coolify
-HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -sf http://localhost:8080/api/perf?seconds=5 || exit 1
 
 # Default: headless mode with Xvfb (SFML needs a display even when headless)
