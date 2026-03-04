@@ -1,16 +1,18 @@
 # InteractiveStreams – Docker Compose
 # Usage:  docker compose up [-d]
 # Rebuild: docker compose up --build
+#
+# Coolify: Select this file as "Docker Compose" source.
+#          See docs/COOLIFY.md for the full setup guide.
 
 services:
   app:
     build: .
     container_name: interactive-streams
     ports:
-      - "8080:8080"       # Web dashboard
+      - "8080:8080"       # Web dashboard & API
     volumes:
-      - streams-data:/home/streams/app/data          # SQLite databases
-      - ./config:/home/streams/app/config:ro          # Config (read-only)
+      - streams-data:/home/streams/app/data          # SQLite databases (persistent)
     environment:
       - DISPLAY=:99
     restart: unless-stopped

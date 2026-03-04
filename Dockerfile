@@ -13,8 +13,9 @@
 FROM oven/bun:1 AS dashboard-builder
 WORKDIR /app/web
 COPY web/package.json web/bun.lock* ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile || bun install
 COPY web/ .
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN bun run build
 
 # ── Stage 2: Build the C++ application ───────────────────────────────────────
@@ -51,7 +52,7 @@ FROM ubuntu:24.04 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg xvfb \
+    ffmpeg xvfb curl \
     libx11-6 libxrandr2 libxcursor1 libxi6 \
     libudev1 libgl1 libfreetype6 \
     && rm -rf /var/lib/apt/lists/*
@@ -72,6 +73,10 @@ RUN mkdir -p data && chown -R streams:streams /home/streams/app
 USER streams
 
 EXPOSE 8080
+
+# Health check for monitoring / Coolify
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:8080/api/perf?seconds=5 || exit 1
 
 # Default: headless mode with Xvfb (SFML needs a display even when headless)
 # Override entrypoint for non-headless use with a real X server.
