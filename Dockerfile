@@ -98,4 +98,7 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
 # Default: headless mode with Xvfb (SFML needs a display even when headless)
 # Override entrypoint for non-headless use with a real X server.
 ENV DISPLAY=:99
-ENTRYPOINT ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 &>/dev/null & sleep 0.5 && exec ./InteractiveStreams"]
+# Remove stale Xvfb lock file (left over from a previous crashed container run)
+# before starting a fresh Xvfb instance, otherwise it reports "Server is already
+# active for display 99" and the app never gets a display.
+ENTRYPOINT ["sh", "-c", "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 && Xvfb :99 -screen 0 1920x1080x24 &>/dev/null & sleep 1 && exec ./InteractiveStreams"]
