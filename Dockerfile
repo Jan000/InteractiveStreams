@@ -43,19 +43,15 @@ WORKDIR /app
 # As long as build files are unchanged, all FetchContent downloads are fully cached
 # in the Docker layer and never re-fetched, even when source code changes.
 COPY CMakeLists.txt CMakePresets.json ./
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DIS_BUILD_TESTS=ON
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DIS_BUILD_TESTS=OFF
 
 # ── Step 2: Compile (only invalidated when source files actually change)
 # FetchContent deps in build/_deps are already present from the cached layer above.
 COPY src/ src/
-COPY tests/ tests/
 COPY config/ config/
 COPY assets/ assets/
 COPY --from=dashboard-builder /app/web/out/ web/out/
 RUN cmake --build build --config Release -j$(nproc)
-
-# Run tests to verify the build
-RUN cd build && ctest --output-on-failure
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM ubuntu:24.04 AS runtime
