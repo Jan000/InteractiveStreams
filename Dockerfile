@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ══════════════════════════════════════════════════════════════════════════════
 # InteractiveStreams – Multi-stage Docker Build
 # ══════════════════════════════════════════════════════════════════════════════
@@ -13,35 +14,45 @@
 FROM oven/bun:1 AS dashboard-builder
 WORKDIR /app/web
 COPY web/package.json web/bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
+# Cache bun's package store between builds (never re-downloads unchanged packages)
+RUN --mount=type=cache,id=is-bun-cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile || bun install
 COPY web/ .
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN bun run build
+# Cache Next.js incremental build artifacts between builds
+RUN --mount=type=cache,id=is-nextjs-cache,target=/app/web/.next/cache \
+    bun run build
 
 # ── Stage 2: Build the C++ application ───────────────────────────────────────
 FROM ubuntu:24.04 AS cpp-builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Cache APT package lists and downloaded .deb files between builds
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates \
     libx11-dev libxrandr-dev libxcursor-dev libxi-dev \
-    libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev
 
 WORKDIR /app
+
+# ── Step 1: Configure only (downloads FetchContent deps: SFML, Box2D, etc.)
+# This layer is invalidated ONLY when CMakeLists.txt or CMakePresets.json change.
+# As long as build files are unchanged, all FetchContent downloads are fully cached
+# in the Docker layer and never re-fetched, even when source code changes.
 COPY CMakeLists.txt CMakePresets.json ./
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DIS_BUILD_TESTS=ON
+
+# ── Step 2: Compile (only invalidated when source files actually change)
+# FetchContent deps in build/_deps are already present from the cached layer above.
 COPY src/ src/
+COPY tests/ tests/
 COPY config/ config/
 COPY assets/ assets/
-COPY tests/ tests/
-
-# Copy pre-built dashboard from stage 1
 COPY --from=dashboard-builder /app/web/out/ web/out/
-
-# Configure and build (Release, headless-friendly)
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DIS_BUILD_TESTS=ON \
-    && cmake --build build --config Release -j$(nproc)
+RUN cmake --build build --config Release -j$(nproc)
 
 # Run tests to verify the build
 RUN cd build && ctest --output-on-failure
@@ -51,11 +62,12 @@ FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg xvfb curl \
     libx11-6 libxrandr2 libxcursor1 libxi6 \
-    libudev1 libgl1 libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12 \
-    && rm -rf /var/lib/apt/lists/*
+    libudev1 libgl1 libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12
 
 # Create non-root user
 RUN useradd -m -s /bin/bash streams
