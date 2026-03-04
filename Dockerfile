@@ -93,6 +93,13 @@ RUN mkdir -p data /tmp/.X11-unix \
 
 USER streams
 
+# Force Mesa software renderer – no GPU in the container.
+# Without this, SFML fails to create an OpenGL context under Xvfb even with
+# libgl1-mesa-dri installed, because Mesa tries hardware acceleration first
+# and falls back to nothing instead of llvmpipe.
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV GALLIUM_DRIVER=llvmpipe
+
 EXPOSE 8080
 
 # Health check for monitoring / Coolify

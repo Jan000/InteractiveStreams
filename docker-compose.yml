@@ -18,6 +18,8 @@ services:
       - streams-data:/home/streams/app/data          # SQLite databases (persistent)
     environment:
       - DISPLAY=:99
+      - LIBGL_ALWAYS_SOFTWARE=1   # Force Mesa software renderer (no GPU in container)
+      - GALLIUM_DRIVER=llvmpipe   # Use llvmpipe software rasterizer explicitly
     restart: unless-stopped
 
 volumes:
