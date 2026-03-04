@@ -10,6 +10,7 @@
 #include "core/AudioManager.h"
 #include "rendering/Renderer.h"
 #include "web/WebServer.h"
+#include "games/GameRegistry.h"
 
 #include <SFML/Graphics.hpp>
 #include <spdlog/spdlog.h>
@@ -46,6 +47,10 @@ Application::Application(int argc, char* argv[])
 
     Logger::init();
     spdlog::info("InteractiveStreams v{}.{}.{} starting...", 0, 2, 0);
+    // Log games that were auto-registered during static init (REGISTER_GAME macros)
+    for (const auto& name : is::games::GameRegistry::instance().list()) {
+        spdlog::info("  Game registered: '{}'", name);
+    }
 
     std::string configPath = "config/default.json";
     if (argc > 1) configPath = argv[1];

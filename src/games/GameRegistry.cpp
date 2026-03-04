@@ -1,5 +1,4 @@
 #include "games/GameRegistry.h"
-#include <spdlog/spdlog.h>
 
 namespace is::games {
 
@@ -10,7 +9,9 @@ GameRegistry& GameRegistry::instance() {
 
 void GameRegistry::registerGame(const std::string& name, GameFactory factory) {
     m_factories[name] = std::move(factory);
-    spdlog::info("Game registered: '{}'", name);
+    // NOTE: Do NOT call spdlog here – this runs during static initialization
+    // (from REGISTER_GAME macros) before spdlog's global registry is ready,
+    // causing SIGSEGV on Linux (static init order fiasco).
 }
 
 std::unique_ptr<IGame> GameRegistry::create(const std::string& name) const {
