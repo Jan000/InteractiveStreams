@@ -133,7 +133,9 @@ void YouTubeGrpcChat::streamLoop() {
                 // Check message type – only process displayable messages
                 if (snippet.has_type()) {
                     auto type = snippet.type();
-                    using T = youtube::api::v3::LiveChatMessageSnippet_TypeWrapper_Type;
+                    // Short enum aliases (TOMBSTONE, etc.) live on the wrapper
+                    // *message* class, not on the enum type itself.
+                    using T = youtube::api::v3::LiveChatMessageSnippet_TypeWrapper;
                     if (type == T::TOMBSTONE ||
                         type == T::CHAT_ENDED_EVENT ||
                         type == T::MESSAGE_DELETED_EVENT ||
