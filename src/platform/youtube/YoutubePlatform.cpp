@@ -12,6 +12,7 @@ YoutubePlatform::~YoutubePlatform() {
 
 void YoutubePlatform::configure(const nlohmann::json& settings) {
     if (settings.contains("api_key"))       m_apiKey       = settings["api_key"];
+    if (settings.contains("oauth_token"))   m_oauthToken   = settings["oauth_token"];
     if (settings.contains("live_chat_id"))  m_liveChatId   = settings["live_chat_id"];
     if (settings.contains("channel_id"))    m_channelId    = settings["channel_id"];
     if (settings.contains("poll_interval")) m_pollIntervalMs = settings["poll_interval"];
@@ -167,6 +168,7 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"channelId", m_channelId},
         {"liveChatId", m_liveChatId},
         {"autoDetectedChatId", m_autoDetectedChatId},
+        {"hasOauthToken", !m_oauthToken.empty()},
         {"waitingForLivestream", m_connected.load() && m_liveChatId.empty()},
         {"messagesReceived", m_messagesReceived},
         {"messagesSent", m_messagesSent}

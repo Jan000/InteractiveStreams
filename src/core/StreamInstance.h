@@ -221,6 +221,9 @@ private:
     // Twitch API cache (broadcaster IDs, game IDs)
     std::unordered_map<std::string, std::string> m_twitchBroadcasterIdCache;
     std::unordered_map<std::string, std::string> m_twitchGameIdCache;
+
+    // YouTube API cache (channel -> broadcast ID)
+    std::unordered_map<std::string, std::string> m_youtubeBroadcastIdCache;
 };
 
 } // namespace is::core

@@ -144,6 +144,7 @@ set(PLATFORM_SOURCES
     src/platform/twitch/TwitchPlatform.cpp
     src/platform/twitch/TwitchApi.cpp
     src/platform/youtube/YoutubePlatform.cpp
+    src/platform/youtube/YouTubeApi.cpp
 )
 
 set(RENDERING_SOURCES

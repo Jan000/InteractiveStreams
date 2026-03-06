@@ -36,6 +36,7 @@ private:
 
     // Configuration
     std::string m_apiKey;
+    std::string m_oauthToken;   ///< OAuth 2.0 Bearer token (for write operations like liveBroadcasts.update)
     std::string m_liveChatId;
     std::string m_channelId;
     int         m_pollIntervalMs = 2000;

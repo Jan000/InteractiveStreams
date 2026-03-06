@@ -6,6 +6,7 @@
 #include "games/GameRegistry.h"
 #include "streaming/StreamEncoder.h"
 #include "platform/twitch/TwitchApi.h"
+#include "platform/youtube/YouTubeApi.h"
 
 #include <stb_image_write.h>
 #include <spdlog/spdlog.h>
@@ -622,6 +623,16 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
 
     // Fall back to the stream's general title when no per-game title is configured
     if (twitchTitle.empty() && !m_config.title.empty()) twitchTitle = m_config.title;
+    if (youtubeTitle.empty() && !m_config.title.empty()) youtubeTitle = m_config.title;
+
+    // Resolve YouTube description: per-game description > stream description
+    std::string youtubeDescription;
+    {
+        auto it = m_config.gameDescriptions.find(gameId);
+        if (it != m_config.gameDescriptions.end()) youtubeDescription = it->second;
+    }
+    if (youtubeDescription.empty() && !m_config.description.empty())
+        youtubeDescription = m_config.description;
 
     // If no platform names configured, nothing to do
     if (twitchCategory.empty() && twitchTitle.empty() && youtubeTitle.empty()) {
@@ -728,10 +739,70 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
         }
     }
 
-    // YouTube: future implementation (requires YouTube OAuth & Data API v3)
-    if (!youtubeTitle.empty()) {
-        spdlog::debug("[Stream '{}'] YouTube title update not yet implemented (title='{}').",
-                      m_config.name, youtubeTitle);
+    // Update YouTube channels subscribed to this stream
+    if (!youtubeTitle.empty() || !youtubeDescription.empty()) {
+        for (const auto& chId : m_config.channelIds) {
+            const auto* cfg = cm.getChannelConfig(chId);
+            if (!cfg || cfg->platform != "youtube") continue;
+
+            std::string oauthToken = cfg->settings.value("oauth_token", "");
+            if (oauthToken.empty()) {
+                spdlog::warn("[Stream '{}'] YouTube channel '{}' missing oauth_token – "
+                             "cannot update broadcast info. Set an OAuth token in channel settings.",
+                             m_config.name, chId);
+                continue;
+            }
+
+            // Check cached broadcast ID
+            std::string cachedBroadcastId;
+            auto brIt = m_youtubeBroadcastIdCache.find(chId);
+            if (brIt != m_youtubeBroadcastIdCache.end()) {
+                cachedBroadcastId = brIt->second;
+            }
+
+            // Fire-and-forget in a detached thread (same pattern as Twitch)
+            std::string sName = m_config.name;
+            std::string ytTitle = youtubeTitle;
+            std::string ytDesc  = youtubeDescription;
+            std::string channelIdCopy = chId;
+            // YouTube Gaming category ID = "20"
+            std::string ytCategoryId = "20";
+
+            std::thread([this, sName, oauthToken, channelIdCopy, ytTitle, ytDesc,
+                         ytCategoryId, cachedBroadcastId]() {
+                // Resolve broadcast ID
+                std::string broadcastId = cachedBroadcastId;
+                if (broadcastId.empty()) {
+                    spdlog::info("[Stream '{}'] Resolving YouTube active broadcast for channel '{}'...",
+                                 sName, channelIdCopy);
+                    broadcastId = platform::YouTubeApi::getActiveBroadcastId(oauthToken);
+                    if (broadcastId.empty()) {
+                        spdlog::error("[Stream '{}'] No active YouTube broadcast found for channel '{}'. "
+                                      "Make sure you are currently live and the OAuth token has the "
+                                      "youtube.force-ssl scope.",
+                                      sName, channelIdCopy);
+                        return;
+                    }
+                    // Write back to cache
+                    m_youtubeBroadcastIdCache[channelIdCopy] = broadcastId;
+                    spdlog::info("[Stream '{}'] Resolved YouTube broadcast ID: {}", sName, broadcastId);
+                }
+
+                // Update broadcast info
+                spdlog::info("[Stream '{}'] Updating YouTube broadcast (title='{}', description='{}', category={})...",
+                             sName, ytTitle, ytDesc.substr(0, 50), ytCategoryId);
+                bool ok = platform::YouTubeApi::updateBroadcast(
+                    oauthToken, broadcastId, ytTitle, ytDesc, ytCategoryId);
+                if (ok) {
+                    spdlog::info("[Stream '{}'] YouTube broadcast updated successfully (title='{}').",
+                                 sName, ytTitle);
+                } else {
+                    spdlog::error("[Stream '{}'] Failed to update YouTube broadcast info.", sName);
+                    // Clear cached broadcast ID on failure so next attempt re-resolves
+                    m_youtubeBroadcastIdCache.erase(channelIdCopy);
+                }
+            }).detach();
+        }
     }
 }
 

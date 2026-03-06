@@ -75,6 +75,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   const [streamKey, setStreamKey] = useState("");
   // YouTube
   const [ytApiKey, setYtApiKey] = useState("");
+  const [ytOauthToken, setYtOauthToken] = useState("");
   const [ytLiveChatId, setYtLiveChatId] = useState("");
   const [ytChannelId, setYtChannelId] = useState("");
   const [ytPollInterval, setYtPollInterval] = useState(2000);
@@ -200,6 +201,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       setStreamKey((s.stream_key as string) ?? "");
       // YouTube
       setYtApiKey((s.api_key as string) ?? "");
+      setYtOauthToken((s.oauth_token as string) ?? "");
       setYtLiveChatId((s.live_chat_id as string) ?? "");
       setYtChannelId((s.channel_id as string) ?? "");
       setYtPollInterval((s.poll_interval as number) ?? 2000);
@@ -234,6 +236,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
     if (platform === "youtube") {
       return {
         api_key: ytApiKey,
+        oauth_token: ytOauthToken,
         live_chat_id: ytLiveChatId,
         channel_id: ytChannelId,
         poll_interval: ytPollInterval,
@@ -601,7 +604,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                 <Label className="text-xs font-medium">YouTube Settings</Label>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
-                    API Key
+                    API Key{" "}
+                    <span className="text-muted-foreground/60">(read-only chat)</span>
                   </Label>
                   <Input
                     className="h-8 text-xs"
@@ -610,6 +614,26 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     value={ytApiKey}
                     onChange={(e) => markDirty(setYtApiKey)(e.target.value)}
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    OAuth Token{" "}
+                    <span className="text-muted-foreground/60">(for title/description updates)</span>
+                  </Label>
+                  <Input
+                    className="h-8 text-xs"
+                    type="password"
+                    placeholder="ya29.a0..."
+                    value={ytOauthToken}
+                    onChange={(e) => markDirty(setYtOauthToken)(e.target.value)}
+                  />
+                  <p className="text-[9px] text-muted-foreground">
+                    Required for updating stream title &amp; description via YouTube Data API v3.
+                    Needs youtube.force-ssl scope.
+                    {!!(channel.details as Record<string, unknown>)?.hasOauthToken && (
+                      <span className="ml-1 text-green-500">✓ Token set</span>
+                    )}
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
