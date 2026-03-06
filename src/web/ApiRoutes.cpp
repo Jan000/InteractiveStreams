@@ -732,20 +732,22 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             redirectUri = "http://localhost:8080/auth/youtube/callback/";
         }
 
+        auto enc = [](const std::string& s) { return platform::YouTubeApi::urlEncode(s); };
+
         // Scopes: read live chat + manage broadcasts (title/description updates)
         std::string scopes =
             "https://www.googleapis.com/auth/youtube"
-            "+https://www.googleapis.com/auth/youtube.force-ssl"
-            "+https://www.googleapis.com/auth/youtube.readonly";
+            " https://www.googleapis.com/auth/youtube.force-ssl"
+            " https://www.googleapis.com/auth/youtube.readonly";
 
         std::string url = "https://accounts.google.com/o/oauth2/v2/auth"
             "?response_type=code"
-            "&client_id=" + clientId +
-            "&redirect_uri=" + redirectUri +
-            "&scope=" + scopes +
+            "&client_id=" + enc(clientId) +
+            "&redirect_uri=" + enc(redirectUri) +
+            "&scope=" + enc(scopes) +
             "&access_type=offline"
             "&prompt=consent"
-            "&state=" + channelId;
+            "&state=" + enc(channelId);
 
         res.set_content(nlohmann::json({{"url", url}, {"channelId", channelId}}).dump(),
                         "application/json");

@@ -53,6 +53,9 @@ public:
                                           const std::string& clientId,
                                           const std::string& clientSecret);
 
+    /// URL-encode a string (percent-encoding for unsafe characters).
+    static std::string urlEncode(const std::string& s);
+
 private:
     /// Run curl and capture stdout.  Returns empty string on failure.
     static std::string curlRequest(const std::string& method,

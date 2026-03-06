@@ -29,7 +29,7 @@ static std::string shellEscape(const std::string& s) {
 }
 
 /// URL-encode a string (only the unsafe characters).
-static std::string urlEncode(const std::string& s) {
+std::string YouTubeApi::urlEncode(const std::string& s) {
     std::ostringstream out;
     for (unsigned char c : s) {
         if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
@@ -248,17 +248,44 @@ bool YouTubeApi::updateBroadcast(const std::string& oauthToken,
 std::string YouTubeApi::curlPostForm(const std::string& url,
                                      const std::string& formBody)
 {
+    // Write the form body to a temp file to avoid shell escaping issues
+    // (same strategy as curlRequest for JSON bodies).
+    std::string tempBodyPath;
+    try {
+        auto tmp = std::filesystem::temp_directory_path() / "is_youtube_form.txt";
+        tempBodyPath = tmp.string();
+        std::ofstream ofs(tempBodyPath, std::ios::trunc);
+        ofs << formBody;
+        ofs.close();
+    } catch (const std::exception& e) {
+        spdlog::error("[YouTubeApi] Failed to write temp form file: {}", e.what());
+        return "";
+    }
+
+    // Also capture stderr to a temp file for diagnostic logging
+    std::string tempStderrPath;
+    try {
+        auto tmp = std::filesystem::temp_directory_path() / "is_youtube_curl_err.txt";
+        tempStderrPath = tmp.string();
+    } catch (...) {
+        // Non-fatal; just won't capture stderr
+    }
+
     std::ostringstream cmd;
     cmd << "curl -s -X POST"
         << " \"" << shellEscape(url) << "\""
         << " -H \"Content-Type: application/x-www-form-urlencoded\""
-        << " -d \"" << shellEscape(formBody) << "\"";
+        << " -d @\"" << shellEscape(tempBodyPath) << "\"";
 
+    if (!tempStderrPath.empty()) {
+        cmd << " 2>\"" << shellEscape(tempStderrPath) << "\"";
+    } else {
 #ifdef _WIN32
-    cmd << " 2>nul";
+        cmd << " 2>nul";
 #else
-    cmd << " 2>/dev/null";
+        cmd << " 2>/dev/null";
 #endif
+    }
 
     std::string cmdStr = cmd.str();
     spdlog::debug("[YouTubeApi] Running: {}", cmdStr);
@@ -266,6 +293,7 @@ std::string YouTubeApi::curlPostForm(const std::string& url,
     FILE* pipe = popen(cmdStr.c_str(), "r");
     if (!pipe) {
         spdlog::error("[YouTubeApi] Failed to run curl.");
+        std::filesystem::remove(tempBodyPath);
         return "";
     }
 
@@ -274,7 +302,30 @@ std::string YouTubeApi::curlPostForm(const std::string& url,
     while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
         result += buffer.data();
     }
-    pclose(pipe);
+    int rc = pclose(pipe);
+
+    // Log stderr if curl failed or returned empty
+    if ((rc != 0 || result.empty()) && !tempStderrPath.empty()) {
+        try {
+            std::ifstream ifs(tempStderrPath);
+            std::string errStr((std::istreambuf_iterator<char>(ifs)),
+                                std::istreambuf_iterator<char>());
+            if (!errStr.empty()) {
+                spdlog::error("[YouTubeApi] curl stderr (rc={}): {}", rc, errStr);
+            }
+        } catch (...) {}
+        std::filesystem::remove(tempStderrPath);
+    } else if (!tempStderrPath.empty()) {
+        std::filesystem::remove(tempStderrPath);
+    }
+
+    // Clean up temp body file
+    std::filesystem::remove(tempBodyPath);
+
+    if (result.empty()) {
+        spdlog::error("[YouTubeApi] curlPostForm got empty response (rc={})", rc);
+    }
+
     return result;
 }
 
