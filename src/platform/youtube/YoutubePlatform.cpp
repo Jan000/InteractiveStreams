@@ -124,6 +124,16 @@ std::string YoutubePlatform::fetchLiveChatId() {
 
 void YoutubePlatform::disconnect() {
     m_shouldRun = false;
+
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+    // Stop gRPC streaming first (it may be blocking the poll thread)
+    if (m_grpcChat) {
+        m_grpcChat->stop();
+        m_grpcChat.reset();
+    }
+    m_grpcActive = false;
+#endif
+
     if (m_thread.joinable()) {
         m_thread.join();
     }
@@ -161,7 +171,7 @@ bool YoutubePlatform::sendMessage(const std::string& text) {
 }
 
 nlohmann::json YoutubePlatform::getStatus() const {
-    return {
+    nlohmann::json status = {
         {"platform", "youtube"},
         {"displayName", "YouTube"},
         {"connected", m_connected.load()},
@@ -173,6 +183,19 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"messagesReceived", m_messagesReceived},
         {"messagesSent", m_messagesSent}
     };
+
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+    status["grpcEnabled"] = true;
+    status["grpcActive"]  = m_grpcActive;
+    if (m_grpcChat) {
+        status["grpcConnected"]       = m_grpcChat->isConnected();
+        status["grpcMessagesReceived"] = m_grpcChat->messagesReceived();
+    }
+#else
+    status["grpcEnabled"] = false;
+#endif
+
+    return status;
 }
 
 void YoutubePlatform::pollLoop() {
@@ -180,6 +203,39 @@ void YoutubePlatform::pollLoop() {
 
     constexpr int RETRY_INTERVAL_MS = 30000; // retry auto-detection every 30s
 
+    // ── Auto-detect liveChatId if needed ─────────────────────────────────
+    while (m_shouldRun && m_liveChatId.empty()) {
+        if (!m_channelId.empty()) {
+            spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection for channel '{}'...", m_channelId);
+            std::string chatId = fetchLiveChatId();
+            if (!chatId.empty()) {
+                m_liveChatId = chatId;
+                m_autoDetectedChatId = true;
+                spdlog::info("[YouTube] Livestream detected! liveChatId: {}", m_liveChatId);
+                break;
+            }
+        }
+        // Still no livestream — wait and retry
+        for (int waited = 0; waited < RETRY_INTERVAL_MS && m_shouldRun; waited += 500) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+    }
+
+    if (!m_shouldRun) return;
+
+    // ── Try gRPC streaming (preferred, near-instant message delivery) ────
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+    if (tryGrpcStream()) {
+        // gRPC ran until m_shouldRun became false or the stream ended.
+        // If we should stop, return immediately.
+        if (!m_shouldRun) return;
+
+        // Otherwise fall through to REST polling as fallback
+        spdlog::warn("[YouTube] gRPC streaming ended — falling back to REST polling.");
+    }
+#endif
+
+    // ── REST polling fallback ────────────────────────────────────────────
     while (m_shouldRun) {
         // If we don't have a liveChatId yet, periodically retry auto-detection
         if (m_liveChatId.empty()) {
@@ -269,5 +325,51 @@ void YoutubePlatform::pollLoop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(m_pollIntervalMs));
     }
 }
+
+// ── gRPC streaming ───────────────────────────────────────────────────────────
+
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+
+bool YoutubePlatform::tryGrpcStream() {
+    if (m_liveChatId.empty()) {
+        spdlog::warn("[YouTube gRPC] Cannot start – no liveChatId.");
+        return false;
+    }
+
+    if (m_apiKey.empty() && m_oauthToken.empty()) {
+        spdlog::warn("[YouTube gRPC] Cannot start – no API key or OAuth token.");
+        return false;
+    }
+
+    spdlog::info("[YouTube] Starting gRPC streaming mode for liveChatId '{}'.", m_liveChatId);
+    m_grpcActive = true;
+
+    m_grpcChat = std::make_unique<YouTubeGrpcChat>();
+    m_grpcChat->start(
+        m_apiKey, m_oauthToken, m_liveChatId, m_channelId,
+        [this](ChatMessage msg) {
+            // Callback from gRPC thread – push into shared queue
+            m_messagesReceived++;
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_messageQueue.push(std::move(msg));
+        }
+    );
+
+    // Wait while gRPC is running and we should keep going
+    while (m_shouldRun && m_grpcChat && m_grpcChat->isRunning()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    // Clean up
+    if (m_grpcChat) {
+        m_grpcChat->stop();
+        m_grpcChat.reset();
+    }
+    m_grpcActive = false;
+
+    return true; // We did run gRPC (success or failure)
+}
+
+#endif // IS_YOUTUBE_GRPC_ENABLED
 
 } // namespace is::platform

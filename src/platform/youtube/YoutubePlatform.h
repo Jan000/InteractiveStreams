@@ -1,6 +1,11 @@
 #pragma once
 
 #include "platform/IPlatform.h"
+
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+#include "platform/youtube/YouTubeGrpcChat.h"
+#endif
+
 #include <queue>
 #include <mutex>
 #include <atomic>
@@ -34,6 +39,13 @@ private:
     /// Returns the chat ID or an empty string on failure.
     std::string fetchLiveChatId();
 
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+    /// Run the gRPC streaming loop instead of REST polling.
+    /// Called from the background thread when gRPC is available.
+    /// Returns true if gRPC was used (even if it eventually disconnected).
+    bool tryGrpcStream();
+#endif
+
     // Configuration
     std::string m_apiKey;
     std::string m_oauthToken;   ///< OAuth 2.0 Bearer token (for write operations like liveBroadcasts.update)
@@ -55,6 +67,12 @@ private:
     // Stats
     size_t m_messagesReceived = 0;
     size_t m_messagesSent     = 0;
+
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+    /// The gRPC streaming client (created dynamically when gRPC mode is active).
+    std::unique_ptr<YouTubeGrpcChat> m_grpcChat;
+    bool m_grpcActive = false; ///< true while gRPC streaming is in use
+#endif
 };
 
 } // namespace is::platform

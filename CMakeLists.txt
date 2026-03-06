@@ -21,6 +21,11 @@ endif()
 # Options
 option(IS_BUILD_TESTS "Build tests" OFF)
 option(IS_USE_SYSTEM_LIBS "Use system-installed libraries instead of FetchContent" OFF)
+option(IS_USE_YOUTUBE_GRPC
+    "Enable YouTube gRPC streaming chat API. Replaces REST polling with a \
+long-lived gRPC stream for near-instant message delivery. First build pulls \
+gRPC + Protobuf + Abseil (~15 min compile on first run, cached afterwards)."
+    OFF)
 
 # ─── Dependencies via FetchContent ────────────────────────────────────────────
 include(FetchContent)
@@ -109,6 +114,67 @@ if(MSVC)
     target_compile_options(sqlite3_lib PRIVATE /wd4706 /wd4100)
 endif()
 
+# ─── Optional: gRPC for YouTube streaming chat ───────────────────────────────
+# When enabled, the YouTube platform uses a long-lived gRPC stream to receive
+# chat messages in near-real-time instead of REST polling.  This pulls gRPC,
+# Protobuf, Abseil, c-ares, re2 via FetchContent – the first build will take
+# considerably longer (~15 min) but subsequent builds are cached.
+if(IS_USE_YOUTUBE_GRPC)
+    message(STATUS "YouTube gRPC streaming chat ENABLED – pulling gRPC dependencies …")
+
+    # Disable parts of gRPC we don't need to speed up the build
+    set(gRPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_CSHARP_EXT OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_GRPC_CSHARP_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_GRPC_NODE_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_GRPC_PHP_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_GRPC_PYTHON_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(gRPC_BUILD_GRPC_RUBY_PLUGIN OFF CACHE BOOL "" FORCE)
+    set(gRPC_INSTALL OFF CACHE BOOL "" FORCE)
+    set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        gRPC
+        GIT_REPOSITORY https://github.com/grpc/grpc.git
+        GIT_TAG        v1.62.0
+        GIT_SHALLOW    TRUE
+    )
+    set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(gRPC)
+    set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
+
+    # ── Proto generation ──────────────────────────────────────────────────
+    set(_PROTO_DIR  "${CMAKE_SOURCE_DIR}/src/platform/youtube")
+    set(_PROTO_GEN  "${CMAKE_CURRENT_BINARY_DIR}/proto-gen")
+    file(MAKE_DIRECTORY "${_PROTO_GEN}")
+
+    add_custom_command(
+        OUTPUT
+            "${_PROTO_GEN}/youtube_chat.pb.cc"
+            "${_PROTO_GEN}/youtube_chat.pb.h"
+            "${_PROTO_GEN}/youtube_chat.grpc.pb.cc"
+            "${_PROTO_GEN}/youtube_chat.grpc.pb.h"
+        COMMAND $<TARGET_FILE:protoc>
+            --grpc_out "${_PROTO_GEN}"
+            --cpp_out  "${_PROTO_GEN}"
+            -I "${_PROTO_DIR}"
+            --plugin=protoc-gen-grpc=$<TARGET_FILE:grpc_cpp_plugin>
+            "${_PROTO_DIR}/youtube_chat.proto"
+        DEPENDS "${_PROTO_DIR}/youtube_chat.proto" protoc grpc_cpp_plugin
+        COMMENT "Generating C++ from youtube_chat.proto …"
+    )
+
+    set(YOUTUBE_GRPC_SOURCES
+        "${_PROTO_GEN}/youtube_chat.pb.cc"
+        "${_PROTO_GEN}/youtube_chat.grpc.pb.cc"
+        src/platform/youtube/YouTubeGrpcChat.cpp
+    )
+else()
+    message(STATUS "YouTube gRPC streaming chat DISABLED (using REST polling fallback)")
+    set(YOUTUBE_GRPC_SOURCES "")
+endif()
+
 # ─── Source files ─────────────────────────────────────────────────────────────
 set(CORE_SOURCES
     src/crash_handler.cpp
@@ -174,6 +240,7 @@ add_executable(${PROJECT_NAME}
     ${RENDERING_SOURCES}
     ${STREAMING_SOURCES}
     ${WEB_SOURCES}
+    ${YOUTUBE_GRPC_SOURCES}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -193,6 +260,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     spdlog::spdlog
     sqlite3_lib
 )
+
+# ─── YouTube gRPC: extra includes, libs, defines ─────────────────────────────
+if(IS_USE_YOUTUBE_GRPC)
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/proto-gen"
+    )
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        grpc++
+        libprotobuf
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE IS_YOUTUBE_GRPC_ENABLED)
+endif()
 
 # ─── Speed: Precompiled Header ────────────────────────────────────────────────
 # Alle schweren Headers (SFML, Box2D, nlohmann/json, spdlog, STL) werden einmal
