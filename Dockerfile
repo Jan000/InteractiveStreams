@@ -92,7 +92,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg xvfb curl \
+    ffmpeg xvfb curl ca-certificates \
     libx11-6 libxrandr2 libxcursor1 libxi6 \
     libudev1 libgl1 libgl1-mesa-dri libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12
 

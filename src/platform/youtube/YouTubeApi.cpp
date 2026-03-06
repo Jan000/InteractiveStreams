@@ -66,9 +66,13 @@ std::string YouTubeApi::curlRequest(const std::string& method,
     }
 
     std::ostringstream cmd;
-    cmd << "curl -s -X " << method
-        << " \"" << shellEscape(url) << "\""
-        << " -H \"Authorization: Bearer " << shellEscape(oauthToken) << "\"";
+    cmd << "curl -sS -X " << method
+        << " \"" << shellEscape(url) << "\"";
+
+    // Only add Authorization header if we have an OAuth token
+    if (!oauthToken.empty()) {
+        cmd << " -H \"Authorization: Bearer " << shellEscape(oauthToken) << "\"";
+    }
 
     if (!tempBodyPath.empty()) {
         cmd << " -H \"Content-Type: application/json\""
@@ -122,6 +126,59 @@ bool YouTubeApi::isCurlAvailable() {
     int rc = std::system("curl --version >/dev/null 2>/dev/null");
 #endif
     return rc == 0;
+}
+
+std::string YouTubeApi::findLiveChatId(const std::string& oauthToken)
+{
+    if (oauthToken.empty()) return "";
+
+    // Use liveBroadcasts.list with mine=true to find the active broadcast.
+    // This requires OAuth but directly returns snippet.liveChatId — a single
+    // API call instead of search.list + videos.list, and avoids the search
+    // quota / permission issues.
+    std::string url = "https://www.googleapis.com/youtube/v3/liveBroadcasts"
+                      "?mine=true"
+                      "&broadcastStatus=active"
+                      "&broadcastType=all"
+                      "&part=snippet"
+                      "&maxResults=1";
+
+    std::string resp = curlRequest("GET", url, oauthToken);
+    if (resp.empty()) {
+        spdlog::warn("[YouTubeApi] findLiveChatId: empty response from liveBroadcasts.list");
+        return "";
+    }
+
+    try {
+        auto j = nlohmann::json::parse(resp);
+
+        if (j.contains("error")) {
+            auto msg = j["error"].value("message", "unknown error");
+            int code = j["error"].value("code", 0);
+            spdlog::warn("[YouTubeApi] liveBroadcasts.list error ({}): {}", code, msg);
+            return "";
+        }
+
+        if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
+            spdlog::debug("[YouTubeApi] No active broadcast found.");
+            return "";
+        }
+
+        auto& snippet = j["items"][0]["snippet"];
+        std::string liveChatId = snippet.value("liveChatId", "");
+        if (liveChatId.empty()) {
+            spdlog::warn("[YouTubeApi] Active broadcast has no liveChatId.");
+            return "";
+        }
+
+        std::string title = snippet.value("title", "(unknown)");
+        spdlog::info("[YouTubeApi] Found active broadcast '{}' with liveChatId: {}",
+                     title, liveChatId);
+        return liveChatId;
+    } catch (const std::exception& e) {
+        spdlog::warn("[YouTubeApi] Failed to parse liveBroadcasts.list response: {}", e.what());
+    }
+    return "";
 }
 
 std::string YouTubeApi::getActiveBroadcastId(const std::string& oauthToken) {
@@ -272,7 +329,7 @@ std::string YouTubeApi::curlPostForm(const std::string& url,
     }
 
     std::ostringstream cmd;
-    cmd << "curl -s -X POST"
+    cmd << "curl -sS -X POST"
         << " \"" << shellEscape(url) << "\""
         << " -H \"Content-Type: application/x-www-form-urlencoded\""
         << " -d @\"" << shellEscape(tempBodyPath) << "\"";

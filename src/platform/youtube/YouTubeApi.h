@@ -19,6 +19,12 @@ public:
     /// Returns empty string on failure or if no active broadcast exists.
     static std::string getActiveBroadcastId(const std::string& oauthToken);
 
+    /// Find the activeLiveChatId using liveBroadcasts.list (requires OAuth token).
+    /// Calls liveBroadcasts.list?mine=true&broadcastStatus=active&part=snippet
+    /// and extracts snippet.liveChatId from the first active broadcast.
+    /// Returns the liveChatId or empty string on failure.
+    static std::string findLiveChatId(const std::string& oauthToken);
+
     /// Update the title, description, and/or category of a live broadcast.
     /// Requires a valid broadcast ID (from getActiveBroadcastId).
     /// Pass empty strings to leave fields unchanged (they will be fetched first).

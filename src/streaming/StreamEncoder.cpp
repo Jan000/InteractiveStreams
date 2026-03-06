@@ -101,11 +101,13 @@ bool StreamEncoder::start() {
         << " -c:v " << m_codec
         << " -pix_fmt yuv420p"
         << " -preset " << m_preset
+        << " -threads 0"         // Use all available CPU cores for encoding
         << " -b:v " << m_bitrate << "k"
         << " -maxrate " << static_cast<int>(m_bitrate * 1.5) << "k"
         << " -bufsize " << m_bitrate * 2 << "k"
         << " -g " << m_fps * 2  // Keyframe interval
         << " -tune zerolatency"  // Low-latency encoding for streaming
+        << " -x264-params \"sliced-threads=1:rc-lookahead=0\""  // Threaded slices for speed
         // Audio encoding (silence)
         << " -c:a aac -b:a 128k -ar 44100"
         << " -shortest"  // Stop when the shortest input (video) ends

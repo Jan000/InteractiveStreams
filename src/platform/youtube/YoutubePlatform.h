@@ -34,10 +34,13 @@ public:
 private:
     void pollLoop();
 
-    /// Auto-detect the activeLiveChatId for the current live stream.
-    /// Uses search.list (eventType=live) + videos.list (liveStreamingDetails).
+    /// Auto-detect the activeLiveChatId for the current live broadcast.
+    /// Uses liveBroadcasts.list (requires OAuth token, mine=true).
     /// Returns the chat ID or an empty string on failure.
     std::string fetchLiveChatId();
+
+    /// Refresh the OAuth access token if it's expired or about to expire.
+    void refreshTokenIfNeeded();
 
 #ifdef IS_YOUTUBE_GRPC_ENABLED
     /// Run the gRPC streaming loop instead of REST polling.

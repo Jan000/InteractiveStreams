@@ -1,7 +1,16 @@
 #include "platform/youtube/YoutubePlatform.h"
 #include "platform/youtube/YouTubeApi.h"
 #include <spdlog/spdlog.h>
-#include <SFML/Network.hpp>
+#include <nlohmann/json.hpp>
+#include <array>
+#include <chrono>
+#include <cstdio>
+#include <sstream>
+
+#ifdef _WIN32
+#define popen  _popen
+#define pclose _pclose
+#endif
 
 namespace is::platform {
 
@@ -28,18 +37,18 @@ void YoutubePlatform::configure(const nlohmann::json& settings) {
 }
 
 bool YoutubePlatform::connect() {
-    if (m_apiKey.empty()) {
-        spdlog::warn("[YouTube] Cannot connect: missing api_key.");
+    if (m_apiKey.empty() && m_oauthToken.empty()) {
+        spdlog::warn("[YouTube] Cannot connect: missing api_key and OAuth token.");
         return false;
     }
 
     // Auto-detect live chat ID if not manually provided
-    if (m_liveChatId.empty() && !m_channelId.empty()) {
-        spdlog::info("[YouTube] No live_chat_id configured — auto-detecting from channel '{}'...", m_channelId);
+    if (m_liveChatId.empty()) {
+        spdlog::info("[YouTube] No live_chat_id configured — auto-detecting via liveBroadcasts.list...");
         m_liveChatId = fetchLiveChatId();
         if (m_liveChatId.empty()) {
-            spdlog::info("[YouTube] No active livestream found yet on channel '{}'. "
-                         "Will connect and retry auto-detection periodically.", m_channelId);
+            spdlog::info("[YouTube] No active broadcast found yet. "
+                         "Will connect and retry auto-detection periodically.");
         } else {
             m_autoDetectedChatId = true;
             spdlog::info("[YouTube] Auto-detected liveChatId: {}", m_liveChatId);
@@ -60,72 +69,37 @@ bool YoutubePlatform::connect() {
 }
 
 std::string YoutubePlatform::fetchLiveChatId() {
-    // Step 1: Find the live video on this channel.
-    // GET https://www.googleapis.com/youtube/v3/search
-    //   ?part=id&channelId={channelId}&eventType=live&type=video&key={apiKey}
-    sf::Http http("www.googleapis.com");
-
-    std::string searchPath = "/youtube/v3/search"
-        "?part=id"
-        "&channelId=" + m_channelId +
-        "&eventType=live"
-        "&type=video"
-        "&key=" + m_apiKey;
-
-    sf::Http::Request searchReq(searchPath);
-    auto searchResp = http.sendRequest(searchReq, sf::seconds(15));
-
-    if (searchResp.getStatus() != sf::Http::Response::Ok) {
-        spdlog::warn("[YouTube] search.list failed (HTTP {})", static_cast<int>(searchResp.getStatus()));
+    // Use liveBroadcasts.list (OAuth) to find the liveChatId.
+    // This requires an OAuth token — if we only have an API key, we can't auto-detect.
+    if (m_oauthToken.empty()) {
+        spdlog::warn("[YouTube] Cannot auto-detect liveChatId without OAuth token. "
+                     "Please log in with YouTube or set live_chat_id manually.");
         return "";
     }
+    return YouTubeApi::findLiveChatId(m_oauthToken);
+}
 
-    std::string videoId;
-    try {
-        auto json = nlohmann::json::parse(searchResp.getBody());
-        if (!json.contains("items") || json["items"].empty()) {
-            spdlog::warn("[YouTube] No active livestream found on channel '{}'.", m_channelId);
-            return "";
-        }
-        // Take the first live video
-        videoId = json["items"][0]["id"]["videoId"].get<std::string>();
-        spdlog::info("[YouTube] Found live video: {}", videoId);
-    } catch (const std::exception& e) {
-        spdlog::warn("[YouTube] Failed to parse search response: {}", e.what());
-        return "";
+void YoutubePlatform::refreshTokenIfNeeded() {
+    if (m_oauthRefreshToken.empty() || m_oauthClientId.empty() || m_oauthClientSecret.empty()) {
+        return; // Can't refresh without credentials
     }
 
-    // Step 2: Get the activeLiveChatId from the video's liveStreamingDetails.
-    // GET https://www.googleapis.com/youtube/v3/videos
-    //   ?part=liveStreamingDetails&id={videoId}&key={apiKey}
-    std::string videoPath = "/youtube/v3/videos"
-        "?part=liveStreamingDetails"
-        "&id=" + videoId +
-        "&key=" + m_apiKey;
+    auto now = std::chrono::system_clock::now().time_since_epoch();
+    int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(now).count();
 
-    sf::Http::Request videoReq(videoPath);
-    auto videoResp = http.sendRequest(videoReq, sf::seconds(15));
-
-    if (videoResp.getStatus() != sf::Http::Response::Ok) {
-        spdlog::warn("[YouTube] videos.list failed (HTTP {})", static_cast<int>(videoResp.getStatus()));
-        return "";
+    // Refresh 60 seconds before expiry to avoid race conditions
+    if (m_oauthTokenExpiry > 0 && nowSec < (m_oauthTokenExpiry - 60)) {
+        return; // Token still valid
     }
 
-    try {
-        auto json = nlohmann::json::parse(videoResp.getBody());
-        if (!json.contains("items") || json["items"].empty()) {
-            spdlog::warn("[YouTube] Video {} not found.", videoId);
-            return "";
-        }
-        auto& details = json["items"][0]["liveStreamingDetails"];
-        if (!details.contains("activeLiveChatId")) {
-            spdlog::warn("[YouTube] Video {} has no activeLiveChatId (stream may have ended).", videoId);
-            return "";
-        }
-        return details["activeLiveChatId"].get<std::string>();
-    } catch (const std::exception& e) {
-        spdlog::warn("[YouTube] Failed to parse video response: {}", e.what());
-        return "";
+    spdlog::info("[YouTube] Access token expired or about to expire — refreshing...");
+    auto result = YouTubeApi::refreshAccessToken(m_oauthRefreshToken, m_oauthClientId, m_oauthClientSecret);
+    if (result.success) {
+        m_oauthToken = result.accessToken;
+        m_oauthTokenExpiry = nowSec + result.expiresIn;
+        spdlog::info("[YouTube] Token refreshed successfully (expires in {}s).", result.expiresIn);
+    } else {
+        spdlog::error("[YouTube] Token refresh failed: {}", result.error);
     }
 }
 
@@ -214,17 +188,16 @@ void YoutubePlatform::pollLoop() {
 
     // ── Auto-detect liveChatId if needed ─────────────────────────────────
     while (m_shouldRun && m_liveChatId.empty()) {
-        if (!m_channelId.empty()) {
-            spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection for channel '{}'...", m_channelId);
-            std::string chatId = fetchLiveChatId();
-            if (!chatId.empty()) {
-                m_liveChatId = chatId;
-                m_autoDetectedChatId = true;
-                spdlog::info("[YouTube] Livestream detected! liveChatId: {}", m_liveChatId);
-                break;
-            }
+        refreshTokenIfNeeded();
+        spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection via liveBroadcasts.list...");
+        std::string chatId = fetchLiveChatId();
+        if (!chatId.empty()) {
+            m_liveChatId = chatId;
+            m_autoDetectedChatId = true;
+            spdlog::info("[YouTube] Broadcast detected! liveChatId: {}", m_liveChatId);
+            break;
         }
-        // Still no livestream — wait and retry
+        // Still no broadcast — wait and retry
         for (int waited = 0; waited < RETRY_INTERVAL_MS && m_shouldRun; waited += 500) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
@@ -248,14 +221,13 @@ void YoutubePlatform::pollLoop() {
     while (m_shouldRun) {
         // If we don't have a liveChatId yet, periodically retry auto-detection
         if (m_liveChatId.empty()) {
-            if (!m_channelId.empty()) {
-                spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection for channel '{}'...", m_channelId);
-                std::string chatId = fetchLiveChatId();
-                if (!chatId.empty()) {
-                    m_liveChatId = chatId;
-                    m_autoDetectedChatId = true;
-                    spdlog::info("[YouTube] Livestream detected! liveChatId: {}", m_liveChatId);
-                }
+            refreshTokenIfNeeded();
+            spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection via liveBroadcasts.list...");
+            std::string chatId = fetchLiveChatId();
+            if (!chatId.empty()) {
+                m_liveChatId = chatId;
+                m_autoDetectedChatId = true;
+                spdlog::info("[YouTube] Broadcast detected! liveChatId: {}", m_liveChatId);
             }
 
             if (m_liveChatId.empty()) {
@@ -267,25 +239,56 @@ void YoutubePlatform::pollLoop() {
             }
         }
 
-        // YouTube Data API v3: liveChatMessages.list
-        // GET https://www.googleapis.com/youtube/v3/liveChat/messages
-        //   ?liveChatId={liveChatId}&part=snippet,authorDetails&key={apiKey}&pageToken={pageToken}
+        // YouTube Data API v3: liveChatMessages.list via curl (HTTPS)
+        // Use OAuth Bearer token for authentication
+        refreshTokenIfNeeded();
 
-        sf::Http http("www.googleapis.com");
-        std::string path = "/youtube/v3/liveChat/messages"
-            "?liveChatId=" + m_liveChatId +
-            "&part=snippet,authorDetails"
-            "&key=" + m_apiKey;
+        std::string chatUrl = "https://www.googleapis.com/youtube/v3/liveChat/messages"
+            "?liveChatId=" + YouTubeApi::urlEncode(m_liveChatId) +
+            "&part=snippet,authorDetails";
         if (!m_nextPageToken.empty()) {
-            path += "&pageToken=" + m_nextPageToken;
+            chatUrl += "&pageToken=" + YouTubeApi::urlEncode(m_nextPageToken);
         }
 
-        sf::Http::Request request(path);
-        auto response = http.sendRequest(request, sf::seconds(10));
+        // Use curl with OAuth Bearer token
+        std::string respBody;
+        {
+            std::ostringstream cmd;
+            cmd << "curl -sS -X GET"
+                << " -H \"Authorization: Bearer " << m_oauthToken << "\""
+                << " \"" << chatUrl << "\"";
+#ifdef _WIN32
+            cmd << " 2>nul";
+#else
+            cmd << " 2>/dev/null";
+#endif
+            FILE* pipe = popen(cmd.str().c_str(), "r");
+            if (pipe) {
+                std::array<char, 4096> buf{};
+                while (fgets(buf.data(), static_cast<int>(buf.size()), pipe))
+                    respBody += buf.data();
+                pclose(pipe);
+            }
+        }
 
-        if (response.getStatus() == sf::Http::Response::Ok) {
+        if (!respBody.empty()) {
             try {
-                auto json = nlohmann::json::parse(response.getBody());
+                auto json = nlohmann::json::parse(respBody);
+
+                // Check for API errors (quota exceeded, invalid chat ID, etc.)
+                if (json.contains("error")) {
+                    auto msg = json["error"].value("message", "unknown");
+                    int code = json["error"].value("code", 0);
+                    spdlog::warn("[YouTube] Chat API error ({}): {}", code, msg);
+                    // If chat ended (403/404), clear so we can re-detect
+                    if (code == 403 || code == 404) {
+                        m_liveChatId.clear();
+                        m_autoDetectedChatId = false;
+                        m_nextPageToken.clear();
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(m_pollIntervalMs));
+                    continue;
+                }
 
                 if (json.contains("nextPageToken")) {
                     m_nextPageToken = json["nextPageToken"];
@@ -324,11 +327,8 @@ void YoutubePlatform::pollLoop() {
                     continue;
                 }
             } catch (const std::exception& e) {
-                spdlog::warn("[YouTube] Failed to parse response: {}", e.what());
+                spdlog::warn("[YouTube] Failed to parse chat response: {}", e.what());
             }
-        } else {
-            spdlog::warn("[YouTube] API request failed with status: {}",
-                static_cast<int>(response.getStatus()));
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(m_pollIntervalMs));
