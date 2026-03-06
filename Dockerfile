@@ -140,7 +140,7 @@ EXPOSE 8080
 
 # Health check for monitoring / Coolify
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -sf http://localhost:8080/api/perf?seconds=5 || exit 1
+    CMD curl -sf http://localhost:8080/health || exit 1
 
 # Default: headless mode with Xvfb (SFML needs a display even when headless)
 # Override entrypoint for non-headless use with a real X server.

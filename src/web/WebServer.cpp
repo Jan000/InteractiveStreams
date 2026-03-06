@@ -79,6 +79,13 @@ void WebServer::setupAuth() {
 }
 
 void WebServer::setupRoutes() {
+    // Health endpoint – intentionally outside /api/ so it bypasses auth.
+    // Used by Docker HEALTHCHECK and Coolify/Traefik to verify the server
+    // is alive without needing an API key.
+    m_server->Get("/health", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
     // Serve static dashboard files
     // Next.js is built with trailingSlash: true, so routes generate
     // <route>/index.html which httplib's mount point serves natively.
@@ -153,7 +160,9 @@ void WebServer::start() {
     m_running = true;
     m_thread = std::thread([this]() {
         spdlog::info("[WebServer] Starting on port {}...", m_port);
-        m_server->listen("0.0.0.0", m_port);
+        if (!m_server->listen("0.0.0.0", m_port)) {
+            spdlog::error("[WebServer] Failed to bind to 0.0.0.0:{}!", m_port);
+        }
     });
     spdlog::info("[WebServer] Admin dashboard available at http://localhost:{}", m_port);
 }
