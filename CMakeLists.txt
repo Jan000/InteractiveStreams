@@ -134,6 +134,14 @@ if(IS_USE_YOUTUBE_GRPC)
     set(gRPC_INSTALL OFF CACHE BOOL "" FORCE)
     set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
 
+    # Disable install targets for sub-projects to avoid CMake export-set
+    # conflicts (protobuf install targets reference abseil targets that are
+    # not exported when built as a sub-project via FetchContent).
+    set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+    set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    set(CARES_INSTALL OFF CACHE BOOL "" FORCE)
+    set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+
     FetchContent_Declare(
         gRPC
         GIT_REPOSITORY https://github.com/grpc/grpc.git
