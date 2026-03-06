@@ -25,7 +25,7 @@ option(IS_USE_YOUTUBE_GRPC
     "Enable YouTube gRPC streaming chat API. Replaces REST polling with a \
 long-lived gRPC stream for near-instant message delivery. First build pulls \
 gRPC + Protobuf + Abseil (~15 min compile on first run, cached afterwards)."
-    OFF)
+    ON)
 
 # ─── Dependencies via FetchContent ────────────────────────────────────────────
 include(FetchContent)
