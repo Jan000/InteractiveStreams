@@ -137,6 +137,7 @@ set(GAME_SOURCES
     src/games/chaos_arena/PowerUp.cpp
     src/games/color_conquest/ColorConquest.cpp
     src/games/color_conquest/Grid.cpp
+    src/games/gravity_brawl/GravityBrawl.cpp
 )
 
 set(PLATFORM_SOURCES
