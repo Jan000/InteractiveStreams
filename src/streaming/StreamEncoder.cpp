@@ -4,6 +4,8 @@
 #include <chrono>
 #include <sstream>
 #include <fstream>
+#include <cerrno>
+#include <cstring>
 
 #ifdef _WIN32
 #define popen _popen
@@ -115,9 +117,18 @@ bool StreamEncoder::start() {
     spdlog::info("[StreamEncoder] Starting FFmpeg: {}", cmdStr);
     spdlog::info("[StreamEncoder] FFmpeg stderr log: {}", m_stderrLogPath);
 
-    m_pipe = popen(cmdStr.c_str(), "wb");
+    // popen mode: Windows _popen needs "wb" for binary; POSIX popen only
+    // accepts "r"/"w"/"re"/"we" (glibc 2.38+ rejects "wb" with EINVAL).
+#ifdef _WIN32
+    const char* popenMode = "wb";
+#else
+    const char* popenMode = "w";
+#endif
+    errno = 0;
+    m_pipe = popen(cmdStr.c_str(), popenMode);
     if (!m_pipe) {
-        spdlog::error("[StreamEncoder] Failed to start FFmpeg process.");
+        spdlog::error("[StreamEncoder] Failed to start FFmpeg process: {} (errno={})",
+                      std::strerror(errno), errno);
         return false;
     }
 
