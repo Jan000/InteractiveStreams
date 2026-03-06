@@ -48,7 +48,11 @@ private:
 
     // Configuration
     std::string m_apiKey;
-    std::string m_oauthToken;   ///< OAuth 2.0 Bearer token (for write operations like liveBroadcasts.update)
+    std::string m_oauthToken;          ///< OAuth 2.0 Bearer access token
+    std::string m_oauthClientId;       ///< Google OAuth Client ID (for token refresh)
+    std::string m_oauthClientSecret;   ///< Google OAuth Client Secret
+    std::string m_oauthRefreshToken;   ///< Refresh token for auto-renewal
+    int64_t     m_oauthTokenExpiry = 0;///< Unix timestamp when access token expires
     std::string m_liveChatId;
     std::string m_channelId;
     int         m_pollIntervalMs = 2000;

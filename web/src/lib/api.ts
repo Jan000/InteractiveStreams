@@ -305,6 +305,16 @@ export const api = {
   storeTwitchToken: (channelId: string, accessToken: string) =>
     post<{ success: boolean }>("/api/auth/twitch/token", { channelId, accessToken }),
 
+  // YouTube OAuth
+  getYouTubeAuthUrl: (channelId: string) =>
+    get<{ url: string; channelId: string }>(`/api/auth/youtube/url?channel_id=${channelId}`),
+  exchangeYouTubeCode: (channelId: string, code: string) =>
+    post<{ success: boolean; has_refresh_token?: boolean; expires_in?: number }>(
+      "/api/auth/youtube/token", { channelId, code }),
+  refreshYouTubeToken: (channelId: string) =>
+    post<{ success: boolean; expires_in?: number }>(
+      `/api/auth/youtube/refresh/${encodeURIComponent(channelId)}`),
+
   // Performance
   getPerf: (seconds = 60) =>
     get<PerfData>(`/api/perf?seconds=${seconds}`),

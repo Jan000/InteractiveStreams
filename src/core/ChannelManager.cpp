@@ -337,12 +337,12 @@ nlohmann::json ChannelManager::getStatus() const {
         // Include settings but redact secrets
         auto settings = e->config.settings;
         if (!settings.is_null()) {
-            if (settings.contains("oauth_token") && !settings["oauth_token"].get<std::string>().empty())
-                settings["oauth_token"] = "***";
-            if (settings.contains("api_key") && !settings["api_key"].get<std::string>().empty())
-                settings["api_key"] = "***";
-            if (settings.contains("stream_key") && !settings["stream_key"].get<std::string>().empty())
-                settings["stream_key"] = "***";
+            for (const char* key : {"oauth_token", "api_key", "stream_key",
+                                    "oauth_client_secret", "oauth_refresh_token"}) {
+                if (settings.contains(key) && settings[key].is_string()
+                    && !settings[key].get<std::string>().empty())
+                    settings[key] = "***";
+            }
         }
         ch["settings"] = settings;
         if (e->platform) ch["details"] = e->platform->getStatus();

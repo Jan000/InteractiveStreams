@@ -1,4 +1,5 @@
 #include "platform/youtube/YoutubePlatform.h"
+#include "platform/youtube/YouTubeApi.h"
 #include <spdlog/spdlog.h>
 #include <SFML/Network.hpp>
 
@@ -16,6 +17,12 @@ void YoutubePlatform::configure(const nlohmann::json& settings) {
     if (settings.contains("live_chat_id"))  m_liveChatId   = settings["live_chat_id"];
     if (settings.contains("channel_id"))    m_channelId    = settings["channel_id"];
     if (settings.contains("poll_interval")) m_pollIntervalMs = settings["poll_interval"];
+
+    // OAuth 2.0 credentials for token refresh
+    if (settings.contains("oauth_client_id"))     m_oauthClientId     = settings["oauth_client_id"];
+    if (settings.contains("oauth_client_secret"))  m_oauthClientSecret = settings["oauth_client_secret"];
+    if (settings.contains("oauth_refresh_token"))  m_oauthRefreshToken = settings["oauth_refresh_token"];
+    if (settings.contains("oauth_token_expiry"))   m_oauthTokenExpiry  = settings["oauth_token_expiry"];
 
     spdlog::info("[YouTube] Configured for channel: {}", m_channelId);
 }
@@ -179,6 +186,8 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"liveChatId", m_liveChatId},
         {"autoDetectedChatId", m_autoDetectedChatId},
         {"hasOauthToken", !m_oauthToken.empty()},
+        {"hasRefreshToken", !m_oauthRefreshToken.empty()},
+        {"oauthTokenExpiry", m_oauthTokenExpiry},
         {"waitingForLivestream", m_connected.load() && m_liveChatId.empty()},
         {"messagesReceived", m_messagesReceived},
         {"messagesSent", m_messagesSent}

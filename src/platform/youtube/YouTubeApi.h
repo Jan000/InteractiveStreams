@@ -30,12 +30,39 @@ public:
                                 const std::string& description = "",
                                 const std::string& categoryId = "");
 
+    // ── OAuth 2.0 helpers ────────────────────────────────────────────────
+
+    /// Result of a token exchange or refresh.
+    struct TokenResult {
+        bool        success      = false;
+        std::string accessToken;
+        std::string refreshToken; ///< Only set on initial exchange (empty on refresh)
+        int         expiresIn    = 0;      ///< Seconds until access_token expires
+        std::string error;
+    };
+
+    /// Exchange an authorization code for an access + refresh token.
+    /// This implements the "Authorization Code" grant of Google's OAuth 2.0 flow.
+    static TokenResult exchangeAuthCode(const std::string& code,
+                                        const std::string& clientId,
+                                        const std::string& clientSecret,
+                                        const std::string& redirectUri);
+
+    /// Refresh an expired access token using a refresh token.
+    static TokenResult refreshAccessToken(const std::string& refreshToken,
+                                          const std::string& clientId,
+                                          const std::string& clientSecret);
+
 private:
     /// Run curl and capture stdout.  Returns empty string on failure.
     static std::string curlRequest(const std::string& method,
                                    const std::string& url,
                                    const std::string& oauthToken,
                                    const std::string& body = "");
+
+    /// Run a curl POST with application/x-www-form-urlencoded body (no Bearer auth).
+    static std::string curlPostForm(const std::string& url,
+                                    const std::string& formBody);
 };
 
 } // namespace is::platform

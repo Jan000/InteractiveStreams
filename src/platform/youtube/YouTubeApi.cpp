@@ -243,4 +243,125 @@ bool YouTubeApi::updateBroadcast(const std::string& oauthToken,
     return false;
 }
 
+// ── OAuth 2.0 helpers ────────────────────────────────────────────────────
+
+std::string YouTubeApi::curlPostForm(const std::string& url,
+                                     const std::string& formBody)
+{
+    std::ostringstream cmd;
+    cmd << "curl -s -X POST"
+        << " \"" << shellEscape(url) << "\""
+        << " -H \"Content-Type: application/x-www-form-urlencoded\""
+        << " -d \"" << shellEscape(formBody) << "\"";
+
+#ifdef _WIN32
+    cmd << " 2>nul";
+#else
+    cmd << " 2>/dev/null";
+#endif
+
+    std::string cmdStr = cmd.str();
+    spdlog::debug("[YouTubeApi] Running: {}", cmdStr);
+
+    FILE* pipe = popen(cmdStr.c_str(), "r");
+    if (!pipe) {
+        spdlog::error("[YouTubeApi] Failed to run curl.");
+        return "";
+    }
+
+    std::string result;
+    std::array<char, 4096> buffer{};
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+        result += buffer.data();
+    }
+    pclose(pipe);
+    return result;
+}
+
+YouTubeApi::TokenResult YouTubeApi::exchangeAuthCode(
+    const std::string& code,
+    const std::string& clientId,
+    const std::string& clientSecret,
+    const std::string& redirectUri)
+{
+    TokenResult tr;
+
+    std::string body =
+        "code="          + urlEncode(code) +
+        "&client_id="    + urlEncode(clientId) +
+        "&client_secret="+ urlEncode(clientSecret) +
+        "&redirect_uri=" + urlEncode(redirectUri) +
+        "&grant_type=authorization_code";
+
+    std::string resp = curlPostForm("https://oauth2.googleapis.com/token", body);
+    if (resp.empty()) {
+        tr.error = "Empty response from Google token endpoint";
+        spdlog::error("[YouTubeApi] {}", tr.error);
+        return tr;
+    }
+
+    try {
+        auto j = nlohmann::json::parse(resp);
+        if (j.contains("error")) {
+            tr.error = j.value("error_description", j.value("error", "unknown"));
+            spdlog::error("[YouTubeApi] Token exchange failed: {}", tr.error);
+            return tr;
+        }
+        tr.accessToken  = j.value("access_token", "");
+        tr.refreshToken = j.value("refresh_token", "");
+        tr.expiresIn    = j.value("expires_in", 0);
+        tr.success      = !tr.accessToken.empty();
+
+        if (tr.success) {
+            spdlog::info("[YouTubeApi] Token exchange successful (expires_in={}s, has_refresh={})",
+                         tr.expiresIn, !tr.refreshToken.empty());
+        }
+    } catch (const std::exception& e) {
+        tr.error = std::string("JSON parse error: ") + e.what();
+        spdlog::error("[YouTubeApi] {}", tr.error);
+    }
+    return tr;
+}
+
+YouTubeApi::TokenResult YouTubeApi::refreshAccessToken(
+    const std::string& refreshToken,
+    const std::string& clientId,
+    const std::string& clientSecret)
+{
+    TokenResult tr;
+
+    std::string body =
+        "refresh_token=" + urlEncode(refreshToken) +
+        "&client_id="    + urlEncode(clientId) +
+        "&client_secret="+ urlEncode(clientSecret) +
+        "&grant_type=refresh_token";
+
+    std::string resp = curlPostForm("https://oauth2.googleapis.com/token", body);
+    if (resp.empty()) {
+        tr.error = "Empty response from Google token endpoint";
+        spdlog::error("[YouTubeApi] {}", tr.error);
+        return tr;
+    }
+
+    try {
+        auto j = nlohmann::json::parse(resp);
+        if (j.contains("error")) {
+            tr.error = j.value("error_description", j.value("error", "unknown"));
+            spdlog::error("[YouTubeApi] Token refresh failed: {}", tr.error);
+            return tr;
+        }
+        tr.accessToken = j.value("access_token", "");
+        tr.expiresIn   = j.value("expires_in", 0);
+        tr.success     = !tr.accessToken.empty();
+
+        if (tr.success) {
+            spdlog::info("[YouTubeApi] Token refresh successful (expires_in={}s)", tr.expiresIn);
+        }
+    } catch (const std::exception& e) {
+        tr.error = std::string("JSON parse error: ") + e.what();
+        spdlog::error("[YouTubeApi] {}", tr.error);
+    }
+    return tr;
+}
+
 } // namespace is::platform

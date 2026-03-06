@@ -76,9 +76,13 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   // YouTube
   const [ytApiKey, setYtApiKey] = useState("");
   const [ytOauthToken, setYtOauthToken] = useState("");
+  const [ytOauthClientId, setYtOauthClientId] = useState("");
+  const [ytOauthClientSecret, setYtOauthClientSecret] = useState("");
+  const [ytOauthRedirectUri, setYtOauthRedirectUri] = useState("");
   const [ytLiveChatId, setYtLiveChatId] = useState("");
   const [ytChannelId, setYtChannelId] = useState("");
   const [ytPollInterval, setYtPollInterval] = useState(2000);
+  const [ytAuthLoading, setYtAuthLoading] = useState(false);
   // Local
   const [consoleInput, setConsoleInput] = useState(true);
 
@@ -181,6 +185,65 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
     }
   };
 
+  // Listen for YouTube OAuth success from popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "youtube-oauth") return;
+      if (event.data.channelId !== channel.id) return;
+
+      setYtAuthLoading(false);
+      if (event.data.success) {
+        toast.success("YouTube authenticated! Tokens stored.");
+        setDirty(false);
+        onRefresh?.();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [channel.id, onRefresh]);
+
+  const handleYouTubeLogin = async () => {
+    // Save current settings first so the backend has client_id/secret
+    setSaving(true);
+    try {
+      await api.updateChannel(channel.id, {
+        platform,
+        name,
+        enabled,
+        settings: buildSettings(),
+      });
+      setDirty(false);
+    } catch (e) {
+      setSaving(false);
+      toast.error("Failed to save settings before starting OAuth.");
+      return;
+    }
+    setSaving(false);
+
+    setYtAuthLoading(true);
+    try {
+      const { url } = await api.getYouTubeAuthUrl(channel.id);
+      const w = 500, h = 700;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      const popup = window.open(
+        url,
+        "youtube-oauth",
+        `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no`
+      );
+      const timer = setInterval(() => {
+        if (popup?.closed) {
+          clearInterval(timer);
+          setYtAuthLoading(false);
+        }
+      }, 500);
+    } catch (e) {
+      setYtAuthLoading(false);
+      toast.error(e instanceof Error ? e.message : "Failed to start YouTube login");
+    }
+  };
+
   // Re-sync from server when channel data changes (polling)
   useEffect(() => {
     if (!dirty) {
@@ -202,6 +265,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       // YouTube
       setYtApiKey((s.api_key as string) ?? "");
       setYtOauthToken((s.oauth_token as string) ?? "");
+      setYtOauthClientId((s.oauth_client_id as string) ?? "");
+      setYtOauthClientSecret((s.oauth_client_secret as string) ?? "");
+      setYtOauthRedirectUri((s.oauth_redirect_uri as string) ?? "");
       setYtLiveChatId((s.live_chat_id as string) ?? "");
       setYtChannelId((s.channel_id as string) ?? "");
       setYtPollInterval((s.poll_interval as number) ?? 2000);
@@ -237,6 +303,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       return {
         api_key: ytApiKey,
         oauth_token: ytOauthToken,
+        oauth_client_id: ytOauthClientId,
+        oauth_client_secret: ytOauthClientSecret,
+        oauth_redirect_uri: ytOauthRedirectUri,
         live_chat_id: ytLiveChatId,
         channel_id: ytChannelId,
         poll_interval: ytPollInterval,
@@ -615,24 +684,77 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     onChange={(e) => markDirty(setYtApiKey)(e.target.value)}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">
-                    OAuth Token{" "}
+                {/* OAuth 2.0 Credentials */}
+                <div className="space-y-2 rounded border border-dashed p-2">
+                  <Label className="text-[10px] font-medium text-muted-foreground">
+                    OAuth 2.0{" "}
                     <span className="text-muted-foreground/60">(for title/description updates)</span>
                   </Label>
-                  <Input
-                    className="h-8 text-xs"
-                    type="password"
-                    placeholder="ya29.a0..."
-                    value={ytOauthToken}
-                    onChange={(e) => markDirty(setYtOauthToken)(e.target.value)}
-                  />
-                  <p className="text-[9px] text-muted-foreground">
-                    Required for updating stream title &amp; description via YouTube Data API v3.
-                    Needs youtube.force-ssl scope.
-                    {!!(channel.details as Record<string, unknown>)?.hasOauthToken && (
-                      <span className="ml-1 text-green-500">✓ Token set</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Client ID</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="123456...apps.googleusercontent.com"
+                        value={ytOauthClientId}
+                        onChange={(e) => markDirty(setYtOauthClientId)(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Client Secret</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        type="password"
+                        placeholder="GOCSPX-..."
+                        value={ytOauthClientSecret}
+                        onChange={(e) => markDirty(setYtOauthClientSecret)(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">
+                      Redirect URI{" "}
+                      <span className="text-muted-foreground/60">(optional, auto-detected)</span>
+                    </Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder={`${typeof window !== "undefined" ? window.location.origin : ""}/auth/youtube/callback/`}
+                      value={ytOauthRedirectUri}
+                      onChange={(e) => markDirty(setYtOauthRedirectUri)(e.target.value)}
+                    />
+                    <p className="text-[9px] text-muted-foreground">
+                      Must match <em>Authorized redirect URIs</em> in Google Cloud Console.
+                      Leave empty to use the current origin.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1.5 border-red-500/30 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                      disabled={ytAuthLoading || !ytOauthClientId.trim() || !ytOauthClientSecret.trim()}
+                      onClick={handleYouTubeLogin}
+                    >
+                      {ytAuthLoading ? (
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : (
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M23.5 6.2c-.3-1-1-1.8-2-2.1C19.6 3.5 12 3.5 12 3.5s-7.6 0-9.5.6c-1 .3-1.7 1.1-2 2.1C0 8.1 0 12 0 12s0 3.9.5 5.8c.3 1 1 1.8 2 2.1 1.9.6 9.5.6 9.5.6s7.6 0 9.5-.6c1-.3 1.7-1.1 2-2.1.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z" />
+                        </svg>
+                      )}
+                      {ytAuthLoading ? "Waiting…" : "Login with YouTube"}
+                    </Button>
+                    {!!(channel.details as Record<string, unknown>)?.hasRefreshToken && (
+                      <span className="text-[10px] text-green-500">✓ Authorized</span>
                     )}
+                    {!!(channel.details as Record<string, unknown>)?.hasOauthToken &&
+                      !(channel.details as Record<string, unknown>)?.hasRefreshToken && (
+                      <span className="text-[10px] text-yellow-500">⚠ Token set (no refresh)</span>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-muted-foreground">
+                    Grants access to update stream title &amp; description via YouTube Data API v3.
+                    Tokens are stored on the server and auto-refreshed.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

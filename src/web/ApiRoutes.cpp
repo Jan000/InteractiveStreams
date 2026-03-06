@@ -11,6 +11,7 @@
 #include "core/AudioManager.h"
 #include "games/GameRegistry.h"
 #include "platform/twitch/TwitchApi.h"
+#include "platform/youtube/YouTubeApi.h"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -100,7 +101,8 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             // with "***"; don't let that overwrite real values.
             const auto* existing = app.channelManager().getChannelConfig(id);
             if (existing && cfg.settings.is_object() && existing->settings.is_object()) {
-                for (const char* key : {"oauth_token", "api_key", "stream_key"}) {
+                for (const char* key : {"oauth_token", "api_key", "stream_key",
+                                          "oauth_client_secret", "oauth_refresh_token"}) {
                     if (cfg.settings.contains(key)
                         && cfg.settings[key].is_string()
                         && cfg.settings[key].get<std::string>() == "***"
@@ -392,6 +394,8 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
                     if (s.contains("oauth_token")) s["oauth_token"] = "***";
                     if (s.contains("api_key"))     s["api_key"]     = "***";
                     if (s.contains("stream_key"))  s["stream_key"]  = "***";
+                    if (s.contains("oauth_client_secret")) s["oauth_client_secret"] = "***";
+                    if (s.contains("oauth_refresh_token")) s["oauth_refresh_token"] = "***";
                 }
             }
         }
@@ -693,6 +697,173 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         }
 
         res.set_content(result.dump(), "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  YouTube OAuth (Authorization Code Flow)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Returns the Google OAuth 2.0 authorize URL.
+    // The frontend opens this in a popup; Google redirects back with a code.
+    server.Get("/api/auth/youtube/url", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string channelId = req.has_param("channel_id")
+                                    ? req.get_param_value("channel_id") : "";
+
+        std::string clientId;
+        std::string redirectUri;
+        if (!channelId.empty()) {
+            const auto* cfg = app.channelManager().getChannelConfig(channelId);
+            if (cfg && cfg->settings.is_object()) {
+                clientId    = cfg->settings.value("oauth_client_id", "");
+                redirectUri = cfg->settings.value("oauth_redirect_uri", "");
+            }
+        }
+
+        if (clientId.empty()) {
+            res.status = 400;
+            res.set_content(R"({"error":"oauth_client_id not configured – set it in the YouTube channel settings"})",
+                            "application/json");
+            return;
+        }
+
+        // Build redirect URI.  Default: relative path on the same host.
+        if (redirectUri.empty()) {
+            // The frontend must supply an origin or we use a sensible default.
+            redirectUri = "http://localhost:8080/auth/youtube/callback/";
+        }
+
+        // Scopes: read live chat + manage broadcasts (title/description updates)
+        std::string scopes =
+            "https://www.googleapis.com/auth/youtube"
+            "+https://www.googleapis.com/auth/youtube.force-ssl"
+            "+https://www.googleapis.com/auth/youtube.readonly";
+
+        std::string url = "https://accounts.google.com/o/oauth2/v2/auth"
+            "?response_type=code"
+            "&client_id=" + clientId +
+            "&redirect_uri=" + redirectUri +
+            "&scope=" + scopes +
+            "&access_type=offline"
+            "&prompt=consent"
+            "&state=" + channelId;
+
+        res.set_content(nlohmann::json({{"url", url}, {"channelId", channelId}}).dump(),
+                        "application/json");
+    });
+
+    // Exchange the authorization code for tokens (called from the callback page).
+    server.Post("/api/auth/youtube/token", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string channelId = body.value("channelId", "");
+            std::string code      = body.value("code", "");
+
+            if (channelId.empty() || code.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"channelId and code are required"})", "application/json");
+                return;
+            }
+
+            const auto* cfg = app.channelManager().getChannelConfig(channelId);
+            if (!cfg) {
+                res.status = 404;
+                res.set_content(R"({"error":"Channel not found"})", "application/json");
+                return;
+            }
+
+            std::string clientId     = cfg->settings.value("oauth_client_id", "");
+            std::string clientSecret = cfg->settings.value("oauth_client_secret", "");
+            std::string redirectUri  = cfg->settings.value("oauth_redirect_uri",
+                                                            "http://localhost:8080/auth/youtube/callback/");
+
+            if (clientId.empty() || clientSecret.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"oauth_client_id and oauth_client_secret must be set in channel settings"})",
+                                "application/json");
+                return;
+            }
+
+            // Exchange the authorization code for tokens
+            auto tr = platform::YouTubeApi::exchangeAuthCode(code, clientId, clientSecret, redirectUri);
+
+            if (!tr.success) {
+                res.status = 400;
+                res.set_content(nlohmann::json({{"error", tr.error}}).dump(), "application/json");
+                return;
+            }
+
+            // Store tokens in channel settings
+            core::ChannelConfig updated = *cfg;
+            if (!updated.settings.is_object()) updated.settings = nlohmann::json::object();
+            updated.settings["oauth_token"]         = tr.accessToken;
+            updated.settings["oauth_refresh_token"]  = tr.refreshToken;
+            updated.settings["oauth_token_expiry"]   = static_cast<int64_t>(std::time(nullptr)) + tr.expiresIn;
+            app.channelManager().updateChannel(channelId, updated);
+            app.persistChannels();
+
+            // Auto-connect the channel
+            app.channelManager().connectChannel(channelId);
+
+            // Trigger platform info update on related streams
+            for (auto* si : app.streamManager().allStreams()) {
+                const auto& ids = si->config().channelIds;
+                if (std::find(ids.begin(), ids.end(), channelId) != ids.end()) {
+                    si->triggerPlatformInfoUpdate();
+                }
+            }
+
+            spdlog::info("[API] YouTube OAuth token stored for channel '{}'", channelId);
+            res.set_content(nlohmann::json({
+                {"success", true},
+                {"has_refresh_token", !tr.refreshToken.empty()},
+                {"expires_in", tr.expiresIn}
+            }).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // Refresh the YouTube access token using the stored refresh_token.
+    server.Post(R"(/api/auth/youtube/refresh/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string channelId = pathParam(req);
+        const auto* cfg = app.channelManager().getChannelConfig(channelId);
+        if (!cfg || cfg->platform != "youtube") {
+            res.status = 404;
+            res.set_content(R"({"error":"YouTube channel not found"})", "application/json");
+            return;
+        }
+
+        std::string refreshToken = cfg->settings.value("oauth_refresh_token", "");
+        std::string clientId     = cfg->settings.value("oauth_client_id", "");
+        std::string clientSecret = cfg->settings.value("oauth_client_secret", "");
+
+        if (refreshToken.empty() || clientId.empty() || clientSecret.empty()) {
+            res.status = 400;
+            res.set_content(R"({"error":"Missing refresh_token, client_id, or client_secret"})",
+                            "application/json");
+            return;
+        }
+
+        auto tr = platform::YouTubeApi::refreshAccessToken(refreshToken, clientId, clientSecret);
+        if (!tr.success) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", tr.error}}).dump(), "application/json");
+            return;
+        }
+
+        // Update the stored access token
+        core::ChannelConfig updated = *cfg;
+        updated.settings["oauth_token"]       = tr.accessToken;
+        updated.settings["oauth_token_expiry"] = static_cast<int64_t>(std::time(nullptr)) + tr.expiresIn;
+        app.channelManager().updateChannel(channelId, updated);
+        app.persistChannels();
+
+        spdlog::info("[API] YouTube OAuth token refreshed for channel '{}'", channelId);
+        res.set_content(nlohmann::json({
+            {"success", true},
+            {"expires_in", tr.expiresIn}
+        }).dump(), "application/json");
     });
 
     // ══════════════════════════════════════════════════════════════════════
