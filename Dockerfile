@@ -32,24 +32,40 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake git ca-certificates mold \
+    build-essential cmake git ca-certificates mold ccache \
     libx11-dev libxrandr-dev libxcursor-dev libxi-dev \
     libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev
 
+# ── ccache: dramatically speeds up recompilation ──────────────────────────
+# ccache intercepts compiler calls and returns cached results when the
+# source + flags haven't changed.  Even when Docker invalidates the build
+# layer (e.g. because src/ changed), ccache still has the compiled objects
+# for all unchanged translation units.  This turns a 15-min full rebuild
+# into seconds for typical one-file changes.
+ENV CCACHE_DIR=/ccache
+ENV CCACHE_MAXSIZE=2G
+ENV CCACHE_COMPRESS=1
+ENV CMAKE_C_COMPILER_LAUNCHER=ccache
+ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
+
 WORKDIR /app
 
-# Copy all sources (src/ must exist at configure time for add_executable validation)
+# ── Step 1: CMake configure (cached when CMakeLists.txt unchanged) ────────
+# Copy only build-system files first so the configure layer is cached
+# independently of source code changes.
 COPY CMakeLists.txt CMakePresets.json ./
+# src/ must exist at configure time for add_executable validation,
+# but we only need the directory structure and file list – not contents.
+# Unfortunately CMake validates source file existence, so we copy everything.
 COPY src/ src/
 COPY config/ config/
 COPY assets/ assets/
 COPY --from=dashboard-builder /app/web/out/ web/out/
 
-# Configure + Build with FetchContent cache mount.
+# Configure with FetchContent cache mount.
 # FETCHCONTENT_BASE_DIR points to a persistent BuildKit cache volume so that
-# all external dependencies (SFML, Box2D, spdlog, etc.) are downloaded and
-# compiled ONCE and reused across every subsequent build – even when src/ changes.
-# Only the application code itself is re-compiled on source changes.
+# all external dependencies (SFML, Box2D, spdlog, gRPC, etc.) are downloaded
+# and compiled ONCE and reused across every subsequent build.
 RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
     cmake -B build \
           -DCMAKE_BUILD_TYPE=Release \
@@ -57,8 +73,16 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
           -DFETCHCONTENT_BASE_DIR=/fetchcontent-cache \
           -DSFML_BUILD_SHARED_LIBS=OFF \
           -DBUILD_SHARED_LIBS=OFF \
-          -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" \
-    && cmake --build build --config Release -j2
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold"
+
+# ── Step 2: Build (ccache reuses unchanged object files across rebuilds) ──
+# The ccache mount persists compiled objects between Docker builds.
+# Combined with FetchContent cache, only actually-changed TUs are recompiled.
+RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
+    --mount=type=cache,id=is-ccache,target=/ccache \
+    cmake --build build --config Release -j$(nproc)
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM ubuntu:24.04 AS runtime
