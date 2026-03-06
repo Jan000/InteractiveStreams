@@ -101,13 +101,13 @@ bool StreamEncoder::start() {
         << " -c:v " << m_codec
         << " -pix_fmt yuv420p"
         << " -preset " << m_preset
-        << " -threads 0"         // Use all available CPU cores for encoding
+        << " -profile:v baseline"  // Simplest/fastest H.264 profile
+        << " -threads 0"           // Use all available CPU cores
         << " -b:v " << m_bitrate << "k"
         << " -maxrate " << static_cast<int>(m_bitrate * 1.5) << "k"
         << " -bufsize " << m_bitrate * 2 << "k"
-        << " -g " << m_fps * 2  // Keyframe interval
-        << " -tune zerolatency"  // Low-latency encoding for streaming
-        << " -x264-params \"sliced-threads=1:rc-lookahead=0\""  // Threaded slices for speed
+        << " -g " << m_fps * 2      // Keyframe interval
+        << " -tune zerolatency"     // Low-latency: sliced-threads + no B-frames + no lookahead
         // Audio encoding (silence)
         << " -c:a aac -b:a 128k -ar 44100"
         << " -shortest"  // Stop when the shortest input (video) ends
@@ -133,6 +133,10 @@ bool StreamEncoder::start() {
                       std::strerror(errno), errno);
         return false;
     }
+
+    // Set a large stdio buffer to reduce syscall overhead.
+    // Default pipe buffer is tiny (4-8 KB); each frame is ~8 MB RGBA at 1080x1920.
+    setvbuf(m_pipe, nullptr, _IOFBF, 4 * 1024 * 1024); // 4 MB buffered I/O
 
     m_running = true;
     m_thread = std::thread(&StreamEncoder::encoderThread, this);
@@ -186,8 +190,14 @@ void StreamEncoder::encodeFrame(const sf::Uint8* pixelData) {
 void StreamEncoder::encoderThread() {
     spdlog::info("[StreamEncoder] Encoder thread started.");
 
+    // Local buffer so we can release the mutex before the (potentially slow)
+    // pipe fwrite.  This way the main thread can always overwrite the shared
+    // m_frameBuffer without blocking on pipe I/O.
+    std::vector<sf::Uint8> localBuffer(m_frameBuffer.size());
+
     auto lastFpsTime = std::chrono::steady_clock::now();
     size_t fpsFrameCount = 0;
+    size_t droppedFrames  = 0;
 
     while (m_running) {
         std::unique_lock<std::mutex> lock(m_mutex);
@@ -196,13 +206,18 @@ void StreamEncoder::encoderThread() {
         if (!m_running) break;
         if (!m_frameReady) continue;
 
-        // Write frame to FFmpeg's stdin
+        // Grab the frame and release the lock immediately — the heavy
+        // fwrite must happen without blocking the main thread.
+        std::memcpy(localBuffer.data(), m_frameBuffer.data(), localBuffer.size());
+        m_frameReady = false;
+        lock.unlock();
+
+        // Write frame to FFmpeg's stdin (outside lock)
         if (m_pipe) {
-            size_t frameSize = m_frameBuffer.size();
-            size_t written = fwrite(m_frameBuffer.data(), 1, frameSize, m_pipe);
+            size_t frameSize = localBuffer.size();
+            size_t written = fwrite(localBuffer.data(), 1, frameSize, m_pipe);
 
             if (written != frameSize) {
-                // Check if the pipe is broken (FFmpeg exited)
                 if (written == 0 || ferror(m_pipe)) {
                     spdlog::error("[StreamEncoder] FFmpeg pipe broken (wrote {}/{} bytes). "
                                   "FFmpeg likely exited – check {}.",
@@ -212,26 +227,38 @@ void StreamEncoder::encoderThread() {
                     break;
                 }
                 spdlog::warn("[StreamEncoder] Incomplete frame write: {}/{}", written, frameSize);
-            } else {
-                fflush(m_pipe);
             }
+            // NOTE: no fflush — the 4 MB setvbuf handles batching; fflush
+            //       after every ~8 MB frame would force a synchronous kernel
+            //       write and destroy pipe throughput.
         }
-
-        m_frameReady = false;
-        lock.unlock();
 
         m_frameCount++;
         fpsFrameCount++;
+
+        // Track frame drops (main thread overwrote buffer while we were writing)
+        {
+            std::lock_guard<std::mutex> g(m_mutex);
+            if (m_frameReady) droppedFrames++;
+        }
 
         // Calculate FPS every second
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration<double>(now - lastFpsTime).count();
         if (elapsed >= 1.0) {
             m_currentFps = static_cast<float>(fpsFrameCount / elapsed);
+            if (droppedFrames > 0) {
+                spdlog::debug("[StreamEncoder] {:.1f} encode-fps, {} frame(s) dropped in last {:.1f}s",
+                              m_currentFps.load(), droppedFrames, elapsed);
+                droppedFrames = 0;
+            }
             fpsFrameCount = 0;
             lastFpsTime = now;
         }
     }
+
+    // Flush remaining buffered data before closing the pipe
+    if (m_pipe) fflush(m_pipe);
 
     spdlog::info("[StreamEncoder] Encoder thread exiting.");
 }
