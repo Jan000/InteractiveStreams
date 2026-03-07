@@ -117,6 +117,10 @@ struct StreamConfig {
 
     // ── Vote overlay font scale ─────────────────────────────────────────
     float  voteOverlayFontScale  = 1.0f;
+
+    // ── Per-stream enabled games (for vote/random mode) ─────────────────
+    /// List of game IDs that can be selected. Empty = all games enabled.
+    std::vector<std::string> enabledGames;
 };
 
 /// A single stream instance – encapsulates game, off-screen render target,

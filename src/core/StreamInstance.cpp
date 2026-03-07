@@ -318,6 +318,10 @@ void StreamInstance::handleVoteCommand(const std::string& userId,
     if (!m_voteState.active) return;
     if (!games::GameRegistry::instance().has(gameName)) return;
 
+    // Reject vote for disabled games
+    auto available = getAvailableGameIds();
+    if (std::find(available.begin(), available.end(), gameName) == available.end()) return;
+
     // Reject vote for games exceeding player limit
     auto limitIt = m_config.gamePlayerLimits.find(gameName);
     if (limitIt != m_config.gamePlayerLimits.end() && limitIt->second > 0) {
@@ -371,7 +375,21 @@ void StreamInstance::restartCurrentGame() {
 }
 
 std::vector<std::string> StreamInstance::getAvailableGameIds() const {
-    return games::GameRegistry::instance().list();
+    auto allGames = games::GameRegistry::instance().list();
+
+    // Filter by enabledGames if configured
+    if (!m_config.enabledGames.empty()) {
+        std::vector<std::string> filtered;
+        for (const auto& id : allGames) {
+            if (std::find(m_config.enabledGames.begin(),
+                          m_config.enabledGames.end(), id) != m_config.enabledGames.end()) {
+                filtered.push_back(id);
+            }
+        }
+        return filtered.empty() ? allGames : filtered;
+    }
+
+    return allGames;
 }
 
 // ── Vote overlay rendering ───────────────────────────────────────────────────
@@ -1149,6 +1167,10 @@ nlohmann::json StreamInstance::toJson() const {
     // Vote overlay font scale
     j["vote_overlay_font_scale"]   = m_config.voteOverlayFontScale;
 
+    // Enabled games list
+    if (!m_config.enabledGames.empty())
+        j["enabled_games"] = m_config.enabledGames;
+
     return j;
 }
 
@@ -1242,6 +1264,12 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
 
     // Vote overlay font scale
     c.voteOverlayFontScale = j.value("vote_overlay_font_scale", 1.0f);
+
+    // Enabled games list (for vote/random mode filtering)
+    if (j.contains("enabled_games") && j["enabled_games"].is_array()) {
+        for (const auto& g : j["enabled_games"])
+            c.enabledGames.push_back(g.get<std::string>());
+    }
 
     return c;
 }
