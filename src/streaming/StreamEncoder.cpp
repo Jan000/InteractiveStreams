@@ -1,29 +1,44 @@
 #include "streaming/StreamEncoder.h"
 #include "core/Config.h"
+#include "core/AudioMixer.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <sstream>
 #include <fstream>
 #include <cerrno>
 #include <cstring>
+#include <random>
 
 #ifdef _WIN32
 #define popen _popen
 #define pclose _pclose
+#else
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace is::streaming {
 
 StreamEncoder::StreamEncoder(core::Config& config)
 {
-    m_ffmpegPath = config.get<std::string>("streaming.ffmpeg_path", "ffmpeg");
-    m_outputUrl  = config.get<std::string>("streaming.output_url", "");
-    m_width      = config.get<int>("rendering.width", 1080);
-    m_height     = config.get<int>("rendering.height", 1920);
-    m_fps        = config.get<int>("streaming.fps", 30);
-    m_bitrate    = config.get<int>("streaming.bitrate_kbps", 4500);
-    m_preset     = config.get<std::string>("streaming.preset", "ultrafast");
-    m_codec      = config.get<std::string>("streaming.codec", "libx264");
+    m_ffmpegPath       = config.get<std::string>("streaming.ffmpeg_path", "ffmpeg");
+    m_outputUrl        = config.get<std::string>("streaming.output_url", "");
+    m_width            = config.get<int>("rendering.width", 1080);
+    m_height           = config.get<int>("rendering.height", 1920);
+    m_fps              = config.get<int>("streaming.fps", 30);
+    m_bitrate          = config.get<int>("streaming.bitrate_kbps", 6000);
+    m_preset           = config.get<std::string>("streaming.preset", "ultrafast");
+    m_codec            = config.get<std::string>("streaming.codec", "libx264");
+    m_profile          = config.get<std::string>("streaming.profile", "baseline");
+    m_tune             = config.get<std::string>("streaming.tune", "zerolatency");
+    m_keyframeInterval = config.get<int>("streaming.keyframe_interval", 2);
+    m_threads          = config.get<int>("streaming.threads", 0);
+    m_maxrateFactor    = config.get<float>("streaming.maxrate_factor", 1.2f);
+    m_bufsizeFactor    = config.get<float>("streaming.bufsize_factor", 1.0f);
+    m_audioBitrate     = config.get<int>("streaming.audio_bitrate", 128);
+    m_audioSampleRate  = config.get<int>("streaming.audio_sample_rate", 44100);
+    m_audioCodec       = config.get<std::string>("streaming.audio_codec", "aac");
+    m_audioMixer       = nullptr;
 
     m_frameBuffer.resize(m_width * m_height * 4);  // RGBA
 
@@ -33,24 +48,128 @@ StreamEncoder::StreamEncoder(core::Config& config)
 
 StreamEncoder::StreamEncoder(const EncoderSettings& s)
 {
-    m_ffmpegPath = s.ffmpegPath;
-    m_outputUrl  = s.outputUrl;
-    m_width      = s.width;
-    m_height     = s.height;
-    m_fps        = s.fps;
-    m_bitrate    = s.bitrate;
-    m_preset     = s.preset;
-    m_codec      = s.codec;
+    m_ffmpegPath       = s.ffmpegPath;
+    m_outputUrl        = s.outputUrl;
+    m_width            = s.width;
+    m_height           = s.height;
+    m_fps              = s.fps;
+    m_bitrate          = s.bitrate;
+    m_preset           = s.preset;
+    m_codec            = s.codec;
+    m_profile          = s.profile;
+    m_tune             = s.tune;
+    m_keyframeInterval = s.keyframeInterval;
+    m_threads          = s.threads;
+    m_maxrateFactor    = s.maxrateFactor;
+    m_bufsizeFactor    = s.bufsizeFactor;
+    m_audioBitrate     = s.audioBitrate;
+    m_audioSampleRate  = s.audioSampleRate;
+    m_audioCodec       = s.audioCodec;
+    m_audioMixer       = s.audioMixer;
 
     m_frameBuffer.resize(m_width * m_height * 4);
 
-    spdlog::info("[StreamEncoder] Configured: {}x{} @ {} fps, {} kbps, codec: {}",
-        m_width, m_height, m_fps, m_bitrate, m_codec);
+    spdlog::info("[StreamEncoder] Configured: {}x{} @ {} fps, {} kbps, codec: {}, audio: {}",
+        m_width, m_height, m_fps, m_bitrate, m_codec,
+        m_audioMixer ? "mixer" : "silent");
 }
 
 StreamEncoder::~StreamEncoder() {
     stop();
 }
+
+// ── Named pipe for audio ─────────────────────────────────────────────────────
+
+std::string StreamEncoder::createAudioPipe() {
+    // Generate a unique pipe name
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_int_distribution<int> dist(10000, 99999);
+    int id = dist(rng);
+
+#ifdef _WIN32
+    std::string pipePath = "\\\\.\\pipe\\is_audio_" + std::to_string(id);
+    m_audioPipeHandle = CreateNamedPipeA(
+        pipePath.c_str(),
+        PIPE_ACCESS_OUTBOUND,                    // Write-only
+        PIPE_TYPE_BYTE | PIPE_WAIT,              // Byte mode, blocking
+        1,                                        // Max instances
+        1024 * 1024,                              // Output buffer 1 MB
+        0,                                        // Input buffer (unused)
+        0,                                        // Default timeout
+        nullptr                                   // Default security
+    );
+    if (m_audioPipeHandle == INVALID_HANDLE_VALUE) {
+        spdlog::error("[StreamEncoder] Failed to create named pipe: {} (err={})",
+                      pipePath, GetLastError());
+        return {};
+    }
+    spdlog::info("[StreamEncoder] Created audio pipe: {}", pipePath);
+#else
+    std::string pipePath = "/tmp/is_audio_" + std::to_string(id);
+    // Remove stale pipe if it exists
+    ::unlink(pipePath.c_str());
+    if (::mkfifo(pipePath.c_str(), 0644) != 0) {
+        spdlog::error("[StreamEncoder] Failed to create FIFO: {} ({})",
+                      pipePath, std::strerror(errno));
+        return {};
+    }
+    spdlog::info("[StreamEncoder] Created audio FIFO: {}", pipePath);
+#endif
+
+    m_audioPipePath = pipePath;
+    return pipePath;
+}
+
+bool StreamEncoder::openAudioPipeForWriting() {
+#ifdef _WIN32
+    if (m_audioPipeHandle == INVALID_HANDLE_VALUE) return false;
+    // Wait for FFmpeg to connect (blocks)
+    if (!ConnectNamedPipe(m_audioPipeHandle, nullptr)) {
+        DWORD err = GetLastError();
+        if (err != ERROR_PIPE_CONNECTED) {
+            spdlog::error("[StreamEncoder] ConnectNamedPipe failed: {}", err);
+            return false;
+        }
+    }
+    spdlog::info("[StreamEncoder] FFmpeg connected to audio pipe.");
+    return true;
+#else
+    // On Linux, open() on a FIFO blocks until a reader connects (FFmpeg)
+    m_audioPipeFile = fopen(m_audioPipePath.c_str(), "wb");
+    if (!m_audioPipeFile) {
+        spdlog::error("[StreamEncoder] Failed to open FIFO for writing: {} ({})",
+                      m_audioPipePath, std::strerror(errno));
+        return false;
+    }
+    setvbuf(m_audioPipeFile, nullptr, _IOFBF, 256 * 1024); // 256 KB buffer
+    spdlog::info("[StreamEncoder] FFmpeg connected to audio FIFO.");
+    return true;
+#endif
+}
+
+void StreamEncoder::closeAudioPipe() {
+#ifdef _WIN32
+    if (m_audioPipeHandle != INVALID_HANDLE_VALUE) {
+        FlushFileBuffers(m_audioPipeHandle);
+        DisconnectNamedPipe(m_audioPipeHandle);
+        CloseHandle(m_audioPipeHandle);
+        m_audioPipeHandle = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (m_audioPipeFile) {
+        fflush(m_audioPipeFile);
+        fclose(m_audioPipeFile);
+        m_audioPipeFile = nullptr;
+    }
+    if (!m_audioPipePath.empty()) {
+        ::unlink(m_audioPipePath.c_str());
+    }
+#endif
+    m_audioPipePath.clear();
+}
+
+// ── Start / Stop ─────────────────────────────────────────────────────────────
 
 bool StreamEncoder::start() {
     if (m_outputUrl.empty()) {
@@ -83,36 +202,59 @@ bool StreamEncoder::start() {
         m_stderrLogPath = (logDir / "ffmpeg_stderr.log").string();
     }
 
-    // Build FFmpeg command (redirect stderr to a log file for diagnostics)
+    // Create audio named pipe if we have a mixer
+    std::string audioPipePath;
+    if (m_audioMixer) {
+        audioPipePath = createAudioPipe();
+        if (audioPipePath.empty()) {
+            spdlog::warn("[StreamEncoder] Audio pipe creation failed – falling back to silent audio.");
+            m_audioMixer = nullptr; // fallback
+        }
+    }
+
+    // Build FFmpeg command
     std::ostringstream cmd;
     cmd << m_ffmpegPath
         << " -y"
         << " -loglevel warning"
-        // Video input: raw YUV420P frames from stdin (converted by encoder thread)
+        // Video input: raw YUV420P frames from stdin
         << " -f rawvideo"
         << " -vcodec rawvideo"
         << " -pix_fmt yuv420p"
         << " -s " << m_width << "x" << m_height
         << " -r " << m_fps
-        << " -i -"
-        // Silent audio input (many platforms like YouTube reject video-only RTMP)
-        << " -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100"
-        // Video encoding — input is already yuv420p so no swscale conversion needed
-        << " -c:v " << m_codec
+        << " -i -";
+
+    // Audio input: either named pipe (real audio) or anullsrc (silence)
+    if (m_audioMixer && !audioPipePath.empty()) {
+        cmd << " -thread_queue_size 512"
+            << " -f s16le"
+            << " -ar " << m_audioSampleRate
+            << " -ac 2"
+            << " -i \"" << audioPipePath << "\"";
+    } else {
+        cmd << " -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=" << m_audioSampleRate;
+    }
+
+    // Video encoding — input is already yuv420p so no swscale conversion needed
+    cmd << " -c:v " << m_codec
         << " -preset " << m_preset
-        << " -profile:v baseline"    // Simplest/fastest H.264 profile
-        << " -threads 0"             // Use all available CPU cores
+        << " -profile:v " << m_profile
+        << " -threads " << m_threads
         << " -b:v " << m_bitrate << "k"
-        << " -maxrate " << static_cast<int>(m_bitrate * 1.2) << "k"
-        << " -bufsize " << m_bitrate << "k"   // Tight VBV for consistent bitrate
-        << " -g " << m_fps * 2        // Keyframe interval
-        << " -tune zerolatency"       // Low-latency encoding
-        << " -x264-params \"sliced-threads=1\""  // Force slice-based multi-core encoding
-        // Audio encoding (silence)
-        << " -c:a aac -b:a 128k -ar 44100"
-        // Explicitly map video from stdin and audio from anullsrc,
-        // so both are guaranteed to appear in the FLV output.
-        << " -map 0:v -map 1:a"
+        << " -maxrate " << static_cast<int>(m_bitrate * m_maxrateFactor) << "k"
+        << " -bufsize " << static_cast<int>(m_bitrate * m_bufsizeFactor) << "k"
+        << " -g " << m_fps * m_keyframeInterval
+        << " -tune " << m_tune
+        << " -x264-params \"sliced-threads=1\"";
+
+    // Audio encoding
+    cmd << " -c:a " << m_audioCodec
+        << " -b:a " << m_audioBitrate << "k"
+        << " -ar " << m_audioSampleRate;
+
+    // Explicit stream mapping
+    cmd << " -map 0:v -map 1:a"
         << " -f flv"
         << " \"" << m_outputUrl << "\""
         << " 2>\"" << m_stderrLogPath << "\"";
@@ -133,15 +275,20 @@ bool StreamEncoder::start() {
     if (!m_pipe) {
         spdlog::error("[StreamEncoder] Failed to start FFmpeg process: {} (errno={})",
                       std::strerror(errno), errno);
+        closeAudioPipe();
         return false;
     }
 
     // Set a large stdio buffer to reduce syscall overhead.
-    // Each YUV420P frame is ~3.1 MB at 1080x1920 (vs 6.2 MB RGB24, 8.3 MB RGBA).
     setvbuf(m_pipe, nullptr, _IOFBF, 2 * 1024 * 1024); // 2 MB buffered I/O
 
     m_running = true;
     m_thread = std::thread(&StreamEncoder::encoderThread, this);
+
+    // Start audio thread if we have a mixer and pipe
+    if (m_audioMixer && !m_audioPipePath.empty()) {
+        m_audioThread = std::thread(&StreamEncoder::audioThread, this);
+    }
 
     spdlog::info("[StreamEncoder] Encoding started.");
     return true;
@@ -156,6 +303,13 @@ void StreamEncoder::stop() {
 
     if (m_thread.joinable()) {
         m_thread.join();
+    }
+
+    // Close audio pipe first (unblocks FFmpeg's audio read → allows clean exit)
+    closeAudioPipe();
+
+    if (m_audioThread.joinable()) {
+        m_audioThread.join();
     }
 
     if (m_pipe) {
@@ -320,6 +474,61 @@ void StreamEncoder::rgbaToYuv420p(const sf::Uint8* rgba, sf::Uint8* yuv,
             yRow1 += 2;
         }
     }
+}
+
+void StreamEncoder::audioThread() {
+    spdlog::info("[StreamEncoder] Audio thread started – waiting for FFmpeg to connect…");
+
+    // Wait for FFmpeg to open the named pipe (blocks)
+    if (!openAudioPipeForWriting()) {
+        spdlog::error("[StreamEncoder] Audio pipe connection failed – no audio in stream.");
+        return;
+    }
+
+    spdlog::info("[StreamEncoder] Audio thread running.");
+
+    // Write audio in 20 ms chunks at real-time pace
+    const int chunkFrames  = m_audioSampleRate / 50;  // 882 frames @ 44100 Hz
+    const int chunkSamples = chunkFrames * 2;          // stereo
+    const size_t chunkBytes = chunkSamples * sizeof(sf::Int16);
+    std::vector<sf::Int16> buffer(chunkSamples);
+
+    auto nextWriteTime = std::chrono::steady_clock::now();
+    const auto chunkDuration = std::chrono::microseconds(20000); // 20 ms
+
+    while (m_running) {
+        // Pull mixed audio from the AudioMixer
+        m_audioMixer->pullSamples(buffer.data(), chunkFrames);
+
+        // Write raw PCM to the audio pipe
+#ifdef _WIN32
+        DWORD written = 0;
+        BOOL ok = WriteFile(m_audioPipeHandle, buffer.data(),
+                            static_cast<DWORD>(chunkBytes), &written, nullptr);
+        if (!ok || written != chunkBytes) {
+            if (m_running) {
+                spdlog::warn("[StreamEncoder] Audio pipe write failed (err={}). "
+                             "FFmpeg may have exited.", GetLastError());
+            }
+            break;
+        }
+#else
+        size_t written = fwrite(buffer.data(), 1, chunkBytes, m_audioPipeFile);
+        if (written != chunkBytes) {
+            if (m_running) {
+                spdlog::warn("[StreamEncoder] Audio pipe write failed ({}/{}). "
+                             "FFmpeg may have exited.", written, chunkBytes);
+            }
+            break;
+        }
+#endif
+
+        // Pace to real-time
+        nextWriteTime += chunkDuration;
+        std::this_thread::sleep_until(nextWriteTime);
+    }
+
+    spdlog::info("[StreamEncoder] Audio thread exiting.");
 }
 
 } // namespace is::streaming

@@ -9,6 +9,7 @@
 #include "core/PerfMonitor.h"
 #include "core/SettingsDatabase.h"
 #include "core/AudioManager.h"
+#include "core/AudioMixer.h"
 #include "games/GameRegistry.h"
 #include "platform/twitch/TwitchApi.h"
 #include "platform/youtube/YouTubeApi.h"
@@ -1102,12 +1103,19 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             return;
         }
         auto& audio = app.audioManager();
-        if (body.contains("musicVolume"))
+        auto& mixer = app.audioMixer();
+        if (body.contains("musicVolume")) {
             audio.setMusicVolume(body["musicVolume"].get<float>());
-        if (body.contains("sfxVolume"))
+            mixer.setMusicVolume(body["musicVolume"].get<float>());
+        }
+        if (body.contains("sfxVolume")) {
             audio.setSfxVolume(body["sfxVolume"].get<float>());
-        if (body.contains("muted"))
+            mixer.setSfxVolume(body["sfxVolume"].get<float>());
+        }
+        if (body.contains("muted")) {
             audio.setMuted(body["muted"].get<bool>());
+            mixer.setMuted(body["muted"].get<bool>());
+        }
         if (body.contains("fadeInSeconds"))
             audio.setFadeInDuration(body["fadeInSeconds"].get<float>());
         if (body.contains("fadeOutSeconds"))
@@ -1130,21 +1138,25 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     server.Post("/api/audio/next", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().nextTrack();
+        app.audioMixer().nextTrack();
         res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Post("/api/audio/pause", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().pauseMusic();
+        app.audioMixer().pause();
         res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Post("/api/audio/resume", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().resumeMusic();
+        app.audioMixer().resume();
         res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Post("/api/audio/rescan", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().rescan();
+        app.audioMixer().rescan();
         nlohmann::json j;
         j["success"]    = true;
         j["trackCount"] = app.audioManager().trackCount();

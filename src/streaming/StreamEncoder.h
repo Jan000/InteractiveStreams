@@ -9,7 +9,11 @@
 #include <condition_variable>
 #include <filesystem>
 
-namespace is::core { class Config; }
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+namespace is::core { class Config; class AudioMixer; }
 
 namespace is::streaming {
 
@@ -17,12 +21,26 @@ namespace is::streaming {
 struct EncoderSettings {
     std::string ffmpegPath = "ffmpeg";
     std::string outputUrl;
-    int         width      = 1080;
-    int         height     = 1920;
-    int         fps        = 30;
-    int         bitrate    = 6000;  // kbps (YouTube recommends ~6800 for 1080p@30fps)
-    std::string preset     = "ultrafast";
-    std::string codec      = "libx264";
+    int         width          = 1080;
+    int         height         = 1920;
+    int         fps            = 30;
+    int         bitrate        = 6000;  // kbps (YouTube recommends ~6800 for 1080p@30fps)
+    std::string preset         = "ultrafast";
+    std::string codec          = "libx264";
+    std::string profile        = "baseline"; // H.264 profile: baseline, main, high
+    std::string tune           = "zerolatency";
+    int         keyframeInterval = 2;        // GOP size in seconds
+    int         threads        = 0;          // 0 = auto
+    float       maxrateFactor  = 1.2f;       // maxrate = bitrate * factor
+    float       bufsizeFactor  = 1.0f;       // bufsize = bitrate * factor
+
+    // Audio settings
+    int         audioBitrate   = 128;        // kbps
+    int         audioSampleRate = 44100;
+    std::string audioCodec     = "aac";
+
+    /// If non-null, real game audio is piped from this mixer instead of silence.
+    core::AudioMixer* audioMixer = nullptr;
 };
 
 /// Encodes rendered frames and pipes them to FFmpeg for RTMP streaming.
@@ -62,12 +80,19 @@ public:
 
 private:
     void encoderThread();
+    void audioThread();
 
     /// Convert RGBA pixels to YUV420P planar format (BT.601).
-    /// Reads from `rgba` (width*height*4 bytes), writes to `yuv` (width*height*3/2 bytes).
-    /// The output layout is: Y plane (w*h), U plane (w/2 * h/2), V plane (w/2 * h/2).
     static void rgbaToYuv420p(const sf::Uint8* rgba, sf::Uint8* yuv,
                               int width, int height);
+
+    /// Create a platform-specific named pipe for audio.
+    /// Returns the pipe path that FFmpeg should open as input.
+    std::string createAudioPipe();
+    /// Open the audio named pipe for writing (blocks until FFmpeg connects).
+    bool openAudioPipeForWriting();
+    /// Close and clean up the audio pipe.
+    void closeAudioPipe();
 
     // FFmpeg process
     FILE*         m_pipe     = nullptr;
@@ -79,6 +104,27 @@ private:
     int           m_bitrate;   // kbps
     std::string   m_preset;
     std::string   m_codec;
+    std::string   m_profile;
+    std::string   m_tune;
+    int           m_keyframeInterval;
+    int           m_threads;
+    float         m_maxrateFactor;
+    float         m_bufsizeFactor;
+
+    // Audio settings
+    int           m_audioBitrate;
+    int           m_audioSampleRate;
+    std::string   m_audioCodec;
+    core::AudioMixer* m_audioMixer = nullptr;
+
+    // Audio pipe
+    std::string   m_audioPipePath;
+    std::thread   m_audioThread;
+#ifdef _WIN32
+    HANDLE        m_audioPipeHandle = INVALID_HANDLE_VALUE;
+#else
+    FILE*         m_audioPipeFile   = nullptr;
+#endif
 
     // Threading
     std::atomic<bool>       m_running{false};

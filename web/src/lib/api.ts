@@ -22,6 +22,15 @@ export interface StreamState {
   bitrate: number;
   preset: string;
   codec: string;
+  profile: string;
+  tune: string;
+  keyframeInterval: number;
+  threads: number;
+  maxrateFactor: number;
+  bufsizeFactor: number;
+  audioBitrate: number;
+  audioSampleRate: number;
+  audioCodec: string;
   enabled: boolean;
   // Per-game descriptions and info messages
   gameDescriptions?: Record<string, string>;

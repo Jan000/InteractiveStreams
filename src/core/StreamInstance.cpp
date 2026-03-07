@@ -859,13 +859,29 @@ std::string StreamInstance::startStreaming() {
         std::string fullUrl = key.empty() ? url : url + "/" + key;
 
         streaming::EncoderSettings es;
-        es.outputUrl  = fullUrl;
-        es.width      = width();
-        es.height     = height();
-        es.fps        = m_config.fps;
-        es.bitrate    = m_config.bitrate;
-        es.preset     = m_config.preset;
-        es.codec      = m_config.codec;
+        es.outputUrl        = fullUrl;
+        es.width            = width();
+        es.height           = height();
+        es.fps              = m_config.fps;
+        es.bitrate          = m_config.bitrate;
+        es.preset           = m_config.preset;
+        es.codec            = m_config.codec;
+        es.profile          = m_config.profile;
+        es.tune             = m_config.tune;
+        es.keyframeInterval = m_config.keyframeInterval;
+        es.threads          = m_config.threads;
+        es.maxrateFactor    = m_config.maxrateFactor;
+        es.bufsizeFactor    = m_config.bufsizeFactor;
+        es.audioBitrate     = m_config.audioBitrate;
+        es.audioSampleRate  = m_config.audioSampleRate;
+        es.audioCodec       = m_config.audioCodec;
+
+        // Attach the AudioMixer so game audio is piped to FFmpeg
+        try {
+            es.audioMixer = &Application::instance().audioMixer();
+        } catch (...) {
+            es.audioMixer = nullptr;
+        }
 
         auto enc = std::make_unique<streaming::StreamEncoder>(es);
         enc->start();
@@ -953,6 +969,15 @@ nlohmann::json StreamInstance::getState() const {
     s["bitrate"]    = m_config.bitrate;
     s["preset"]     = m_config.preset;
     s["codec"]      = m_config.codec;
+    s["profile"]    = m_config.profile;
+    s["tune"]       = m_config.tune;
+    s["keyframeInterval"] = m_config.keyframeInterval;
+    s["threads"]    = m_config.threads;
+    s["maxrateFactor"] = m_config.maxrateFactor;
+    s["bufsizeFactor"] = m_config.bufsizeFactor;
+    s["audioBitrate"]    = m_config.audioBitrate;
+    s["audioSampleRate"] = m_config.audioSampleRate;
+    s["audioCodec"]      = m_config.audioCodec;
     s["enabled"]    = m_config.enabled;
 
     // Per-game descriptions & info messages
@@ -1047,6 +1072,15 @@ nlohmann::json StreamInstance::toJson() const {
     j["bitrate_kbps"] = m_config.bitrate;
     j["preset"]       = m_config.preset;
     j["codec"]        = m_config.codec;
+    j["profile"]      = m_config.profile;
+    j["tune"]         = m_config.tune;
+    j["keyframe_interval"] = m_config.keyframeInterval;
+    j["threads"]      = m_config.threads;
+    j["maxrate_factor"] = m_config.maxrateFactor;
+    j["bufsize_factor"] = m_config.bufsizeFactor;
+    j["audio_bitrate"]  = m_config.audioBitrate;
+    j["audio_sample_rate"] = m_config.audioSampleRate;
+    j["audio_codec"]    = m_config.audioCodec;
 
     // Per-game descriptions
     if (!m_config.gameDescriptions.empty())
@@ -1110,9 +1144,18 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
 
     c.enabled   = j.value("enabled", true);
     c.fps       = j.value("fps", 30);
-    c.bitrate   = j.value("bitrate_kbps", 4500);
+    c.bitrate   = j.value("bitrate_kbps", 6000);
     c.preset    = j.value("preset", "ultrafast");
     c.codec     = j.value("codec", "libx264");
+    c.profile   = j.value("profile", "baseline");
+    c.tune      = j.value("tune", "zerolatency");
+    c.keyframeInterval = j.value("keyframe_interval", 2);
+    c.threads   = j.value("threads", 0);
+    c.maxrateFactor = j.value("maxrate_factor", 1.2f);
+    c.bufsizeFactor = j.value("bufsize_factor", 1.0f);
+    c.audioBitrate    = j.value("audio_bitrate", 128);
+    c.audioSampleRate = j.value("audio_sample_rate", 44100);
+    c.audioCodec      = j.value("audio_codec", std::string("aac"));
 
     // Per-game descriptions
     if (j.contains("game_descriptions") && j["game_descriptions"].is_object()) {

@@ -198,6 +198,7 @@ set(CORE_SOURCES
     src/core/PerfMonitor.cpp
     src/core/SettingsDatabase.cpp
     src/core/AudioManager.cpp
+    src/core/AudioMixer.cpp
 )
 
 set(GAME_SOURCES

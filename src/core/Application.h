@@ -14,6 +14,7 @@ class PlayerDatabase;
 class PerfMonitor;
 class SettingsDatabase;
 class AudioManager;
+class AudioMixer;
 
 }
 
@@ -53,6 +54,7 @@ public:
     SettingsDatabase&     settingsDb();
     PerfMonitor&          perfMonitor();
     AudioManager&         audioManager();
+    AudioMixer&           audioMixer();
     rendering::Renderer&  renderer();
     web::WebServer&       webServer();
 

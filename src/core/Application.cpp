@@ -8,6 +8,7 @@
 #include "core/PerfMonitor.h"
 #include "core/SettingsDatabase.h"
 #include "core/AudioManager.h"
+#include "core/AudioMixer.h"
 #include "rendering/Renderer.h"
 #include "web/WebServer.h"
 #include "games/GameRegistry.h"
@@ -32,6 +33,7 @@ struct Application::Impl {
     std::unique_ptr<PlayerDatabase>            playerDatabase;
     std::unique_ptr<PerfMonitor>               perfMonitor;
     std::unique_ptr<AudioManager>              audioManager;
+    std::unique_ptr<AudioMixer>                audioMixer;
     std::unique_ptr<rendering::Renderer>       renderer;
     std::unique_ptr<web::WebServer>            webServer;
 
@@ -125,6 +127,18 @@ void Application::initialize() {
     m_impl->audioManager->playMusic();
     spdlog::info("AudioManager initialised ({} tracks found).",
         m_impl->audioManager->trackCount());
+
+    // ── Audio mixer (for stream encoding) ─────────────────────────────────
+    m_impl->audioMixer = std::make_unique<AudioMixer>();
+    m_impl->audioMixer->scanMusicDirectory("assets/audio");
+    m_impl->audioMixer->setMusicVolume(
+        cfg.get<float>("audio.music_volume", 50.0f));
+    m_impl->audioMixer->setSfxVolume(
+        cfg.get<float>("audio.sfx_volume", 70.0f));
+    m_impl->audioMixer->setMuted(
+        cfg.get<bool>("audio.muted", false));
+    m_impl->audioMixer->play();
+    spdlog::info("AudioMixer initialised for stream encoding.");
 
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
@@ -347,6 +361,7 @@ PlayerDatabase&       Application::playerDatabase() { return *m_impl->playerData
 SettingsDatabase&     Application::settingsDb()     { return *m_impl->settingsDb; }
 PerfMonitor&          Application::perfMonitor()    { return *m_impl->perfMonitor; }
 AudioManager&         Application::audioManager()   { return *m_impl->audioManager; }
+AudioMixer&           Application::audioMixer()     { return *m_impl->audioMixer; }
 rendering::Renderer&  Application::renderer()       { return *m_impl->renderer; }
 web::WebServer&       Application::webServer()      { return *m_impl->webServer; }
 

@@ -91,9 +91,18 @@ export function StreamCard({
   const [fixedGame, setFixedGame] = useState(stream.fixedGame ?? "");
   const [channelIds, setChannelIds] = useState<string[]>(stream.channelIds);
   const [fps, setFps] = useState(stream.fps ?? 30);
-  const [bitrate, setBitrate] = useState(stream.bitrate ?? 4500);
-  const [preset, setPreset] = useState(stream.preset ?? "veryfast");
+  const [bitrate, setBitrate] = useState(stream.bitrate ?? 6000);
+  const [preset, setPreset] = useState(stream.preset ?? "ultrafast");
   const [codec, setCodec] = useState(stream.codec ?? "libx264");
+  const [encoderProfile, setEncoderProfile] = useState(stream.profile ?? "baseline");
+  const [tune, setTune] = useState(stream.tune ?? "zerolatency");
+  const [keyframeInterval, setKeyframeInterval] = useState(stream.keyframeInterval ?? 2);
+  const [threads, setThreads] = useState(stream.threads ?? 0);
+  const [maxrateFactor, setMaxrateFactor] = useState(stream.maxrateFactor ?? 1.2);
+  const [bufsizeFactor, setBufsizeFactor] = useState(stream.bufsizeFactor ?? 1.0);
+  const [audioBitrate, setAudioBitrate] = useState(stream.audioBitrate ?? 128);
+  const [audioSampleRate, setAudioSampleRate] = useState(stream.audioSampleRate ?? 44100);
+  const [audioCodec, setAudioCodec] = useState(stream.audioCodec ?? "aac");
   const [profileId, setProfileId] = useState(stream.profileId ?? "");
 
   // Per-game descriptions and info messages
@@ -167,6 +176,9 @@ export function StreamCard({
     const map: Record<string, unknown> = {
       title, description, resolution, game_mode: gameMode, fixed_game: fixedGame,
       fps, bitrate_kbps: bitrate, preset, codec,
+      profile: encoderProfile, tune, keyframe_interval: keyframeInterval,
+      threads, maxrate_factor: maxrateFactor, bufsize_factor: bufsizeFactor,
+      audio_bitrate: audioBitrate, audio_sample_rate: audioSampleRate, audio_codec: audioCodec,
       scoreboard_top_n: scoreboardTopN, scoreboard_font_size: scoreboardFontSize,
       scoreboard_alltime_title: scoreboardAllTimeTitle, scoreboard_recent_title: scoreboardRecentTitle,
       scoreboard_recent_hours: scoreboardRecentHours, vote_overlay_font_scale: voteOverlayFontScale,
@@ -241,9 +253,18 @@ export function StreamCard({
       setFixedGame(stream.fixedGame ?? "");
       setChannelIds(stream.channelIds);
       setFps(stream.fps ?? 30);
-      setBitrate(stream.bitrate ?? 4500);
-      setPreset(stream.preset ?? "veryfast");
+      setBitrate(stream.bitrate ?? 6000);
+      setPreset(stream.preset ?? "ultrafast");
       setCodec(stream.codec ?? "libx264");
+      setEncoderProfile(stream.profile ?? "baseline");
+      setTune(stream.tune ?? "zerolatency");
+      setKeyframeInterval(stream.keyframeInterval ?? 2);
+      setThreads(stream.threads ?? 0);
+      setMaxrateFactor(stream.maxrateFactor ?? 1.2);
+      setBufsizeFactor(stream.bufsizeFactor ?? 1.0);
+      setAudioBitrate(stream.audioBitrate ?? 128);
+      setAudioSampleRate(stream.audioSampleRate ?? 44100);
+      setAudioCodec(stream.audioCodec ?? "aac");
       setGameDescriptions(stream.gameDescriptions ?? {});
       setGameInfoMessages(stream.gameInfoMessages ?? {});
       setGameInfoIntervals(stream.gameInfoIntervals ?? {});
@@ -287,6 +308,15 @@ export function StreamCard({
         bitrate_kbps: bitrate,
         preset,
         codec,
+        profile: encoderProfile,
+        tune,
+        keyframe_interval: keyframeInterval,
+        threads,
+        maxrate_factor: maxrateFactor,
+        bufsize_factor: bufsizeFactor,
+        audio_bitrate: audioBitrate,
+        audio_sample_rate: audioSampleRate,
+        audio_codec: audioCodec,
         game_descriptions: Object.keys(gameDescriptions).length > 0 ? gameDescriptions : undefined,
         game_info_messages: Object.keys(gameInfoMessages).length > 0 ? gameInfoMessages : undefined,
         game_info_intervals: Object.keys(gameInfoIntervals).length > 0 ? gameInfoIntervals : undefined,
@@ -926,8 +956,10 @@ export function StreamCard({
 
 
             {/* Encoding Settings */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Encoding <ProfileBadge field="fps" /></Label>
+            <div className="space-y-3 rounded-md border p-3">
+              <Label className="text-xs font-semibold">Encoding <ProfileBadge field="fps" /></Label>
+
+              {/* Video — basic row */}
               <div className="grid grid-cols-4 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
@@ -988,6 +1020,147 @@ export function StreamCard({
                       <SelectItem value="h264_nvenc">h264_nvenc</SelectItem>
                       <SelectItem value="hevc_nvenc">hevc_nvenc</SelectItem>
                       <SelectItem value="h264_qsv">h264_qsv</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Video — advanced row */}
+              <div className="grid grid-cols-4 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Profile <ProfileBadge field="profile" />
+                  </Label>
+                  <Select value={encoderProfile} onValueChange={set(setEncoderProfile)}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="baseline">baseline</SelectItem>
+                      <SelectItem value="main">main</SelectItem>
+                      <SelectItem value="high">high</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Tune <ProfileBadge field="tune" />
+                  </Label>
+                  <Select value={tune} onValueChange={set(setTune)}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="zerolatency">zerolatency</SelectItem>
+                      <SelectItem value="film">film</SelectItem>
+                      <SelectItem value="animation">animation</SelectItem>
+                      <SelectItem value="grain">grain</SelectItem>
+                      <SelectItem value="stillimage">stillimage</SelectItem>
+                      <SelectItem value="fastdecode">fastdecode</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Keyframe Interval (s) <ProfileBadge field="keyframe_interval" />
+                  </Label>
+                  <NumericInput
+                    className="h-8 text-xs"
+                    integer
+                    min={1}
+                    max={10}
+                    value={keyframeInterval}
+                    onChange={set(setKeyframeInterval)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Threads (0 = auto) <ProfileBadge field="threads" />
+                  </Label>
+                  <NumericInput
+                    className="h-8 text-xs"
+                    integer
+                    min={0}
+                    max={32}
+                    value={threads}
+                    onChange={set(setThreads)}
+                  />
+                </div>
+              </div>
+
+              {/* Rate control row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Maxrate Factor <ProfileBadge field="maxrate_factor" />
+                  </Label>
+                  <NumericInput
+                    className="h-8 text-xs"
+                    min={1.0}
+                    max={3.0}
+                    step={0.1}
+                    value={maxrateFactor}
+                    onChange={set(setMaxrateFactor)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Bufsize Factor <ProfileBadge field="bufsize_factor" />
+                  </Label>
+                  <NumericInput
+                    className="h-8 text-xs"
+                    min={0.5}
+                    max={3.0}
+                    step={0.1}
+                    value={bufsizeFactor}
+                    onChange={set(setBufsizeFactor)}
+                  />
+                </div>
+              </div>
+
+              {/* Audio row */}
+              <p className="text-[10px] text-muted-foreground mt-1">Audio</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Audio Bitrate (kbps) <ProfileBadge field="audio_bitrate" />
+                  </Label>
+                  <NumericInput
+                    className="h-8 text-xs"
+                    integer
+                    min={32}
+                    max={320}
+                    step={32}
+                    value={audioBitrate}
+                    onChange={set(setAudioBitrate)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Sample Rate <ProfileBadge field="audio_sample_rate" />
+                  </Label>
+                  <Select value={String(audioSampleRate)} onValueChange={(v) => set(setAudioSampleRate)(Number(v))}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="44100">44100 Hz</SelectItem>
+                      <SelectItem value="48000">48000 Hz</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Audio Codec <ProfileBadge field="audio_codec" />
+                  </Label>
+                  <Select value={audioCodec} onValueChange={set(setAudioCodec)}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="aac">AAC</SelectItem>
+                      <SelectItem value="libmp3lame">MP3</SelectItem>
+                      <SelectItem value="libopus">Opus</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

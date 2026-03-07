@@ -66,8 +66,17 @@
             "enabled": true,
             "fps": 30,
             "bitrate_kbps": 6000,
-            "preset": "fast",
-            "codec": "libx264"
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "profile": "baseline",
+            "tune": "zerolatency",
+            "keyframe_interval": 2,
+            "threads": 0,
+            "maxrate_factor": 1.2,
+            "bufsize_factor": 1.0,
+            "audio_bitrate": 128,
+            "audio_sample_rate": 44100,
+            "audio_codec": "aac"
         }
     ],
     "audio": {

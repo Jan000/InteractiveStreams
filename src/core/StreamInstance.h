@@ -44,9 +44,20 @@ struct StreamConfig {
     std::vector<std::string> channelIds;   ///< subscribed input/output channels
     bool enabled = true;
     int fps      = 30;
-    int bitrate  = 4500;
+    int bitrate  = 6000;
     std::string preset = "ultrafast";
     std::string codec  = "libx264";
+    std::string profile = "baseline";
+    std::string tune    = "zerolatency";
+    int keyframeInterval = 2;    // GOP size in seconds
+    int threads  = 0;            // 0 = auto
+    float maxrateFactor = 1.2f;
+    float bufsizeFactor = 1.0f;
+
+    // Audio encoding
+    int audioBitrate    = 128;   // kbps
+    int audioSampleRate = 44100;
+    std::string audioCodec = "aac";
 
     int width()  const { return resolution == ResolutionPreset::Mobile ? 1080 : 1920; }
     int height() const { return resolution == ResolutionPreset::Mobile ? 1920 : 1080; }
