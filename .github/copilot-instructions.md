@@ -16,6 +16,7 @@ Das Projekt nutzt den Root-Namespace `is::` mit folgenden Sub-Namespaces:
 | `is::games` | `src/games/` | Spiel-Interface, Registry, alle Spiel-Implementierungen |
 | `is::games::chaos_arena` | `src/games/chaos_arena/` | Chaos Arena-Spiel (Physik-Arena-Kampf) |
 | `is::games::color_conquest` | `src/games/color_conquest/` | Color Conquest-Spiel (territoriale Eroberung) |
+| `is::games::gravity_brawl` | `src/games/gravity_brawl/` | Gravity Brawl-Spiel (Physik-Brawler mit Gravitations-Shifts) |
 | `is::platform` | `src/platform/` | Chat-Plattform-Abstraktionen und -Implementierungen |
 | `is::rendering` | `src/rendering/` | SFML-basiertes Rendering, Kamera, Partikel, UI |
 | `is::streaming` | `src/streaming/` | FFmpeg-Encoding und RTMP-Stream-Ausgabe |
@@ -65,6 +66,10 @@ public:
     virtual bool isGameOver() const = 0;         // true wenn gesamtes Spiel beendet
     virtual nlohmann::json getState() const = 0;
     virtual nlohmann::json getCommands() const = 0;
+
+    // Per-Game Settings
+    virtual void configure(const nlohmann::json& settings) {}  // Apply game-specific settings
+    virtual nlohmann::json getSettings() const { return {}; }  // Return current settings
 
     // Chat-Feedback Callback
     using ChatFeedbackCallback = std::function<void(const std::string&)>;
@@ -202,7 +207,11 @@ struct StreamConfig {
     GameModeType gameMode = GameModeType::Vote;
     ResolutionPreset resolution = ResolutionPreset::Mobile;
     std::vector<std::string> channels; // Subscribed channel IDs
+    std::vector<std::string> enabledGames; // Game filter for Vote/Random (empty = all)
     EncoderSettings encoderSettings;
+    double scoreboardCycleSecs = 10.0;   // Seconds per scoreboard panel
+    double scoreboardFadeSecs = 1.0;     // Crossfade duration between panels
+    int scoreboardChatInterval = 120;    // Seconds between chat scoreboard posts (0=disabled)
     int width() const;  // 1080 or 1920
     int height() const; // 1920 or 1080
 };
@@ -213,6 +222,8 @@ struct StreamConfig {
   - Vote: Startet Vote-Phase mit Overlay
   - Random: Wählt zufälliges nächstes Spiel
 - **Vote-Overlay**: `renderVoteOverlay()` zeichnet halbtransparentes Overlay mit Spiel-Karten und Vote-Zählern
+- **Game Filter**: `enabledGames` filtert verfügbare Spiele im Vote/Random-Modus (leer = alle Spiele); serialisiert als `enabled_games` in JSON
+- **Scoreboard Overlay**: `renderGlobalScoreboard()` zeigt Scoreboard-Panels (Recent/All-Time) mit Alpha-Crossfade. `sendScoreboardToChat()` postet formatierte Top-5 an Chat-Kanäle.
 - **Streaming**: `startStreaming()` / `stopStreaming()` erstellt/zerstört `StreamEncoder(EncoderSettings)`
 - **Serialisierung**: `configFromJson()` / `toJson()`
 
@@ -298,6 +309,34 @@ Befehle in `ColorConquest::onChatMessage()`:
 
 ---
 
+## Gravity Brawl – Interna
+
+### Übersicht
+Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic Events). Ähnlich wie ChaosArena, nutzt Box2D. Namespace: `is::games::gravity_brawl`. Dateien: `GravityBrawl.h/cpp`, `GBPlayer.h/cpp`, etc.
+
+### Spielphasen
+`GamePhase::Lobby` → `Countdown` → `Battle` → `RoundEnd` → `GameOver`
+
+### Cosmic Events (Gravitations-Shifts)
+- Periodische Gravitationsänderungen während der Battle-Phase
+- Richtung und Stärke der Schwerkraft ändern sich dynamisch
+- Spieler müssen sich an neue Physik-Bedingungen anpassen
+
+### Bot Fill System
+- Füllt die Lobby automatisch mit KI-Bots auf, um einen Mindest-Spielerstand zu erreichen
+- Bots wählen zufällige Aktionen (Bewegung, Angriff, Spezial)
+- Konfigurierbar per Game-Settings: `bot_fill` (bool), `min_players` (int)
+
+### Per-Game Settings
+- Konfigurierbare Parameter über `configure()` / `getSettings()`
+- Gespeichert unter `game_settings.gravity_brawl` in Config
+- API: `GET/PUT /api/games/gravity_brawl/settings`
+
+### Chat-Befehl-Parsing
+Identische Befehle wie ChaosArena (`!join`, `!left`, `!right`, `!jump`, `!attack`, `!special`, `!dash`, `!block` etc.)
+
+---
+
 ## SettingsDatabase (`src/core/SettingsDatabase.h/cpp`)
 
 SQLite-basierte persistente Speicherung **aller** Einstellungen (ersetzt die alte rein-JSON-basierte Persistenz).
@@ -305,7 +344,7 @@ SQLite-basierte persistente Speicherung **aller** Einstellungen (ersetzt die alt
 ### Architektur
 - **Datei**: `data/settings.db` (WAL-Modus, Thread-Safe via Mutex)
 - **Tabelle**: `settings` mit `key TEXT PRIMARY KEY, data TEXT NOT NULL`
-- **Keys**: `config` (globale Settings ohne Channels/Streams), `channels` (JSON-Array), `streams` (JSON-Array)
+- **Keys**: `config` (globale Settings ohne Channels/Streams), `channels` (JSON-Array), `streams` (JSON-Array), `profiles` (JSON-Array), `auth_password` (JSON-Objekt: `{hash, salt}`)
 
 ### Persistenz-Flow
 1. **Startup**: SQLite wird als primäre Quelle geladen. Falls leer (Erststart), wird aus `config/default.json` migriert.
@@ -335,6 +374,7 @@ SQLite-basierte persistente Spieler-Datenbank für Scoreboard-Funktionalität.
 ### Scoring-Hooks
 Spiele rufen `Application::instance().playerDatabase().recordResult()` auf:
 - **Chaos Arena**: +100 Punkte + Win bei Rundengewinn, +25 Punkte bei Kill, +1 Punkt für Teilnahme
+- **Gravity Brawl**: Gleiche Scoring-Regeln wie Chaos Arena
 - **Color Conquest**: +50 Punkte + Win für Gewinner-Team, +5 Punkte für Teilnahme
 
 ### API
@@ -394,29 +434,42 @@ if (auto* rt = dynamic_cast<sf::RenderTexture*>(&target)) {
 
 ## WebServer-Authentifizierung (`src/web/WebServer.h/cpp`)
 
-Optionale API-Key-basierte Authentifizierung für alle REST-Endpunkte.
+Zwei Auth-Mechanismen: **API-Key** (legacy) und **Password-Login** (Session-basiert).
 
-### Konfiguration
-- **Config-Key**: `web.api_key` (leer = Auth deaktiviert)
+### API-Key Auth (Legacy)
+- **Config-Key**: `web.api_key` (leer = API-Key-Auth deaktiviert)
 - **Reload**: `reloadApiKey()` liest den Key aus der Config
-- **Setup**: `setupAuth()` installiert `set_pre_routing_handler` auf dem httplib-Server
+- Key wird geprüft: `Authorization: Bearer <key>`, `X-API-Key: <key>`, oder `?api_key=<key>`
 
-### Auth-Flow
+### Password-Login (Session-basiert)
+- **Sha256** (`src/core/Sha256.h`): Header-only SHA-256 Implementierung mit `sha256()`, `hashPassword()`, `generateSalt()`, `generateToken()`
+- **Passwort-Speicherung**: Als `auth_password` Key in SettingsDatabase (JSON: `{hash, salt}`)
+- **Session-Management**: `WebServer` hat `addSession()`, `removeSession()`, `hasSession()`, `isPasswordAuthEnabled()` mit `m_sessions` (`std::unordered_set<std::string>`) + Mutex
+- **CLI-Flag**: `--reset-password` löscht das Passwort aus der SettingsDB (für Recovery)
+
+### Auth-Endpunkte (`ApiRoutes.cpp`)
+- `GET /api/auth/status` – Prüft ob Auth eingerichtet ist und ob Session gültig
+- `POST /api/auth/setup` – Erstmalige Passwort-Einrichtung
+- `POST /api/auth/login` – Login mit Passwort, gibt Session-Token zurück
+- `POST /api/auth/logout` – Session-Token invalidieren
+- `POST /api/auth/change-password` – Passwort ändern (erfordert aktive Session)
+
+### Auth-Flow (`setupAuth()`)
 1. Pre-Routing-Handler prüft: Ist der Request ein `/api/`-Pfad?
 2. OPTIONS-Requests (CORS-Preflight) werden immer durchgelassen
 3. Statische Dateien (Dashboard) werden immer ausgeliefert
-4. Wenn `m_apiKey` leer → kein Auth, alles durchlassen
-5. Key wird geprüft in dieser Reihenfolge:
-   - `Authorization: Bearer <key>` Header
-   - `X-API-Key: <key>` Header
-   - `?api_key=<key>` Query-Parameter
-6. Bei Fehlschlag: HTTP 401 JSON-Response
+4. `/api/auth/*`-Pfade werden immer durchgelassen
+5. Auth wird geprüft in dieser Reihenfolge:
+   - API-Key: `Authorization: Bearer <key>`, `X-API-Key`, `?api_key=`
+   - Session-Token: `Authorization: Bearer <session_token>` (via `hasSession()`)
+6. Wenn weder API-Key gesetzt noch Passwort eingerichtet → kein Auth, alles durchlassen
+7. Bei Fehlschlag: HTTP 401 JSON-Response
 
 ### Dashboard-Integration
-- `web/src/lib/api.ts`: `getApiKey()` liest aus `localStorage['is_api_key']`
-- `authHeaders()` erzeugt `Authorization: Bearer`-Header
+- `web/src/app/login/page.tsx`: Login-Seite mit Setup- und Login-Modus
+- `web/src/components/app-shell.tsx`: Auth-Guard prüft `/api/auth/status` beim Mount, leitet zu Login/Setup um
+- `web/src/lib/api.ts`: `authHeaders()` erzeugt `Authorization: Bearer`-Header (Token aus localStorage)
 - `request()` fügt Auth-Headers automatisch zu allen API-Calls hinzu
-- `web/src/app/settings/page.tsx`: Passwort-Eingabefeld für API-Key, speichert in localStorage
 
 ---
 
@@ -476,11 +529,12 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 1. [ ] Ordner `src/games/<spielname>/` anlegen
 2. [ ] IGame-Interface implementieren mit `REGISTER_GAME` Makro (inkl. `isRoundComplete()` und `isGameOver()`)
 3. [ ] Quelldateien in `CMakeLists.txt` → `GAME_SOURCES` eintragen
-4. [ ] Optional: Konfigurationssektion in `config/default.json` unter `games` hinzufügen
-5. [ ] Optional: Spezifische Chat-Befehle in `getCommands()` zurückgeben
-6. [ ] Das Spiel erscheint automatisch im Dashboard (Streams-Tab: Spiel-Auswahl, Vote-System)
-7. [ ] README.md und TESTING.md aktualisieren (Spielbeschreibung, Befehle)
-8. [ ] Git-Commit erstellen
+4. [ ] Optional: Konfigurationssektion in `config/default.json` unter `game_settings.<game_id>` hinzufügen
+5. [ ] Optional: `configure()` und `getSettings()` implementieren für per-game Settings
+6. [ ] Optional: Spezifische Chat-Befehle in `getCommands()` zurückgeben
+7. [ ] Das Spiel erscheint automatisch im Dashboard (Streams-Tab: Spiel-Auswahl, Vote-System)
+8. [ ] README.md und TESTING.md aktualisieren (Spielbeschreibung, Befehle)
+9. [ ] Git-Commit erstellen
 
 ### Neue Plattform hinzufügen
 1. [ ] Ordner `src/platform/<plattform>/` anlegen
@@ -509,23 +563,33 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 - API-Routen: `src/web/ApiRoutes.cpp` – Alle Endpunkte registriert in `registerApiRoutes()`
 - Regex-Pfadmuster: `server.Get(R"(/api/streams/([^/]+))"` – Captures über `req.matches[1]`
 - Neue Endpunkte: Route hinzufügen, im `registerApiRoutes()` registrieren, JSON-Response zurückgeben
+- Per-Game Settings: `GET/PUT /api/games/:id/settings` für spielspezifische Konfiguration
+- Auth-Endpunkte: `/api/auth/*` für Login/Session-Management
+- Config Export/Import: `GET /api/config/export`, `POST /api/config/import`
+- Profiles: `GET/POST /api/profiles`, `GET/PUT/DELETE /api/profiles/:id`
 
 ---
 
 ## Wichtige Hinweise
 
 1. **GLSL-Shader**: Post-Processing nutzt GPU-Shader (`assets/shaders/`) mit Software-Fallback. `PostProcessing::initialize()` lädt alle Shader; `applyShaderPass()` rendert über temporäre `sf::RenderTexture`. Verfügbare Effekte: Vignette, Bloom, Chromatic Aberration, CRT, Scanlines.
-2. **Sound-System**: `AudioManager` (`src/core/AudioManager.h/cpp`) verwaltet Hintergrundmusik (Playlist mit Shuffle, auto-advance) und SFX. Musikdateien werden aus `assets/audio/` gescannt (.mp3/.ogg/.wav/.flac). Neue Tracks einfach ins Verzeichnis legen und `rescan()` aufrufen. Web-API: `GET/PUT /api/audio`, `POST /api/audio/next|pause|resume|rescan`. Config-Keys: `audio.music_volume`, `audio.sfx_volume`, `audio.muted`.
+2. **Sound-System**: `AudioManager` (`src/core/AudioManager.h/cpp`) verwaltet Hintergrundmusik (Playlist mit Shuffle, auto-advance) und SFX. Musikdateien werden aus `assets/audio/` gescannt (.mp3/.ogg/.wav/.flac). Neue Tracks einfach ins Verzeichnis legen und `rescan()` aufrufen. Web-API: `GET/PUT /api/audio`, `POST /api/audio/next|pause|resume|rescan`. Config-Keys: `audio.music_volume`, `audio.sfx_volume`, `audio.muted`, `audio.fade_in_seconds`, `audio.fade_out_seconds`, `audio.crossfade_overlap`.
 3. **Pixel-Format**: Jeder Stream hat eigene `sf::RenderTexture`, der Encoder erwartet RGBA-Pixeldaten.
 4. **Thread-Sicherheit**: Plattform-Threads und Web-API-Threads nutzen `std::mutex`-geschützte Queues/States. Stream/Channel-CRUD vom Web-Thread durch Mutex geschützt. RenderTextures werden lazy im Main-Thread erstellt.
 5. **FFmpeg-Pfad**: FFmpeg wird via `popen("ffmpeg ...")` aufgerufen – muss im System-PATH sein.
 6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
 7. **Config-Persistenz**: Alle Einstellungen werden automatisch in `data/settings.db` (SQLite) persistiert. `POST /api/config/save` schreibt zusätzlich eine JSON-Backup-Datei. SQLite ist die primäre Source of Truth; `config/default.json` dient nur als Erst-Migrations-Template.
 8. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake). Dashboard ist ein Next.js-Static-Export (`web/`), gebaut mit `bun run build`. Tab-basiert: Streams, Channels, Statistics, Scoreboard, Performance, Settings. **Immer `bun` verwenden** (nicht npm/yarn).
-9. **API-Authentifizierung**: `WebServer::setupAuth()` installiert einen `set_pre_routing_handler` der alle `/api/`-Requests prüft. Drei Auth-Methoden: `Authorization: Bearer`, `X-API-Key`-Header, `?api_key=`-Query-Param. Konfiguriert über `web.api_key` in Config. Leerer Key = Auth deaktiviert.
+9. **API-Authentifizierung**: Zwei Auth-Mechanismen: API-Key (legacy, `web.api_key`) und Password-Login (Session-basiert). `setupAuth()` Pre-Routing-Handler prüft beide. `/api/auth/*` immer erlaubt. `Sha256.h` für Passwort-Hashing. `--reset-password` CLI-Flag für Recovery.
 10. **Docker**: Multi-Stage Dockerfile (Bun Dashboard-Build → Ubuntu C++-Build → Ubuntu Runtime mit FFmpeg+Xvfb). `docker-compose.yml` für einfaches Deployment. Named Volume für SQLite-Daten.
 11. **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`) mit 4 Jobs: Dashboard-Build, Linux-Build+Test, Windows-Build+Test, Docker-Image. Trigger auf Push/PR zu `main`.
 12. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
+13. **Git Hash Version**: CMake extrahiert den Git-Short-Hash via `git rev-parse --short HEAD` → `IS_GIT_HASH` Compile-Definition. `/api/status` gibt `version: "0.2.0+<hash>"` und `gitHash: "<hash>"` zurück. Dashboard-Footer zeigt Version dynamisch an.
+14. **Config Export/Import**: `GET /api/config/export` liefert vollständigen JSON-Snapshot (config, channels, streams, profiles, audio, metadata mit `_export_version: 1`). `POST /api/config/import` stellt aus Snapshot wieder her (schreibt in SQLite, fordert Restart an).
+15. **Per-Game Settings**: Spiele implementieren `configure(const nlohmann::json&)` und `getSettings()`. Gespeichert unter `game_settings.<game_id>` in Config. API: `GET/PUT /api/games/:id/settings`. Angewendet beim Startup via `Application::initialize()` und bei API-Aufruf.
+16. **ProfileManager** (`src/core/ProfileManager.h/cpp`): Verwaltet Stream-Konfigurationsprofile (Presets). CRUD: `addProfile()`, `updateProfile()`, `removeProfile()`, `getProfile()`. Serialisierung via `loadFromJson()` / `toJson()`. Gespeichert in SettingsDatabase unter "profiles" Key. API: `GET/POST /api/profiles`, `GET/PUT/DELETE /api/profiles/:id`.
+17. **Bot Fill System**: Spiele können Bot-Spawning auslösen, um Mindest-Spielerzahlen zu erreichen. Bots haben KI-Verhalten mit zufälligen Aktions-Auswahlen. Konfigurierbar per Game-Settings: `bot_fill` (bool), `min_players` (int). Aktuell in Gravity Brawl implementiert.
+18. **Scoreboard Overlay**: Streams zeigen ein rotierendes Scoreboard-Overlay (Recent/All-Time Panels) mit konfigurierbarer Zykluszeit und Crossfade. Optional: automatischer Chat-Post des Scoreboards in konfigurierbarem Intervall.
 
 ---
 

@@ -12,6 +12,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - [Architektur](#-architektur)
 - [Erstes Spiel: Chaos Arena](#-erstes-spiel-chaos-arena)
 - [Zweites Spiel: Color Conquest](#-zweites-spiel-color-conquest)
+- [Drittes Spiel: Gravity Brawl](#-drittes-spiel-gravity-brawl)
 - [Technologie-Stack](#-technologie-stack)
 - [Projektstruktur](#-projektstruktur)
 - [Build-Anleitung](#-build-anleitung)
@@ -33,10 +34,14 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Desktop & Mobile** – Wählbare Auflösung pro Stream: 1080×1920 (Mobile/Vertikal) oder 1920×1080 (Desktop)
 - **Chat-basierte Steuerung** – Zuschauer steuern ihre Spielfiguren über Chat-Befehle
 - **Modulare Spielarchitektur** – Neue Spiele als eigenständige Module hinzufügbar
-- **Web-Admin-Dashboard** – Next.js + TypeScript + shadcn/ui Dashboard mit Tabs für Streams, Channels, Scoreboard, Performance und Settings, inkl. Live-Stream-Vorschau
+- **Bot Fill System** – Automatisches Auffüllen von Lobbys mit KI-Bots auf eine konfigurierbare Mindestspielerzahl
+- **Per-Game Settings** – Spielkonfiguration über Web-Dashboard (Bot-Anzahl, Spieldauer, Cooldowns etc.)
+- **Config Export/Import** – Vollständiges Backup und Restore aller Einstellungen (Channels, Streams, Audio, Config)
+- **Web-Admin-Dashboard** – Next.js + TypeScript + shadcn/ui Dashboard mit Tabs für Streams, Channels, Games, Audio, Scoreboard, Performance und Settings, inkl. Live-Stream-Vorschau
 - **SQLite Scoreboard** – Persistente Spieler-Datenbank mit Top 10 (24h) und Top 5 (All-Time), konfigurierbare Anzeige
 - **SQLite Settings-Persistenz** – Alle Einstellungen (Channels, Streams, globale Config) werden automatisch in SQLite gespeichert und überleben Neustarts
 - **Performance-Monitoring** – Live-Graphen für FPS, Frame-Time, Memory und Spieleranzahl mit konfigurierbarem Zeitfenster
+- **Audio-System** – Hintergrundmusik-Playlist mit Shuffle, Fade-In/Fade-Out/Crossfade, SFX-Hooks und Web-Steuerung
 - **Headless Mode** – Betrieb ohne GUI-Fenster (für Server-Deployments, z.B. Ubuntu Server)
 - **Alle Einstellungen via Web** – Kein manuelles Bearbeiten von Konfigurationsdateien nötig
 - **Plattformunabhängig** – Läuft auf Windows, Linux und macOS
@@ -59,6 +64,8 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Docker-Container** – Multi-Stage-Build mit Dockerfile und docker-compose für Server-Deployment
 - **CI/CD Pipeline** – GitHub Actions mit Build, Test und Docker-Image für Linux und Windows
 - **API-Authentifizierung** – Bearer-Token / API-Key Schutz für alle REST-Endpunkte (konfigurierbar)
+- **Passwort-basiertes Login** – Optionales Passwort-Login mit SHA-256 Hash, Salt und Session-Tokens
+- **Git-Hash-Version** – Build-Version mit Git-Commit-Hash im Dashboard-Footer und `/api/status`
 
 ---
 
@@ -188,6 +195,42 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 
 ---
 
+## 🌌 Drittes Spiel: Gravity Brawl
+
+**Gravity Brawl** ist ein physikbasierter Plattform-Brawler mit wechselnder Schwerkraft und kosmischen Events.
+
+### Konzept
+
+Ähnlich wie Chaos Arena nutzt Gravity Brawl Box2D-Physik für Nahkampf, Projektile und Knockback. Das Alleinstellungsmerkmal sind **periodische Gravitationsänderungen** (Cosmic Events), die die Schwerkraftrichtung im Laufe der Runde verändern und für chaotische Kämpfe sorgen.
+
+### Features
+- **Gravity Shifts** – Kosmische Events ändern periodisch die Schwerkraftrichtung (normal, low gravity, reverse, sideways)
+- **Bot Fill System** – Lobby wird automatisch mit KI-Bots auf eine Mindestspielerzahl aufgefüllt
+- **Konfigurierbare Einstellungen** – Spieldauer, Lobby-Dauer, Mindestspielerzahl und Cosmic-Event-Cooldown über Web-API einstellbar
+- **Scoreboard-Integration** – Punkte für Kills und Rundengewinne, persistiert in der Spieler-Datenbank
+
+### Spielablauf
+1. **Lobby** – Zuschauer treten mit `!join` bei, Bots füllen auf die Mindestzahl auf
+2. **Countdown** – 3-Sekunden-Countdown vor Rundenstart
+3. **Battle** – Spieler kämpfen gegeneinander, periodische Gravity Shifts sorgen für Chaos
+4. **Round End** – Letzter überlebender Spieler gewinnt die Runde
+5. **Game Over** – Nach Ablauf der konfigurierten Spieldauer
+
+### Chat-Befehle
+
+| Befehl | Aliases | Beschreibung |
+|--------|---------|-------------|
+| `!join` | `!play` | Dem Spiel beitreten |
+| `!left` | `!l`, `!a` | Nach links bewegen |
+| `!right` | `!r`, `!d` | Nach rechts bewegen |
+| `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
+| `!attack` | `!hit`, `!atk` | Nahkampf-Angriff |
+| `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
+| `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
+| `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+
+---
+
 ## 🛠 Technologie-Stack
 
 | Komponente | Technologie | Version |
@@ -245,6 +288,9 @@ InteractiveStreams/
 │   │   ├── PlayerDatabase.h/cpp # SQLite Spieler-Datenbank & Scoreboard
 │   │   ├── SettingsDatabase.h/cpp # SQLite-basierte persistente Einstellungen
 │   │   ├── PerfMonitor.h/cpp    # Performance-Metriken (FPS, Memory, etc.)
+│   │   ├── AudioManager.h/cpp  # Hintergrundmusik-Playlist & SFX-Verwaltung
+│   │   ├── ProfileManager.h/cpp # Profil-Verwaltung
+│   │   ├── Sha256.h            # SHA-256 Hashing für Passwort-Auth
 │   │   └── Logger.h/cpp        # Logging (spdlog)
 │   ├── games/                  # Spiele-Module
 │   │   ├── IGame.h             # Spiel-Interface (abstrakt)
@@ -257,6 +303,8 @@ InteractiveStreams/
 │   │   │   ├── ParticleSystem.h/cpp # Partikel-Effekte
 │   │   │   ├── Projectile.h/cpp     # Projektile
 │   │   │   └── PowerUp.h/cpp        # Power-Up Items
+│   │   ├── gravity_brawl/      # Gravity Brawl Spiel
+│   │   │   └── GravityBrawl.h/cpp   # Spiellogik mit Gravity Shifts & Bot Fill
 │   │   └── color_conquest/     # Color Conquest Spiel
 │   │       ├── ColorConquest.h/cpp  # Haupt-Spiellogik
 │   │       ├── Grid.h/cpp           # Spielfeld-Grid (24×40)
@@ -469,9 +517,11 @@ bun run build        # Erzeugt statischen Export in web/out/
 |-----|-------------|
 | **Streams** | Alle aktiven Streams verwalten – Spiel wechseln, Game-Modus setzen, Streaming starten/stoppen, Chat an Plattformen senden |
 | **Channels** | Chat-Kanäle (Twitch, YouTube, Local) hinzufügen, verbinden, inline bearbeiten mit plattformspezifischen Einstellungen |
+| **Games** | Per-Game-Settings konfigurieren (Bot Fill, Spieldauer, Cooldowns etc.) |
+| **Audio** | Hintergrundmusik-Player: Play/Pause/Skip, Lautstärke, Playlist-Verwaltung |
 | **Scoreboard** | Persistentes Spieler-Ranking – Top 10 (24h) und Top 5 (All-Time) mit konfigurierbaren Anzeige-Einstellungen |
 | **Performance** | Live-Graphen für FPS, Frame-Time, Memory-Nutzung und Spieleranzahl mit wählbarem Zeitfenster |
-| **Settings** | Anwendungseinstellungen (FPS, Port), Spiel-Konfigurationen, API-Key für Authentifizierung |
+| **Settings** | Anwendungseinstellungen (FPS, Port), Spiel-Konfigurationen, Passwort-Login |
 
 ### Dashboard-Features
 - **Multi-Stream-Verwaltung** – Streams erstellen, konfigurieren und löschen
@@ -525,6 +575,10 @@ bun run build        # Erzeugt statischen Export in web/out/
 | GET | `/api/settings` | Einstellungen abrufen (Secrets redaktiert) |
 | PUT | `/api/settings` | Einstellungen aktualisieren |
 | POST | `/api/config/save` | Laufzeit-Zustand in Config speichern |
+| GET | `/api/config/export` | Vollständiger JSON-Snapshot aller Einstellungen (Config, Channels, Streams, Audio) |
+| POST | `/api/config/import` | Einstellungen aus Snapshot wiederherstellen (erfordert ggf. Neustart) |
+| GET | `/api/games/:id/settings` | Spielspezifische Einstellungen abrufen |
+| PUT | `/api/games/:id/settings` | Spielspezifische Einstellungen aktualisieren |
 | POST | `/api/chat` | Lokale Chat-Nachricht senden |
 | GET | `/api/chat/log` | Nachrichten-Log abrufen |
 | POST | `/api/channels/:id/send` | Nachricht über spezifischen Kanal senden |
@@ -542,6 +596,25 @@ bun run build        # Erzeugt statischen Export in web/out/
 |---------|----------|-------------|
 | GET | `/api/perf?seconds=60` | Aktuelle Performance-Durchschnittswerte |
 | GET | `/api/perf/history?seconds=300` | Zeitreihen-Daten für Graphen |
+
+#### Authentifizierung (Login)
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/auth/status` | Auth-Status (Passwort gesetzt, eingeloggt) |
+| POST | `/api/auth/setup` | Erstmaliges Passwort setzen `{"password": "..."}` |
+| POST | `/api/auth/login` | Login mit Passwort `{"password": "..."}`, gibt Session-Token zurück |
+| POST | `/api/auth/logout` | Session beenden |
+| POST | `/api/auth/change-password` | Passwort ändern `{"current": "...", "new": "..."}` |
+
+#### Audio
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/audio` | Audio-Status (aktueller Track, Lautstärke, Playlist) |
+| PUT | `/api/audio` | Audio-Einstellungen aktualisieren (Lautstärke, Mute) |
+| POST | `/api/audio/next` | Nächsten Track abspielen |
+| POST | `/api/audio/pause` | Wiedergabe pausieren |
+| POST | `/api/audio/resume` | Wiedergabe fortsetzen |
+| POST | `/api/audio/rescan` | Musik-Verzeichnis neu scannen |
 
 ---
 
@@ -570,6 +643,19 @@ bun run build        # Erzeugt statischen Export in web/out/
 | `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
 | `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
 | `!emote [text]` | — | Team-Emote senden |
+
+### Gravity Brawl
+
+| Befehl | Aliases | Beschreibung |
+|--------|---------|-------------|
+| `!join` | `!play` | Dem Spiel beitreten |
+| `!left` | `!l`, `!a` | Nach links bewegen |
+| `!right` | `!r`, `!d` | Nach rechts bewegen |
+| `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
+| `!attack` | `!hit`, `!atk` | Nahkampf-Angriff |
+| `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
+| `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
+| `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
 
 ---
 
@@ -667,9 +753,9 @@ Trigger: Push und Pull Requests auf `main`.
 
 ## 🔒 Authentifizierung
 
-Die REST API kann optional mit einem API-Key geschützt werden.
+Die REST API kann mit einem API-Key und/oder einem Passwort-Login geschützt werden. Beide Methoden können kombiniert werden.
 
-### Konfiguration
+### API-Key-Authentifizierung
 
 Im Dashboard unter **Settings → Web Server** einen API-Key setzen, oder direkt in der Config:
 
@@ -682,9 +768,7 @@ Im Dashboard unter **Settings → Web Server** einen API-Key setzen, oder direkt
 }
 ```
 
-Wenn `api_key` leer ist, ist die API ungeschützt (Standard für lokale Entwicklung).
-
-### Authentifizierung senden
+Wenn `api_key` leer ist, ist die API-Key-Prüfung deaktiviert (Standard für lokale Entwicklung).
 
 Die API akzeptiert den Key auf drei Wegen:
 
@@ -697,8 +781,24 @@ Die API akzeptiert den Key auf drei Wegen:
 curl -H "Authorization: Bearer mein-key" http://localhost:8080/api/status
 ```
 
+### Passwort-basiertes Login
+
+Alternativ (oder zusätzlich) kann ein **Passwort-Login** konfiguriert werden:
+
+1. **Erstmaliges Setup**: Beim ersten Besuch des Dashboards wird über `/api/auth/setup` ein Passwort gesetzt
+2. **Login**: `/api/auth/login` liefert einen Session-Token zurück, der als Bearer-Token verwendet wird
+3. **Session-Verwaltung**: Tokens werden im Arbeitsspeicher gespeichert und leben bis zum Logout oder Server-Neustart
+4. **Passwort-Hashing**: SHA-256 mit zufälligem Salt, gespeichert in der SettingsDatabase (SQLite)
+5. **Passwort-Reset**: CLI-Flag `--reset-password` löscht das gespeicherte Passwort
+
+```bash
+# Passwort zurücksetzen
+./InteractiveStreams --reset-password
+```
+
 ### Schutzbereich
-- Alle `/api/`-Endpunkte sind geschützt
+- Alle `/api/`-Endpunkte sind geschützt (API-Key und/oder Session-Token)
+- Auth-Endpunkte (`/api/auth/*`) sind immer erreichbar
 - Statische Dashboard-Dateien werden immer ausgeliefert
 - CORS-Preflight-Requests (OPTIONS) werden durchgelassen
 
@@ -838,6 +938,20 @@ public:
 - [x] Sound-System (Hintergrundmusik-Playlist mit Shuffle, SFX-Hooks für Spiel-Events, Web-API `/api/audio`)
 - [x] Animierte Spieler-Sprites statt Rectangles (prozeduraler `SpriteAnimator` mit Kopf, Körper, Armen, Beinen, Schwert, Schild, Dash-Effekt)
 - [x] Verbesserte Arena-Generierung (prozedural, Seed-basiert, Tier-System mit Overlap-Prüfung)
+
+### Phase 3.5 – Features & UX ✅
+- [x] Gravity Brawl als drittes Spiel (Gravity Shifts, Cosmic Events, Bot Fill)
+- [x] Bot Fill System – Automatisches Auffüllen von Lobbys mit KI-Bots
+- [x] Per-Game Settings API und Games-Seite im Dashboard
+- [x] Per-Stream Game Filter (`enabledGames`) für Vote/Random-Modus
+- [x] Scoreboard Overlay Animation mit Crossfade zwischen All-Time und Recent
+- [x] Periodisches Scoreboard-Posting im Chat
+- [x] Passwort-basiertes Login-System mit Session-Tokens und SHA-256 Hashing
+- [x] Git-Commit-Hash als Version im Dashboard-Footer und `/api/status`
+- [x] Config Export/Import API (vollständiger JSON-Snapshot)
+- [x] Audio-System mit Musik-Playlist, Crossfade und Web-Steuerung
+- [x] Games-Seite und Audio-Seite im Dashboard
+- [x] Login-Seite im Dashboard
 
 ### Phase 4 – Content
 - [ ] Weiteres Spiel: Marble Race
