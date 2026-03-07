@@ -65,7 +65,7 @@
             "channel_ids": ["local"],
             "enabled": true,
             "fps": 30,
-            "bitrate_kbps": 4500,
+            "bitrate_kbps": 6000,
             "preset": "fast",
             "codec": "libx264"
         }

@@ -88,18 +88,17 @@ bool StreamEncoder::start() {
     cmd << m_ffmpegPath
         << " -y"
         << " -loglevel warning"
-        // Video input: raw RGB24 frames from stdin (alpha stripped by encoder thread)
+        // Video input: raw YUV420P frames from stdin (converted by encoder thread)
         << " -f rawvideo"
         << " -vcodec rawvideo"
-        << " -pix_fmt rgb24"
+        << " -pix_fmt yuv420p"
         << " -s " << m_width << "x" << m_height
         << " -r " << m_fps
         << " -i -"
         // Silent audio input (many platforms like YouTube reject video-only RTMP)
         << " -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100"
-        // Video encoding
+        // Video encoding — input is already yuv420p so no swscale conversion needed
         << " -c:v " << m_codec
-        << " -pix_fmt yuv420p"
         << " -preset " << m_preset
         << " -profile:v baseline"    // Simplest/fastest H.264 profile
         << " -threads 0"             // Use all available CPU cores
@@ -111,7 +110,9 @@ bool StreamEncoder::start() {
         << " -x264-params \"sliced-threads=1\""  // Force slice-based multi-core encoding
         // Audio encoding (silence)
         << " -c:a aac -b:a 128k -ar 44100"
-        << " -shortest"  // Stop when the shortest input (video) ends
+        // Explicitly map video from stdin and audio from anullsrc,
+        // so both are guaranteed to appear in the FLV output.
+        << " -map 0:v -map 1:a"
         << " -f flv"
         << " \"" << m_outputUrl << "\""
         << " 2>\"" << m_stderrLogPath << "\"";
@@ -136,7 +137,7 @@ bool StreamEncoder::start() {
     }
 
     // Set a large stdio buffer to reduce syscall overhead.
-    // Default pipe buffer is tiny (4-8 KB); each RGB24 frame is ~6.2 MB at 1080x1920.
+    // Each YUV420P frame is ~3.1 MB at 1080x1920 (vs 6.2 MB RGB24, 8.3 MB RGBA).
     setvbuf(m_pipe, nullptr, _IOFBF, 2 * 1024 * 1024); // 2 MB buffered I/O
 
     m_running = true;
@@ -191,13 +192,12 @@ void StreamEncoder::encodeFrame(const sf::Uint8* pixelData) {
 void StreamEncoder::encoderThread() {
     spdlog::info("[StreamEncoder] Encoder thread started.");
 
-    const size_t pixelCount  = static_cast<size_t>(m_width) * m_height;
-    const size_t rgbFrameSize = pixelCount * 3;  // RGB24
+    const size_t pixelCount    = static_cast<size_t>(m_width) * m_height;
+    const size_t yuvFrameSize  = pixelCount * 3 / 2;  // YUV420P: 1.5 bytes/pixel
 
-    // Local RGBA buffer (fast memcpy under mutex) + RGB24 buffer (written to pipe).
-    // Two separate buffers so the alpha strip runs OUTSIDE the mutex.
+    // Local RGBA buffer (fast memcpy under mutex) + YUV420P buffer (written to pipe).
     std::vector<sf::Uint8> localBuffer(m_frameBuffer.size());  // RGBA
-    std::vector<sf::Uint8> rgbBuffer(rgbFrameSize);            // RGB24
+    std::vector<sf::Uint8> yuvBuffer(yuvFrameSize);            // YUV420P
 
     auto lastFpsTime = std::chrono::steady_clock::now();
     size_t fpsFrameCount = 0;
@@ -215,23 +215,25 @@ void StreamEncoder::encoderThread() {
         m_frameReady = false;
         lock.unlock();
 
-        // Strip alpha channel: RGBA → RGB24 (outside mutex, saves 25% pipe I/O)
-        stripAlpha(localBuffer.data(), rgbBuffer.data(), pixelCount);
+        // Convert RGBA → YUV420P (outside mutex).
+        // This replaces both the old stripAlpha AND FFmpeg's internal swscale,
+        // and the output is 3.1 MB instead of 6.2 MB (RGB24) or 8.3 MB (RGBA).
+        rgbaToYuv420p(localBuffer.data(), yuvBuffer.data(), m_width, m_height);
 
-        // Write RGB24 frame to FFmpeg's stdin (outside lock)
+        // Write YUV420P frame to FFmpeg's stdin (outside lock)
         if (m_pipe) {
-            size_t written = fwrite(rgbBuffer.data(), 1, rgbFrameSize, m_pipe);
+            size_t written = fwrite(yuvBuffer.data(), 1, yuvFrameSize, m_pipe);
 
-            if (written != rgbFrameSize) {
+            if (written != yuvFrameSize) {
                 if (written == 0 || ferror(m_pipe)) {
                     spdlog::error("[StreamEncoder] FFmpeg pipe broken (wrote {}/{} bytes). "
                                   "FFmpeg likely exited – check {}.",
-                                  written, rgbFrameSize, m_stderrLogPath);
+                                  written, yuvFrameSize, m_stderrLogPath);
                     m_failed = true;
                     m_running = false;
                     break;
                 }
-                spdlog::warn("[StreamEncoder] Incomplete frame write: {}/{}", written, rgbFrameSize);
+                spdlog::warn("[StreamEncoder] Incomplete frame write: {}/{}", written, yuvFrameSize);
             }
         }
 
@@ -265,24 +267,58 @@ void StreamEncoder::encoderThread() {
     spdlog::info("[StreamEncoder] Encoder thread exiting.");
 }
 
-void StreamEncoder::stripAlpha(const sf::Uint8* rgba, sf::Uint8* rgb, size_t pixelCount) {
-    // Process 4 pixels per iteration for better auto-vectorisation.
-    // Each iteration: read 16 bytes (4×RGBA), write 12 bytes (4×RGB).
-    const size_t bulk = pixelCount & ~size_t(3); // round down to multiple of 4
-    size_t i = 0;
-    for (; i < bulk; i += 4) {
-        const sf::Uint8* s = rgba + i * 4;
-        sf::Uint8*       d = rgb  + i * 3;
-        d[0]  = s[0];  d[1]  = s[1];  d[2]  = s[2];   // pixel 0
-        d[3]  = s[4];  d[4]  = s[5];  d[5]  = s[6];   // pixel 1
-        d[6]  = s[8];  d[7]  = s[9];  d[8]  = s[10];  // pixel 2
-        d[9]  = s[12]; d[10] = s[13]; d[11] = s[14];  // pixel 3
-    }
-    // Handle remaining 0–3 pixels
-    for (; i < pixelCount; ++i) {
-        rgb[i * 3 + 0] = rgba[i * 4 + 0];
-        rgb[i * 3 + 1] = rgba[i * 4 + 1];
-        rgb[i * 3 + 2] = rgba[i * 4 + 2];
+void StreamEncoder::rgbaToYuv420p(const sf::Uint8* rgba, sf::Uint8* yuv,
+                                  int width, int height)
+{
+    // BT.601 full-range → limited-range conversion using fixed-point arithmetic.
+    // Y  = ((66*R + 129*G + 25*B + 128) >> 8) + 16
+    // Cb = ((-38*R - 74*G + 112*B + 128) >> 8) + 128
+    // Cr = ((112*R - 94*G - 18*B + 128) >> 8) + 128
+    //
+    // Layout: Y plane (w*h), then U plane (w/2 * h/2), then V plane (w/2 * h/2).
+    // U and V are subsampled 2×2 by averaging the 4 contributing pixels.
+
+    const int w = width;
+    const int h = height;
+    sf::Uint8* yPlane = yuv;
+    sf::Uint8* uPlane = yuv + w * h;
+    sf::Uint8* vPlane = uPlane + (w / 2) * (h / 2);
+
+    for (int row = 0; row < h; row += 2) {
+        const sf::Uint8* row0 = rgba + row * w * 4;
+        const sf::Uint8* row1 = row0 + w * 4;
+        sf::Uint8* yRow0 = yPlane + row * w;
+        sf::Uint8* yRow1 = yRow0 + w;
+        sf::Uint8* uPtr  = uPlane + (row / 2) * (w / 2);
+        sf::Uint8* vPtr  = vPlane + (row / 2) * (w / 2);
+
+        for (int col = 0; col < w; col += 2) {
+            // Read 4 pixels in a 2×2 block
+            int r00 = row0[0], g00 = row0[1], b00 = row0[2];
+            int r01 = row0[4], g01 = row0[5], b01 = row0[6];
+            int r10 = row1[0], g10 = row1[1], b10 = row1[2];
+            int r11 = row1[4], g11 = row1[5], b11 = row1[6];
+
+            // Y for each pixel
+            yRow0[0] = static_cast<sf::Uint8>(((66 * r00 + 129 * g00 + 25 * b00 + 128) >> 8) + 16);
+            yRow0[1] = static_cast<sf::Uint8>(((66 * r01 + 129 * g01 + 25 * b01 + 128) >> 8) + 16);
+            yRow1[0] = static_cast<sf::Uint8>(((66 * r10 + 129 * g10 + 25 * b10 + 128) >> 8) + 16);
+            yRow1[1] = static_cast<sf::Uint8>(((66 * r11 + 129 * g11 + 25 * b11 + 128) >> 8) + 16);
+
+            // Average the 2×2 block for chroma subsampling
+            int rAvg = (r00 + r01 + r10 + r11 + 2) >> 2;
+            int gAvg = (g00 + g01 + g10 + g11 + 2) >> 2;
+            int bAvg = (b00 + b01 + b10 + b11 + 2) >> 2;
+
+            // U (Cb) and V (Cr)
+            *uPtr++ = static_cast<sf::Uint8>(((-38 * rAvg - 74 * gAvg + 112 * bAvg + 128) >> 8) + 128);
+            *vPtr++ = static_cast<sf::Uint8>(((112 * rAvg - 94 * gAvg - 18 * bAvg + 128) >> 8) + 128);
+
+            row0 += 8;  // advance 2 pixels × 4 bytes
+            row1 += 8;
+            yRow0 += 2;
+            yRow1 += 2;
+        }
     }
 }
 

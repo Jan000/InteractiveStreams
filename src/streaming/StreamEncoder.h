@@ -20,7 +20,7 @@ struct EncoderSettings {
     int         width      = 1080;
     int         height     = 1920;
     int         fps        = 30;
-    int         bitrate    = 4500;  // kbps
+    int         bitrate    = 6000;  // kbps (YouTube recommends ~6800 for 1080p@30fps)
     std::string preset     = "ultrafast";
     std::string codec      = "libx264";
 };
@@ -63,9 +63,11 @@ public:
 private:
     void encoderThread();
 
-    /// Strip RGBA pixels to RGB24 (discards alpha channel).
-    /// Reads from `rgba` (width*height*4 bytes), writes to `rgb` (width*height*3 bytes).
-    static void stripAlpha(const sf::Uint8* rgba, sf::Uint8* rgb, size_t pixelCount);
+    /// Convert RGBA pixels to YUV420P planar format (BT.601).
+    /// Reads from `rgba` (width*height*4 bytes), writes to `yuv` (width*height*3/2 bytes).
+    /// The output layout is: Y plane (w*h), U plane (w/2 * h/2), V plane (w/2 * h/2).
+    static void rgbaToYuv420p(const sf::Uint8* rgba, sf::Uint8* yuv,
+                              int width, int height);
 
     // FFmpeg process
     FILE*         m_pipe     = nullptr;
