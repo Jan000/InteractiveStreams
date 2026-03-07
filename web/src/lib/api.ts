@@ -10,7 +10,7 @@ export interface StreamState {
   title: string;
   description: string;
   profileId: string;
-  resolution: "mobile" | "desktop";
+  resolution: "mobile" | "desktop" | "mobile720" | "desktop720";
   width: number;
   height: number;
   gameMode: "fixed" | "vote" | "random";
@@ -26,6 +26,7 @@ export interface StreamState {
   tune: string;
   keyframeInterval: number;
   threads: number;
+  cbr: boolean;
   maxrateFactor: number;
   bufsizeFactor: number;
   audioBitrate: number;

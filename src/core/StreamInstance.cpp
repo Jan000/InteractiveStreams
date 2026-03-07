@@ -870,6 +870,7 @@ std::string StreamInstance::startStreaming() {
         es.tune             = m_config.tune;
         es.keyframeInterval = m_config.keyframeInterval;
         es.threads          = m_config.threads;
+        es.cbr              = m_config.cbr;
         es.maxrateFactor    = m_config.maxrateFactor;
         es.bufsizeFactor    = m_config.bufsizeFactor;
         es.audioBitrate     = m_config.audioBitrate;
@@ -952,7 +953,9 @@ nlohmann::json StreamInstance::getState() const {
     nlohmann::json s;
     s["id"]         = m_config.id;
     s["name"]       = m_config.name;
-    s["resolution"] = m_config.resolution == ResolutionPreset::Mobile ? "mobile" : "desktop";
+    s["resolution"] = m_config.resolution == ResolutionPreset::Mobile     ? "mobile" :
+                       m_config.resolution == ResolutionPreset::Desktop    ? "desktop" :
+                       m_config.resolution == ResolutionPreset::Mobile720  ? "mobile720" : "desktop720";
     s["width"]      = width();
     s["height"]     = height();
     s["gameMode"]   = m_config.gameMode == GameModeType::Fixed  ? "fixed" :
@@ -973,6 +976,7 @@ nlohmann::json StreamInstance::getState() const {
     s["tune"]       = m_config.tune;
     s["keyframeInterval"] = m_config.keyframeInterval;
     s["threads"]    = m_config.threads;
+    s["cbr"]        = m_config.cbr;
     s["maxrateFactor"] = m_config.maxrateFactor;
     s["bufsizeFactor"] = m_config.bufsizeFactor;
     s["audioBitrate"]    = m_config.audioBitrate;
@@ -1062,7 +1066,9 @@ nlohmann::json StreamInstance::toJson() const {
     j["title"]        = m_config.title;
     j["description"]  = m_config.description;
     j["profile_id"]   = m_config.profileId;
-    j["resolution"]   = m_config.resolution == ResolutionPreset::Mobile ? "mobile" : "desktop";
+    j["resolution"]   = m_config.resolution == ResolutionPreset::Mobile     ? "mobile" :
+                         m_config.resolution == ResolutionPreset::Desktop    ? "desktop" :
+                         m_config.resolution == ResolutionPreset::Mobile720  ? "mobile720" : "desktop720";
     j["game_mode"]    = m_config.gameMode == GameModeType::Fixed ? "fixed" :
                         m_config.gameMode == GameModeType::Vote  ? "vote"  : "random";
     j["fixed_game"]   = m_config.fixedGame;
@@ -1076,6 +1082,7 @@ nlohmann::json StreamInstance::toJson() const {
     j["tune"]         = m_config.tune;
     j["keyframe_interval"] = m_config.keyframeInterval;
     j["threads"]      = m_config.threads;
+    j["cbr"]          = m_config.cbr;
     j["maxrate_factor"] = m_config.maxrateFactor;
     j["bufsize_factor"] = m_config.bufsizeFactor;
     j["audio_bitrate"]  = m_config.audioBitrate;
@@ -1128,7 +1135,10 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.profileId   = j.value("profile_id", "");
 
     std::string res = j.value("resolution", "mobile");
-    c.resolution = (res == "desktop") ? ResolutionPreset::Desktop : ResolutionPreset::Mobile;
+    if      (res == "desktop")    c.resolution = ResolutionPreset::Desktop;
+    else if (res == "mobile720")  c.resolution = ResolutionPreset::Mobile720;
+    else if (res == "desktop720") c.resolution = ResolutionPreset::Desktop720;
+    else                          c.resolution = ResolutionPreset::Mobile;
 
     std::string mode = j.value("game_mode", "fixed");
     if (mode == "vote")        c.gameMode = GameModeType::Vote;
@@ -1150,7 +1160,8 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.profile   = j.value("profile", "baseline");
     c.tune      = j.value("tune", "zerolatency");
     c.keyframeInterval = j.value("keyframe_interval", 2);
-    c.threads   = j.value("threads", 0);
+    c.threads   = j.value("threads", 6);
+    c.cbr       = j.value("cbr", true);
     c.maxrateFactor = j.value("maxrate_factor", 1.2f);
     c.bufsizeFactor = j.value("bufsize_factor", 1.0f);
     c.audioBitrate    = j.value("audio_bitrate", 128);

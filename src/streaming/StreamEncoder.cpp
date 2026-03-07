@@ -32,7 +32,8 @@ StreamEncoder::StreamEncoder(core::Config& config)
     m_profile          = config.get<std::string>("streaming.profile", "baseline");
     m_tune             = config.get<std::string>("streaming.tune", "zerolatency");
     m_keyframeInterval = config.get<int>("streaming.keyframe_interval", 2);
-    m_threads          = config.get<int>("streaming.threads", 0);
+    m_threads          = config.get<int>("streaming.threads", 6);
+    m_cbr              = config.get<bool>("streaming.cbr", true);
     m_maxrateFactor    = config.get<float>("streaming.maxrate_factor", 1.2f);
     m_bufsizeFactor    = config.get<float>("streaming.bufsize_factor", 1.0f);
     m_audioBitrate     = config.get<int>("streaming.audio_bitrate", 128);
@@ -60,6 +61,7 @@ StreamEncoder::StreamEncoder(const EncoderSettings& s)
     m_tune             = s.tune;
     m_keyframeInterval = s.keyframeInterval;
     m_threads          = s.threads;
+    m_cbr              = s.cbr;
     m_maxrateFactor    = s.maxrateFactor;
     m_bufsizeFactor    = s.bufsizeFactor;
     m_audioBitrate     = s.audioBitrate;
@@ -237,17 +239,27 @@ bool StreamEncoder::start() {
     }
 
     // Video encoding — input is already yuv420p so no swscale conversion needed
-    // Strict CBR: minrate == maxrate == bitrate, bufsize = 2x bitrate, nal-hrd cbr
+    int gopSize = m_fps * m_keyframeInterval;
     cmd << " -c:v " << m_codec
         << " -preset " << m_preset
         << " -profile:v " << m_profile
         << " -threads " << m_threads
-        << " -b:v " << m_bitrate << "k"
-        << " -minrate " << m_bitrate << "k"
-        << " -maxrate " << m_bitrate << "k"
-        << " -bufsize " << (m_bitrate * 2) << "k"
-        << " -nal-hrd cbr"
-        << " -g " << m_fps * m_keyframeInterval
+        << " -b:v " << m_bitrate << "k";
+
+    if (m_cbr) {
+        // Strict CBR: minrate == maxrate == bitrate, bufsize = 2x, nal-hrd cbr
+        cmd << " -minrate " << m_bitrate << "k"
+            << " -maxrate " << m_bitrate << "k"
+            << " -bufsize " << (m_bitrate * 2) << "k"
+            << " -nal-hrd cbr";
+    } else {
+        // VBR with factor-based rate control
+        cmd << " -maxrate " << static_cast<int>(m_bitrate * m_maxrateFactor) << "k"
+            << " -bufsize " << static_cast<int>(m_bitrate * m_bufsizeFactor) << "k";
+    }
+
+    cmd << " -g " << gopSize
+        << " -keyint_min " << gopSize
         << " -tune " << m_tune
         << " -x264-params \"sliced-threads=1\"";
 

@@ -27,8 +27,10 @@ enum class GameModeType {
 
 /// Resolution preset for a stream.
 enum class ResolutionPreset {
-    Mobile,  ///< 1080x1920 (9:16)
-    Desktop  ///< 1920x1080 (16:9)
+    Mobile,      ///< 1080x1920 (9:16)
+    Desktop,     ///< 1920x1080 (16:9)
+    Mobile720,   ///< 720x1280  (9:16)
+    Desktop720   ///< 1280x720  (16:9)
 };
 
 /// Serialisable configuration for a single stream instance.
@@ -50,17 +52,34 @@ struct StreamConfig {
     std::string profile = "baseline";
     std::string tune    = "zerolatency";
     int keyframeInterval = 2;    // GOP size in seconds
-    int threads  = 0;            // 0 = auto
-    float maxrateFactor = 1.2f;
-    float bufsizeFactor = 1.0f;
+    int threads  = 6;            // 0 = auto, 6 recommended for 8-core
+    bool cbr     = true;         // strict CBR encoding
+    float maxrateFactor = 1.2f;  // VBR only
+    float bufsizeFactor = 1.0f;  // VBR only
 
     // Audio encoding
     int audioBitrate    = 128;   // kbps
     int audioSampleRate = 44100;
     std::string audioCodec = "aac";
 
-    int width()  const { return resolution == ResolutionPreset::Mobile ? 1080 : 1920; }
-    int height() const { return resolution == ResolutionPreset::Mobile ? 1920 : 1080; }
+    int width()  const {
+        switch (resolution) {
+            case ResolutionPreset::Mobile:     return 1080;
+            case ResolutionPreset::Desktop:    return 1920;
+            case ResolutionPreset::Mobile720:  return 720;
+            case ResolutionPreset::Desktop720: return 1280;
+            default: return 1080;
+        }
+    }
+    int height() const {
+        switch (resolution) {
+            case ResolutionPreset::Mobile:     return 1920;
+            case ResolutionPreset::Desktop:    return 1080;
+            case ResolutionPreset::Mobile720:  return 1280;
+            case ResolutionPreset::Desktop720: return 720;
+            default: return 1920;
+        }
+    }
 
     // ── Per-game descriptions (optional, overrides stream description) ───
     /// Map: game_id -> description for that game

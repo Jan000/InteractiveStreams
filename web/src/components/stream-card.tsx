@@ -46,6 +46,7 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 import { useState, useEffect, useCallback } from "react";
 
 interface StreamCardProps {
@@ -67,6 +68,8 @@ const modeLabels: Record<string, string> = {
 const resLabels: Record<string, string> = {
   mobile: "1080×1920",
   desktop: "1920×1080",
+  mobile720: "720×1280",
+  desktop720: "1280×720",
 };
 
 export function StreamCard({
@@ -97,7 +100,8 @@ export function StreamCard({
   const [encoderProfile, setEncoderProfile] = useState(stream.profile ?? "baseline");
   const [tune, setTune] = useState(stream.tune ?? "zerolatency");
   const [keyframeInterval, setKeyframeInterval] = useState(stream.keyframeInterval ?? 2);
-  const [threads, setThreads] = useState(stream.threads ?? 0);
+  const [threads, setThreads] = useState(stream.threads ?? 6);
+  const [cbr, setCbr] = useState(stream.cbr ?? true);
   const [maxrateFactor, setMaxrateFactor] = useState(stream.maxrateFactor ?? 1.2);
   const [bufsizeFactor, setBufsizeFactor] = useState(stream.bufsizeFactor ?? 1.0);
   const [audioBitrate, setAudioBitrate] = useState(stream.audioBitrate ?? 128);
@@ -177,7 +181,7 @@ export function StreamCard({
       title, description, resolution, game_mode: gameMode, fixed_game: fixedGame,
       fps, bitrate_kbps: bitrate, preset, codec,
       profile: encoderProfile, tune, keyframe_interval: keyframeInterval,
-      threads, maxrate_factor: maxrateFactor, bufsize_factor: bufsizeFactor,
+      threads, cbr, maxrate_factor: maxrateFactor, bufsize_factor: bufsizeFactor,
       audio_bitrate: audioBitrate, audio_sample_rate: audioSampleRate, audio_codec: audioCodec,
       scoreboard_top_n: scoreboardTopN, scoreboard_font_size: scoreboardFontSize,
       scoreboard_alltime_title: scoreboardAllTimeTitle, scoreboard_recent_title: scoreboardRecentTitle,
@@ -259,7 +263,8 @@ export function StreamCard({
       setEncoderProfile(stream.profile ?? "baseline");
       setTune(stream.tune ?? "zerolatency");
       setKeyframeInterval(stream.keyframeInterval ?? 2);
-      setThreads(stream.threads ?? 0);
+      setThreads(stream.threads ?? 6);
+      setCbr(stream.cbr ?? true);
       setMaxrateFactor(stream.maxrateFactor ?? 1.2);
       setBufsizeFactor(stream.bufsizeFactor ?? 1.0);
       setAudioBitrate(stream.audioBitrate ?? 128);
@@ -312,6 +317,7 @@ export function StreamCard({
         tune,
         keyframe_interval: keyframeInterval,
         threads,
+        cbr,
         maxrate_factor: maxrateFactor,
         bufsize_factor: bufsizeFactor,
         audio_bitrate: audioBitrate,
@@ -683,15 +689,17 @@ export function StreamCard({
                 <Select
                   value={resolution}
                   onValueChange={(v) =>
-                    set(setResolution)(v as "mobile" | "desktop")
+                    set(setResolution)(v as "mobile" | "desktop" | "mobile720" | "desktop720")
                   }
                 >
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mobile">Mobile (1080×1920)</SelectItem>
-                    <SelectItem value="desktop">Desktop (1920×1080)</SelectItem>
+                    <SelectItem value="mobile">Mobile 1080p (1080×1920)</SelectItem>
+                    <SelectItem value="desktop">Desktop 1080p (1920×1080)</SelectItem>
+                    <SelectItem value="mobile720">Mobile 720p (720×1280)</SelectItem>
+                    <SelectItem value="desktop720">Desktop 720p (1280×720)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1088,34 +1096,55 @@ export function StreamCard({
                 </div>
               </div>
 
-              {/* Rate control row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">
-                    Maxrate Factor <ProfileBadge field="maxrate_factor" />
-                  </Label>
-                  <NumericInput
-                    className="h-8 text-xs"
-                    min={1.0}
-                    max={3.0}
-                    step={0.1}
-                    value={maxrateFactor}
-                    onChange={set(setMaxrateFactor)}
+              {/* Rate control */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    size="sm"
+                    checked={cbr}
+                    onCheckedChange={set(setCbr)}
                   />
-                </div>
-                <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">
-                    Bufsize Factor <ProfileBadge field="bufsize_factor" />
+                    Strict CBR <ProfileBadge field="cbr" />
                   </Label>
-                  <NumericInput
-                    className="h-8 text-xs"
-                    min={0.5}
-                    max={3.0}
-                    step={0.1}
-                    value={bufsizeFactor}
-                    onChange={set(setBufsizeFactor)}
-                  />
+                  <span className="text-[10px] text-muted-foreground ml-auto">
+                    GOP: {fps * keyframeInterval} frames ({keyframeInterval}s × {fps} fps)
+                  </span>
                 </div>
+                {cbr ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    minrate = maxrate = {bitrate}k, bufsize = {bitrate * 2}k, nal-hrd cbr
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Maxrate Factor <ProfileBadge field="maxrate_factor" />
+                      </Label>
+                      <NumericInput
+                        className="h-8 text-xs"
+                        min={1.0}
+                        max={3.0}
+                        step={0.1}
+                        value={maxrateFactor}
+                        onChange={set(setMaxrateFactor)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Bufsize Factor <ProfileBadge field="bufsize_factor" />
+                      </Label>
+                      <NumericInput
+                        className="h-8 text-xs"
+                        min={0.5}
+                        max={3.0}
+                        step={0.1}
+                        value={bufsizeFactor}
+                        onChange={set(setBufsizeFactor)}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Audio row */}
