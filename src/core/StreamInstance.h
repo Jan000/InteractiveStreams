@@ -114,7 +114,9 @@ struct StreamConfig {
     std::string scoreboardAllTimeTitle  = "ALL TIME";
     std::string scoreboardRecentTitle   = "LAST 24H";
     int    scoreboardRecentHours = 24;       ///< Time window for recent scoreboard
-
+    double scoreboardCycleSecs   = 10.0;     ///< Seconds per panel before switching
+    double scoreboardFadeSecs    = 1.0;      ///< Crossfade duration in seconds
+    int    scoreboardChatInterval = 120;     ///< Seconds between chat posts (0 = disabled)
     // ── Vote overlay font scale ─────────────────────────────────────────
     float  voteOverlayFontScale  = 1.0f;
 
@@ -193,6 +195,7 @@ private:
     void restartCurrentGame();
     void updateJpegBuffer();
     void updateScoreboardCache();
+    void sendScoreboardToChat();
     void sendPeriodicInfoMessage();
     void updatePlatformInfo(const std::string& gameId);
     std::vector<std::string> getAvailableGameIds() const;
@@ -243,6 +246,13 @@ private:
     std::vector<ScoreEntry> m_scoreboardRecentCache;
     double m_scoreboardRefreshTimer = 0.0;
     static constexpr double SCOREBOARD_REFRESH_INTERVAL = 5.0; // seconds
+
+    // Scoreboard panel cycling (animated fade)
+    double m_scoreboardCycleTimer = 0.0;
+    bool   m_scoreboardShowRecent = false; ///< false = all-time, true = recent
+
+    // Periodic scoreboard chat posting
+    double m_scoreboardChatTimer  = 0.0;
 
     // Periodic info message state
     double m_infoMessageTimer = 0.0;

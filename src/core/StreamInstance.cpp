@@ -98,6 +98,25 @@ void StreamInstance::update(double dt) {
         updateScoreboardCache();
     }
 
+    // Cycle scoreboard panels (all-time ↔ recent)
+    if (m_config.scoreboardCycleSecs > 0.0) {
+        m_scoreboardCycleTimer += dt;
+        double fullCycle = m_config.scoreboardCycleSecs + m_config.scoreboardFadeSecs;
+        if (m_scoreboardCycleTimer >= fullCycle) {
+            m_scoreboardCycleTimer = 0.0;
+            m_scoreboardShowRecent = !m_scoreboardShowRecent;
+        }
+    }
+
+    // Periodic scoreboard chat posting
+    if (m_config.scoreboardChatInterval > 0) {
+        m_scoreboardChatTimer += dt;
+        if (m_scoreboardChatTimer >= static_cast<double>(m_config.scoreboardChatInterval)) {
+            m_scoreboardChatTimer = 0.0;
+            sendScoreboardToChat();
+        }
+    }
+
     // Track game changes for description switching
     auto* game = m_gameManager->activeGame();
     std::string currentGameId = game ? game->id() : "";
@@ -528,27 +547,50 @@ void StreamInstance::renderGlobalScoreboard() {
     float padY   = 8.0f;
     float panelW = w * 0.30f;
 
-    // Helper lambda to draw one scoreboard panel
+    // Compute crossfade alpha: 255 during display, fading during transition
+    uint8_t alpha = 255;
+    double fadeSecs = m_config.scoreboardFadeSecs;
+    double cycleSecs = m_config.scoreboardCycleSecs;
+    if (fadeSecs > 0.0 && cycleSecs > 0.0) {
+        double t = m_scoreboardCycleTimer;
+        if (t < fadeSecs) {
+            // Fading in
+            alpha = static_cast<uint8_t>(255.0 * (t / fadeSecs));
+        } else if (t > cycleSecs) {
+            // Fading out
+            alpha = static_cast<uint8_t>(255.0 * (1.0 - (t - cycleSecs) / fadeSecs));
+        }
+    }
+
+    // Choose which panel(s) to show
+    const auto& entries = m_scoreboardShowRecent ? m_scoreboardRecentCache : m_scoreboardCache;
+    const auto& title   = m_scoreboardShowRecent ? m_config.scoreboardRecentTitle
+                                                 : m_config.scoreboardAllTimeTitle;
+
+    if (entries.empty()) return;
+
+    // Helper lambda to draw one scoreboard panel with given alpha
     auto drawPanel = [&](float panelX, float panelY,
-                         const std::string& title,
-                         const std::vector<ScoreEntry>& entries) -> float {
-        int count = static_cast<int>(entries.size());
+                         const std::string& panelTitle,
+                         const std::vector<ScoreEntry>& panelEntries,
+                         uint8_t panelAlpha) {
+        int count = static_cast<int>(panelEntries.size());
         float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
 
         // Background
         sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
         bg.setPosition(panelX, panelY);
-        bg.setFillColor(sf::Color(10, 10, 20, 180));
-        bg.setOutlineColor(sf::Color(80, 130, 200, 150));
+        bg.setFillColor(sf::Color(10, 10, 20, static_cast<uint8_t>(180 * panelAlpha / 255)));
+        bg.setOutlineColor(sf::Color(80, 130, 200, static_cast<uint8_t>(150 * panelAlpha / 255)));
         bg.setOutlineThickness(1.5f);
         m_renderTexture.draw(bg);
 
         // Header
         sf::Text header;
         header.setFont(m_font);
-        header.setString(title);
+        header.setString(panelTitle);
         header.setCharacterSize(static_cast<unsigned int>(headerFontSize));
-        header.setFillColor(sf::Color(255, 215, 0));
+        header.setFillColor(sf::Color(255, 215, 0, panelAlpha));
         header.setStyle(sf::Text::Bold);
         auto hb = header.getLocalBounds();
         header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
@@ -557,17 +599,18 @@ void StreamInstance::renderGlobalScoreboard() {
         // Entries
         float y = panelY + padY + headerH;
         int rank = 1;
-        for (const auto& entry : entries) {
+        for (const auto& entry : panelEntries) {
             std::string line = std::to_string(rank) + ". " + entry.displayName;
 
             sf::Text nameText;
             nameText.setFont(m_font);
             nameText.setString(line);
             nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
-            nameText.setFillColor(rank == 1 ? sf::Color(255, 215, 0) :
-                                  rank == 2 ? sf::Color(200, 200, 200) :
-                                  rank == 3 ? sf::Color(205, 127, 50) :
-                                              sf::Color(170, 170, 190));
+            sf::Color nameColor = rank == 1 ? sf::Color(255, 215, 0, panelAlpha) :
+                                  rank == 2 ? sf::Color(200, 200, 200, panelAlpha) :
+                                  rank == 3 ? sf::Color(205, 127, 50, panelAlpha) :
+                                              sf::Color(170, 170, 190, panelAlpha);
+            nameText.setFillColor(nameColor);
             nameText.setPosition(panelX + padX, y);
             m_renderTexture.draw(nameText);
 
@@ -575,7 +618,7 @@ void StreamInstance::renderGlobalScoreboard() {
             ptsText.setFont(m_font);
             ptsText.setString(std::to_string(entry.points) + " pts");
             ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
-            ptsText.setFillColor(sf::Color(88, 166, 255));
+            ptsText.setFillColor(sf::Color(88, 166, 255, panelAlpha));
             auto pb = ptsText.getLocalBounds();
             ptsText.setPosition(panelX + panelW - pb.width - padX, y);
             m_renderTexture.draw(ptsText);
@@ -583,26 +626,11 @@ void StreamInstance::renderGlobalScoreboard() {
             y += lineH;
             rank++;
         }
-        return panelH;
     };
 
     float panelX = w - panelW - 12.0f;
     float panelY = 12.0f;
-
-    // Draw ALL TIME scoreboard
-    if (!m_scoreboardCache.empty()) {
-        float h1 = drawPanel(panelX, panelY,
-                             m_config.scoreboardAllTimeTitle,
-                             m_scoreboardCache);
-        panelY += h1 + 8.0f;
-    }
-
-    // Draw RECENT scoreboard below
-    if (!m_scoreboardRecentCache.empty()) {
-        drawPanel(panelX, panelY,
-                  m_config.scoreboardRecentTitle,
-                  m_scoreboardRecentCache);
-    }
+    drawPanel(panelX, panelY, title, entries, alpha);
 }
 
 void StreamInstance::sendPeriodicInfoMessage() {
@@ -619,6 +647,47 @@ void StreamInstance::sendPeriodicInfoMessage() {
     }
 
     spdlog::debug("[Stream '{}'] Sent info message for game '{}'", m_config.name, m_lastGameId);
+}
+
+void StreamInstance::sendScoreboardToChat() {
+    // Build a compact chat message from the scoreboard caches
+    auto& cm = Application::instance().channelManager();
+
+    auto formatEntries = [](const std::string& title,
+                            const std::vector<ScoreEntry>& entries) -> std::string {
+        if (entries.empty()) return {};
+        std::string msg = "🏆 " + title + ": ";
+        int rank = 1;
+        for (const auto& e : entries) {
+            if (rank > 1) msg += " | ";
+            msg += "#" + std::to_string(rank) + " " + e.displayName
+                 + " (" + std::to_string(e.points) + "pts)";
+            rank++;
+            if (rank > 5) break; // limit to top-5 in chat
+        }
+        return msg;
+    };
+
+    // Alternate which scoreboard we post (all-time / recent)
+    // Use the same flag as the overlay, so chat and overlay stay in sync
+    std::string msg;
+    if (!m_scoreboardShowRecent && !m_scoreboardCache.empty()) {
+        msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
+    } else if (m_scoreboardShowRecent && !m_scoreboardRecentCache.empty()) {
+        msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
+    } else if (!m_scoreboardCache.empty()) {
+        msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
+    } else if (!m_scoreboardRecentCache.empty()) {
+        msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
+    }
+
+    if (msg.empty()) return;
+
+    for (const auto& chId : m_config.channelIds) {
+        cm.sendMessageToChannel(chId, msg);
+    }
+
+    spdlog::debug("[Stream '{}'] Sent scoreboard to chat", m_config.name);
 }
 
 // ── Platform info update (Twitch / YouTube) ───────────────────────────────────
@@ -1057,6 +1126,9 @@ nlohmann::json StreamInstance::getState() const {
     s["scoreboardAllTimeTitle"] = m_config.scoreboardAllTimeTitle;
     s["scoreboardRecentTitle"]  = m_config.scoreboardRecentTitle;
     s["scoreboardRecentHours"]  = m_config.scoreboardRecentHours;
+    s["scoreboardCycleSecs"]    = m_config.scoreboardCycleSecs;
+    s["scoreboardFadeSecs"]     = m_config.scoreboardFadeSecs;
+    s["scoreboardChatInterval"] = m_config.scoreboardChatInterval;
     s["voteOverlayFontScale"]   = m_config.voteOverlayFontScale;
 
     // Global scoreboard (all-time)
@@ -1163,6 +1235,9 @@ nlohmann::json StreamInstance::toJson() const {
     j["scoreboard_alltime_title"]  = m_config.scoreboardAllTimeTitle;
     j["scoreboard_recent_title"]   = m_config.scoreboardRecentTitle;
     j["scoreboard_recent_hours"]   = m_config.scoreboardRecentHours;
+    j["scoreboard_cycle_secs"]     = m_config.scoreboardCycleSecs;
+    j["scoreboard_fade_secs"]      = m_config.scoreboardFadeSecs;
+    j["scoreboard_chat_interval"]  = m_config.scoreboardChatInterval;
 
     // Vote overlay font scale
     j["vote_overlay_font_scale"]   = m_config.voteOverlayFontScale;
@@ -1261,6 +1336,9 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.scoreboardAllTimeTitle  = j.value("scoreboard_alltime_title", std::string("ALL TIME"));
     c.scoreboardRecentTitle   = j.value("scoreboard_recent_title", std::string("LAST 24H"));
     c.scoreboardRecentHours   = j.value("scoreboard_recent_hours", 24);
+    c.scoreboardCycleSecs     = j.value("scoreboard_cycle_secs", 10.0);
+    c.scoreboardFadeSecs      = j.value("scoreboard_fade_secs", 1.0);
+    c.scoreboardChatInterval  = j.value("scoreboard_chat_interval", 120);
 
     // Vote overlay font scale
     c.voteOverlayFontScale = j.value("vote_overlay_font_scale", 1.0f);
