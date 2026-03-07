@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <chrono>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -254,6 +255,10 @@ private:
 
     // YouTube API cache (channel -> broadcast ID)
     std::unordered_map<std::string, std::string> m_youtubeBroadcastIdCache;
+
+    // YouTube update rate limiting (min 2 min between updateBroadcast calls)
+    std::chrono::steady_clock::time_point m_lastYoutubeUpdateTime;
+    static constexpr int YOUTUBE_UPDATE_MIN_INTERVAL_SEC = 120;
 };
 
 } // namespace is::core

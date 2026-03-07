@@ -67,14 +67,22 @@ bool YoutubePlatform::connect() {
 }
 
 std::string YoutubePlatform::fetchLiveChatId() {
-    // Use liveBroadcasts.list (OAuth) to find the liveChatId.
+    // Use liveBroadcasts.list (OAuth) to find the liveChatId and broadcastId.
     // This requires an OAuth token — if we only have an API key, we can't auto-detect.
     if (m_oauthToken.empty()) {
         spdlog::warn("[YouTube] Cannot auto-detect liveChatId without OAuth token. "
                      "Please log in with YouTube or set live_chat_id manually.");
         return "";
     }
-    return YouTubeApi::findLiveChatId(m_oauthToken);
+    auto info = YouTubeApi::findActiveBroadcast(m_oauthToken);
+    if (!info.empty()) {
+        // Cache the broadcast ID so StreamInstance can reuse it without a
+        // separate API call to getActiveBroadcastId().
+        m_broadcastId = info.broadcastId;
+        spdlog::info("[YouTube] Cached broadcast ID: {} (status: {})",
+                     m_broadcastId, info.lifeCycleStatus);
+    }
+    return info.liveChatId;
 }
 
 void YoutubePlatform::refreshTokenIfNeeded() {
@@ -122,6 +130,7 @@ void YoutubePlatform::disconnect() {
     // Clear auto-detected chat ID so it gets re-fetched on next connect
     if (m_autoDetectedChatId) {
         m_liveChatId.clear();
+        m_broadcastId.clear();
         m_autoDetectedChatId = false;
     }
 
@@ -183,10 +192,15 @@ nlohmann::json YoutubePlatform::getStatus() const {
 nlohmann::json YoutubePlatform::getCurrentSettings() const {
     // Return the live (possibly refreshed) OAuth token and expiry so that
     // other components (e.g. StreamInstance) can use the latest credentials.
+    // Also expose the cached broadcast ID discovered during chat auto-detection
+    // so StreamInstance doesn't need a separate getActiveBroadcastId() call.
     nlohmann::json s = nlohmann::json::object();
     if (!m_oauthToken.empty()) {
         s["oauth_token"]        = m_oauthToken;
         s["oauth_token_expiry"] = m_oauthTokenExpiry;
+    }
+    if (!m_broadcastId.empty()) {
+        s["broadcast_id"] = m_broadcastId;
     }
     return s;
 }
@@ -204,8 +218,9 @@ bool YoutubePlatform::waitForStreaming() {
     }
     if (!m_shouldRun) return false;
 
-    // Stabilisation delay – give the encoder 5 seconds to become visible
-    // on YouTube before we query liveBroadcasts.list.
+    // Stabilisation delay – give the encoder a moment so YouTube registers
+    // the ingest.  Since we now accept "ready" and "testing" broadcasts
+    // (which already have a liveChatId), this can be kept short.
     constexpr int STABILISE_MS = 5000;
     spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register the broadcast...",
                  STABILISE_MS / 1000);
@@ -218,7 +233,8 @@ bool YoutubePlatform::waitForStreaming() {
 void YoutubePlatform::pollLoop() {
     spdlog::info("[YouTube] Starting poll loop (interval: {}ms)...", m_pollIntervalMs);
 
-    constexpr int RETRY_INTERVAL_MS = 30000; // retry auto-detection every 30s
+    // Retry auto-detection every 60s to conserve API quota
+    constexpr int RETRY_INTERVAL_MS = 60000;
 
     // ── Auto-detect liveChatId if needed ─────────────────────────────────
     if (m_liveChatId.empty()) {

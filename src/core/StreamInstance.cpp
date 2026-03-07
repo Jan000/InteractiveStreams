@@ -740,7 +740,18 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
     }
 
     // Update YouTube channels subscribed to this stream
+    // Rate-limit YouTube API calls to conserve quota (min 2 min between updates)
     if (!youtubeTitle.empty() || !youtubeDescription.empty()) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            now - m_lastYoutubeUpdateTime).count();
+        if (m_lastYoutubeUpdateTime.time_since_epoch().count() != 0 &&
+            elapsed < YOUTUBE_UPDATE_MIN_INTERVAL_SEC) {
+            spdlog::debug("[Stream '{}'] Skipping YouTube broadcast update — "
+                          "last update was {}s ago (min interval: {}s).",
+                          m_config.name, elapsed, YOUTUBE_UPDATE_MIN_INTERVAL_SEC);
+        } else {
+        m_lastYoutubeUpdateTime = now;
         for (const auto& chId : m_config.channelIds) {
             const auto* cfg = cm.getChannelConfig(chId);
             if (!cfg || cfg->platform != "youtube") continue;
@@ -762,11 +773,25 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
                 continue;
             }
 
-            // Check cached broadcast ID
+            // Check cached broadcast ID — first from the platform instance
+            // (set by YoutubePlatform during chat auto-detection), then from
+            // our own local cache.  This avoids a separate getActiveBroadcastId()
+            // API call which costs quota.
             std::string cachedBroadcastId;
-            auto brIt = m_youtubeBroadcastIdCache.find(chId);
-            if (brIt != m_youtubeBroadcastIdCache.end()) {
-                cachedBroadcastId = brIt->second;
+            if (auto* plat = cm.getPlatform(chId)) {
+                auto liveSettings = plat->getCurrentSettings();
+                if (liveSettings.contains("broadcast_id")) {
+                    cachedBroadcastId = liveSettings["broadcast_id"].get<std::string>();
+                    if (!cachedBroadcastId.empty()) {
+                        m_youtubeBroadcastIdCache[chId] = cachedBroadcastId;
+                    }
+                }
+            }
+            if (cachedBroadcastId.empty()) {
+                auto brIt = m_youtubeBroadcastIdCache.find(chId);
+                if (brIt != m_youtubeBroadcastIdCache.end()) {
+                    cachedBroadcastId = brIt->second;
+                }
             }
 
             // Fire-and-forget in a detached thread (same pattern as Twitch)
@@ -812,6 +837,7 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
                 }
             }).detach();
         }
+        } // else: rate-limited
     }
 }
 

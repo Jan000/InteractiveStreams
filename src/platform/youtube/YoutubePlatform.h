@@ -44,6 +44,7 @@ private:
     /// Auto-detect the activeLiveChatId for the current live broadcast.
     /// Uses liveBroadcasts.list (requires OAuth token, mine=true).
     /// Returns the chat ID or an empty string on failure.
+    /// Also caches the broadcast ID for reuse by StreamInstance.
     std::string fetchLiveChatId();
 
     /// Refresh the OAuth access token if it's expired or about to expire.
@@ -64,6 +65,7 @@ private:
     std::string m_oauthRefreshToken;   ///< Refresh token for auto-renewal
     int64_t     m_oauthTokenExpiry = 0;///< Unix timestamp when access token expires
     std::string m_liveChatId;
+    std::string m_broadcastId;         ///< Cached broadcast ID from findActiveBroadcast
     std::string m_channelId;
     int         m_pollIntervalMs = 2000;
     bool        m_autoDetectedChatId = false; ///< true if liveChatId was resolved automatically

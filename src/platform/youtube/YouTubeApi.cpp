@@ -130,23 +130,32 @@ bool YouTubeApi::isCurlAvailable() {
 
 std::string YouTubeApi::findLiveChatId(const std::string& oauthToken)
 {
-    if (oauthToken.empty()) return "";
+    return findActiveBroadcast(oauthToken).liveChatId;
+}
 
-    // Use liveBroadcasts.list with mine=true to find an active broadcast.
+YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oauthToken)
+{
+    if (oauthToken.empty()) return {};
+
+    // Use liveBroadcasts.list with mine=true to find a broadcast.
     // NOTE: mine=true and broadcastStatus are MUTUALLY EXCLUSIVE filters in
     //       the YouTube API – using both returns HTTP 400.  We fetch all of
-    //       the authenticated user's broadcasts and pick the live one
-    //       client-side via snippet.lifeCycleStatus.
+    //       the authenticated user's broadcasts and pick the best one
+    //       client-side.
+    //
+    // YouTube assigns a liveChatId as soon as a broadcast is CREATED
+    // (status "ready"), so we can start reading chat before the broadcast
+    // transitions to "live".  Priority: live > testing > ready.
     std::string url = "https://www.googleapis.com/youtube/v3/liveBroadcasts"
                       "?mine=true"
                       "&broadcastType=all"
-                      "&part=snippet"
+                      "&part=id,snippet"
                       "&maxResults=50";
 
     std::string resp = curlRequest("GET", url, oauthToken);
     if (resp.empty()) {
-        spdlog::warn("[YouTubeApi] findLiveChatId: empty response from liveBroadcasts.list");
-        return "";
+        spdlog::warn("[YouTubeApi] findActiveBroadcast: empty response from liveBroadcasts.list");
+        return {};
     }
 
     try {
@@ -156,40 +165,67 @@ std::string YouTubeApi::findLiveChatId(const std::string& oauthToken)
             auto msg = j["error"].value("message", "unknown error");
             int code = j["error"].value("code", 0);
             spdlog::warn("[YouTubeApi] liveBroadcasts.list error ({}): {}", code, msg);
-            return "";
+            return {};
         }
 
         if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
             spdlog::debug("[YouTubeApi] No broadcasts found for this account.");
-            return "";
+            return {};
         }
 
-        // Find the first broadcast that is currently live
+        // Status priority: live=3, testing=2, ready=1
+        auto statusPriority = [](const std::string& s) -> int {
+            if (s == "live")    return 3;
+            if (s == "testing") return 2;
+            if (s == "ready")   return 1;
+            return 0;  // complete, revoked, etc. — skip
+        };
+
+        BroadcastInfo best;
+        int bestPrio = 0;
+
         for (const auto& item : j["items"]) {
             if (!item.contains("snippet")) continue;
             auto& snippet = item["snippet"];
 
             std::string status = snippet.value("lifeCycleStatus", "");
-            if (status != "live") continue;
+            int prio = statusPriority(status);
+            if (prio == 0) continue;  // Skip completed/revoked broadcasts
 
             std::string liveChatId = snippet.value("liveChatId", "");
-            if (liveChatId.empty()) {
-                spdlog::warn("[YouTubeApi] Live broadcast has no liveChatId.");
-                continue;
+            if (liveChatId.empty()) continue;  // No chat available
+
+            if (prio > bestPrio) {
+                best.liveChatId      = liveChatId;
+                best.broadcastId     = item.value("id", "");
+                best.title           = snippet.value("title", "(unknown)");
+                best.lifeCycleStatus = status;
+                bestPrio = prio;
             }
 
-            std::string title = snippet.value("title", "(unknown)");
-            spdlog::info("[YouTubeApi] Found live broadcast '{}' with liveChatId: {}",
-                         title, liveChatId);
-            return liveChatId;
+            if (prio == 3) break;  // "live" is the highest priority, stop searching
         }
 
-        spdlog::debug("[YouTubeApi] No currently-live broadcast found ({} broadcast(s) checked).",
-                      j["items"].size());
+        if (!best.empty()) {
+            spdlog::info("[YouTubeApi] Found broadcast '{}' (status={}) with liveChatId: {}",
+                         best.title, best.lifeCycleStatus, best.liveChatId);
+            return best;
+        }
+
+        // Log all statuses for debugging
+        std::string statuses;
+        for (const auto& item : j["items"]) {
+            if (item.contains("snippet")) {
+                if (!statuses.empty()) statuses += ", ";
+                statuses += item["snippet"].value("lifeCycleStatus", "?");
+            }
+        }
+        spdlog::debug("[YouTubeApi] No usable broadcast found ({} checked, statuses: {}).",
+                      j["items"].size(), statuses);
     } catch (const std::exception& e) {
         spdlog::warn("[YouTubeApi] Failed to parse liveBroadcasts.list response: {}", e.what());
     }
-    return "";
+    return {};
 }
 
 std::string YouTubeApi::getActiveBroadcastId(const std::string& oauthToken) {

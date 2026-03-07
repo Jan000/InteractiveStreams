@@ -14,15 +14,29 @@ public:
     /// Validate that curl is available on the system.
     static bool isCurlAvailable();
 
+    /// Information about a broadcast discovered via liveBroadcasts.list.
+    struct BroadcastInfo {
+        std::string liveChatId;
+        std::string broadcastId;
+        std::string title;
+        std::string lifeCycleStatus; ///< "live", "testing", or "ready"
+        bool empty() const { return liveChatId.empty(); }
+    };
+
+    /// Find the best available broadcast for chat auto-detection.
+    /// Accepts broadcasts in "live", "testing", or "ready" state (that priority).
+    /// Returns both liveChatId and broadcastId in a single API call, avoiding
+    /// the need for a separate getActiveBroadcastId() call.
+    /// Costs 1 quota unit (liveBroadcasts.list).
+    static BroadcastInfo findActiveBroadcast(const std::string& oauthToken);
+
     /// Find the active live broadcast ID for the authenticated user.
     /// Calls liveBroadcasts.list with broadcastStatus=active.
     /// Returns empty string on failure or if no active broadcast exists.
     static std::string getActiveBroadcastId(const std::string& oauthToken);
 
-    /// Find the activeLiveChatId using liveBroadcasts.list (requires OAuth token).
-    /// Calls liveBroadcasts.list?mine=true&broadcastStatus=active&part=snippet
-    /// and extracts snippet.liveChatId from the first active broadcast.
-    /// Returns the liveChatId or empty string on failure.
+    /// Convenience wrapper: returns just the liveChatId from findActiveBroadcast().
+    /// Kept for backward compatibility.
     static std::string findLiveChatId(const std::string& oauthToken);
 
     /// Update the title, description, and/or category of a live broadcast.
