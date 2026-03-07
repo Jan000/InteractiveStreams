@@ -282,7 +282,14 @@ private:
     std::mt19937 m_rng;
 
     // Particle capacity
-    static constexpr size_t MAX_PARTICLES = 20000;
+    static constexpr size_t MAX_PARTICLES = 5000;
+
+    // Trail emission rate limiter (seconds between trail emissions per planet)
+    static constexpr float TRAIL_EMIT_INTERVAL = 0.05f; // 20 Hz instead of every frame
+    float m_trailEmitTimer = 0.0f;
+
+    // Vertex array for batched particle rendering
+    sf::VertexArray m_particleVerts;
 
     // Contact listener
     class ContactListener : public b2ContactListener {

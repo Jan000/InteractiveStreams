@@ -415,6 +415,10 @@ void GravityBrawl::update(double dt) {
     m_blackHoleRotation += fdt * 0.5f;
     updateParticles(fdt);
 
+    // Update trail emission rate limiter
+    m_trailEmitTimer -= fdt;
+    if (m_trailEmitTimer < 0.0f) m_trailEmitTimer = 0.0f;
+
     // Update floating texts
     for (auto it = m_floatingTexts.begin(); it != m_floatingTexts.end();) {
         it->timer -= fdt;
@@ -525,14 +529,14 @@ void GravityBrawl::update(double dt) {
                 // Survival time
                 p.survivalTime += dt;
 
-                // Trail particles for higher tiers
-                if (p.tier >= PlanetTier::IcePlanet) {
+                // Trail particles for higher tiers (rate-limited)
+                if (p.tier >= PlanetTier::IcePlanet && m_trailEmitTimer <= 0.0f) {
                     sf::Vector2f screenPos = worldToScreen(pos);
                     emitTrail(screenPos, getTierColor(p.tier));
                 }
 
-                // Star tier ambient particles
-                if (p.tier == PlanetTier::Star && static_cast<int>(p.animTimer * 10) % 3 == 0) {
+                // Star tier ambient particles (rate-limited, every ~0.3s)
+                if (p.tier == PlanetTier::Star && m_trailEmitTimer <= 0.0f) {
                     sf::Vector2f screenPos = worldToScreen(pos);
                     emitParticles(screenPos, sf::Color(255, 255, 150, 180), 1, 20.f, 360.f, 0.8f);
                 }
@@ -546,9 +550,9 @@ void GravityBrawl::update(double dt) {
                     p.body->SetLinearVelocity(vel);
                 }
 
-                // Update fixture radius if grown
+                // Update fixture radius if grown (threshold 0.05 to avoid frequent recreation)
                 float newRadius = p.getVisualRadius();
-                if (std::abs(newRadius - p.radiusMeters) > 0.01f) {
+                if (std::abs(newRadius - p.radiusMeters) > 0.05f) {
                     p.radiusMeters = newRadius;
                     // Recreate fixture with new size
                     if (p.body->GetFixtureList()) {
@@ -564,6 +568,11 @@ void GravityBrawl::update(double dt) {
                     p.body->CreateFixture(&fixDef);
                 }
             }
+        }
+
+        // Reset trail emit timer after processing all planets
+        if (m_trailEmitTimer <= 0.0f) {
+            m_trailEmitTimer = TRAIL_EMIT_INTERVAL;
         }
 
         // Check deaths (black hole)
@@ -887,9 +896,10 @@ void GravityBrawl::emitParticles(sf::Vector2f pos, sf::Color color, int count,
 }
 
 void GravityBrawl::emitExplosion(sf::Vector2f pos, sf::Color color, int count) {
-    emitParticles(pos, color, count, 200.f, 360.f, 1.2f);
+    int reduced = std::max(1, count / 2); // Halve for performance
+    emitParticles(pos, color, reduced, 200.f, 360.f, 1.2f);
     // Add some bright white particles
-    emitParticles(pos, sf::Color(255, 255, 255, 200), count / 3, 150.f, 360.f, 0.6f);
+    emitParticles(pos, sf::Color(255, 255, 255, 200), reduced / 3, 150.f, 360.f, 0.6f);
 }
 
 void GravityBrawl::emitTrail(sf::Vector2f pos, sf::Color color) {
@@ -898,35 +908,38 @@ void GravityBrawl::emitTrail(sf::Vector2f pos, sf::Color color) {
 }
 
 void GravityBrawl::emitSupernovaWave(sf::Vector2f pos, sf::Color color) {
-    // Ring of particles expanding outward
-    emitParticles(pos, color, 100, 300.f, 360.f, 1.0f);
-    emitParticles(pos, sf::Color(255, 255, 255, 200), 50, 250.f, 360.f, 0.8f);
-    emitParticles(pos, sf::Color(255, 200, 50, 180), 30, 200.f, 360.f, 1.2f);
+    // Ring of particles expanding outward (reduced counts for performance)
+    emitParticles(pos, color, 50, 300.f, 360.f, 1.0f);
+    emitParticles(pos, sf::Color(255, 255, 255, 200), 25, 250.f, 360.f, 0.8f);
+    emitParticles(pos, sf::Color(255, 200, 50, 180), 15, 200.f, 360.f, 1.2f);
 }
 
 void GravityBrawl::updateParticles(float dt) {
-    for (auto it = m_particles.begin(); it != m_particles.end();) {
-        it->life -= dt;
-        if (it->life <= 0.0f) {
-            it = m_particles.erase(it);
+    // Swap-and-pop pattern: O(1) removal instead of O(n) vector::erase
+    for (size_t i = 0; i < m_particles.size();) {
+        auto& p = m_particles[i];
+        p.life -= dt;
+        if (p.life <= 0.0f) {
+            m_particles[i] = m_particles.back();
+            m_particles.pop_back();
             continue;
         }
-        it->velocity.x *= it->drag;
-        it->velocity.y *= it->drag;
-        it->position.x += it->velocity.x * dt;
-        it->position.y += it->velocity.y * dt;
+        p.velocity.x *= p.drag;
+        p.velocity.y *= p.drag;
+        p.position.x += p.velocity.x * dt;
+        p.position.y += p.velocity.y * dt;
 
         // Fade alpha
-        if (it->fadeAlpha) {
-            float frac = it->life / it->maxLife;
-            it->color.a = static_cast<sf::Uint8>(frac * 255);
+        if (p.fadeAlpha) {
+            float frac = p.life / p.maxLife;
+            p.color.a = static_cast<sf::Uint8>(frac * 255);
         }
         // Shrink
-        if (it->shrink) {
-            float frac = it->life / it->maxLife;
-            it->size = std::max(0.5f, it->size * (0.5f + 0.5f * frac));
+        if (p.shrink) {
+            float frac = p.life / p.maxLife;
+            p.size = std::max(0.5f, p.size * (0.5f + 0.5f * frac));
         }
-        ++it;
+        ++i;
     }
 }
 
@@ -1040,8 +1053,8 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
     hole.setOutlineThickness(2.0f);
     target.draw(hole);
 
-    // Particle drain toward center
-    if (static_cast<int>(m_blackHolePulse * 5) % 2 == 0) {
+    // Particle drain toward center (rate-limited: every 4th tick)
+    if (static_cast<int>(m_blackHolePulse * 5) % 4 == 0) {
         std::uniform_real_distribution<float> aDist(0.f, 360.f);
         float a = aDist(m_rng) * (3.14159f / 180.0f);
         float dist = (displayRadius + 30.0f);
@@ -1265,13 +1278,28 @@ void GravityBrawl::renderCrown(sf::RenderTarget& target, sf::Vector2f pos, float
 // ── Particle Rendering ───────────────────────────────────────────────────────
 
 void GravityBrawl::renderParticles(sf::RenderTarget& target) {
-    for (const auto& p : m_particles) {
-        sf::CircleShape shape(p.size);
-        shape.setOrigin(p.size, p.size);
-        shape.setPosition(p.position);
-        shape.setFillColor(p.color);
-        target.draw(shape);
+    // Batch all particles into a single vertex array (quads) for a single draw call
+    m_particleVerts.setPrimitiveType(sf::Quads);
+    m_particleVerts.resize(m_particles.size() * 4);
+
+    for (size_t i = 0; i < m_particles.size(); ++i) {
+        const auto& p = m_particles[i];
+        float s = p.size;
+        sf::Vector2f pos = p.position;
+        size_t vi = i * 4;
+
+        m_particleVerts[vi + 0].position = {pos.x - s, pos.y - s};
+        m_particleVerts[vi + 1].position = {pos.x + s, pos.y - s};
+        m_particleVerts[vi + 2].position = {pos.x + s, pos.y + s};
+        m_particleVerts[vi + 3].position = {pos.x - s, pos.y + s};
+
+        m_particleVerts[vi + 0].color = p.color;
+        m_particleVerts[vi + 1].color = p.color;
+        m_particleVerts[vi + 2].color = p.color;
+        m_particleVerts[vi + 3].color = p.color;
     }
+
+    target.draw(m_particleVerts);
 }
 
 // ── Kill Feed ────────────────────────────────────────────────────────────────
