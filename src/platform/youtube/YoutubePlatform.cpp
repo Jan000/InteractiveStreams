@@ -45,17 +45,12 @@ bool YoutubePlatform::connect() {
     // Refresh token before first API call (may be expired from previous session)
     refreshTokenIfNeeded();
 
-    // Auto-detect live chat ID if not manually provided
+    // If liveChatId was explicitly configured, keep it.  Otherwise auto-
+    // detection is deferred to the background pollLoop where it will wait
+    // until a stream is actually live (+ stabilisation delay).
     if (m_liveChatId.empty()) {
-        spdlog::info("[YouTube] No live_chat_id configured — auto-detecting via liveBroadcasts.list...");
-        m_liveChatId = fetchLiveChatId();
-        if (m_liveChatId.empty()) {
-            spdlog::info("[YouTube] No active broadcast found yet. "
-                         "Will connect and retry auto-detection periodically.");
-        } else {
-            m_autoDetectedChatId = true;
-            spdlog::info("[YouTube] Auto-detected liveChatId: {}", m_liveChatId);
-        }
+        spdlog::info("[YouTube] No live_chat_id configured — "
+                     "will auto-detect once a stream is started.");
     }
 
     // Guard: disconnect first if already running (prevents assigning to a
@@ -166,6 +161,7 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"hasRefreshToken", !m_oauthRefreshToken.empty()},
         {"oauthTokenExpiry", m_oauthTokenExpiry},
         {"waitingForLivestream", m_connected.load() && m_liveChatId.empty()},
+        {"waitingForStreamStart", m_connected.load() && m_liveChatId.empty() && (!m_streamingChecker || !m_streamingChecker())},
         {"messagesReceived", m_messagesReceived},
         {"messagesSent", m_messagesSent}
     };
@@ -195,12 +191,41 @@ nlohmann::json YoutubePlatform::getCurrentSettings() const {
     return s;
 }
 
+void YoutubePlatform::setStreamingChecker(std::function<bool()> checker) {
+    m_streamingChecker = std::move(checker);
+}
+
+bool YoutubePlatform::waitForStreaming() {
+    // Wait until at least one stream is actively encoding.
+    spdlog::info("[YouTube] Waiting for a stream to start before auto-detecting liveChatId...");
+    while (m_shouldRun) {
+        if (m_streamingChecker && m_streamingChecker()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    if (!m_shouldRun) return false;
+
+    // Stabilisation delay – give the encoder 5 seconds to become visible
+    // on YouTube before we query liveBroadcasts.list.
+    constexpr int STABILISE_MS = 5000;
+    spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register the broadcast...",
+                 STABILISE_MS / 1000);
+    for (int waited = 0; waited < STABILISE_MS && m_shouldRun; waited += 500) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    return m_shouldRun;
+}
+
 void YoutubePlatform::pollLoop() {
     spdlog::info("[YouTube] Starting poll loop (interval: {}ms)...", m_pollIntervalMs);
 
     constexpr int RETRY_INTERVAL_MS = 30000; // retry auto-detection every 30s
 
     // ── Auto-detect liveChatId if needed ─────────────────────────────────
+    if (m_liveChatId.empty()) {
+        // Gate: wait until a stream is actually encoding before hitting the
+        // YouTube API, otherwise we waste quota when no broadcast exists.
+        if (!waitForStreaming()) return;
+    }
     while (m_shouldRun && m_liveChatId.empty()) {
         refreshTokenIfNeeded();
         spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection via liveBroadcasts.list...");
@@ -235,6 +260,9 @@ void YoutubePlatform::pollLoop() {
     while (m_shouldRun) {
         // If we don't have a liveChatId yet, periodically retry auto-detection
         if (m_liveChatId.empty()) {
+            // Gate: wait until a stream is actively encoding
+            if (!waitForStreaming()) return;
+
             refreshTokenIfNeeded();
             spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection via liveBroadcasts.list...");
             std::string chatId = fetchLiveChatId();

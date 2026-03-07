@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <mutex>
+#include <functional>
 #include <nlohmann/json.hpp>
 
 namespace is::core {
@@ -81,6 +82,11 @@ public:
 
     platform::IPlatform* getPlatform(const std::string& channelId);
 
+    /// Set a callback used by YouTube platforms to determine whether at least
+    /// one stream is actively encoding.  Auto-detection of the liveChatId is
+    /// deferred until the checker returns true.
+    void setStreamingChecker(std::function<bool()> checker);
+
     // ── Status / serialisation ───────────────────────────────────────────
 
     nlohmann::json getStatus() const;
@@ -116,6 +122,7 @@ private:
 
     mutable std::mutex m_mutex;
     std::vector<std::unique_ptr<ChannelEntry>> m_channels;
+    std::function<bool()> m_streamingChecker;  ///< Passed to YouTube platforms
 };
 
 } // namespace is::core

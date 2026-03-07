@@ -44,7 +44,11 @@ std::unique_ptr<platform::IPlatform>
 ChannelManager::createPlatform(const std::string& platformType) {
     if (platformType == "local")   return std::make_unique<platform::LocalPlatform>();
     if (platformType == "twitch")  return std::make_unique<platform::TwitchPlatform>();
-    if (platformType == "youtube") return std::make_unique<platform::YoutubePlatform>();
+    if (platformType == "youtube") {
+        auto yt = std::make_unique<platform::YoutubePlatform>();
+        if (m_streamingChecker) yt->setStreamingChecker(m_streamingChecker);
+        return yt;
+    }
     spdlog::warn("[ChannelManager] Unknown platform type: '{}'", platformType);
     return nullptr;
 }
@@ -206,6 +210,18 @@ void ChannelManager::connectAllEnabled() {
             spdlog::info("[ChannelManager] '{}' connected.", ci.name);
         else
             spdlog::warn("[ChannelManager] Failed to connect '{}'.", ci.name);
+    }
+}
+
+void ChannelManager::setStreamingChecker(std::function<bool()> checker) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_streamingChecker = std::move(checker);
+    // Propagate to all existing YouTube platform instances
+    for (auto& e : m_channels) {
+        if (e->config.platform == "youtube" && e->platform) {
+            auto* yt = dynamic_cast<platform::YoutubePlatform*>(e->platform.get());
+            if (yt) yt->setStreamingChecker(m_streamingChecker);
+        }
     }
 }
 

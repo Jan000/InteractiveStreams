@@ -195,6 +195,16 @@ void Application::initialize() {
     auto streams = m_impl->streamManager->allStreams();
     if (!streams.empty()) m_impl->previewStreamId = streams[0]->config().id;
 
+    // Tell ChannelManager how to check whether any stream is live.
+    // YouTube platforms use this to defer liveChatId auto-detection until
+    // a stream is actually encoding.
+    m_impl->channelManager->setStreamingChecker([this]() -> bool {
+        for (auto* s : m_impl->streamManager->allStreams()) {
+            if (s->isStreaming()) return true;
+        }
+        return false;
+    });
+
     // ── Web dashboard ────────────────────────────────────────────────────
     int webPort = cfg.get<int>("web.port", 8080);
     m_impl->webServer = std::make_unique<web::WebServer>(webPort, *this);

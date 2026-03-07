@@ -10,6 +10,7 @@
 #include <mutex>
 #include <atomic>
 #include <thread>
+#include <functional>
 
 namespace is::platform {
 
@@ -31,6 +32,11 @@ public:
     nlohmann::json getStatus() const override;
     void configure(const nlohmann::json& settings) override;
     nlohmann::json getCurrentSettings() const override;
+
+    /// Set a callback that returns true when at least one stream is actively
+    /// encoding.  Auto-detection of the liveChatId will be deferred until the
+    /// checker returns true (+ a short stabilisation delay).
+    void setStreamingChecker(std::function<bool()> checker);
 
 private:
     void pollLoop();
@@ -71,6 +77,14 @@ private:
     // Thread-safe message queue
     std::queue<ChatMessage> m_messageQueue;
     mutable std::mutex      m_mutex;
+
+    // Streaming gate – defer auto-detection until a stream is live
+    std::function<bool()> m_streamingChecker;
+
+    /// Block (in 500 ms increments) until m_streamingChecker returns true,
+    /// then wait an additional stabilisation delay.  Returns false if
+    /// m_shouldRun became false while waiting.
+    bool waitForStreaming();
 
     // Stats
     size_t m_messagesReceived = 0;
