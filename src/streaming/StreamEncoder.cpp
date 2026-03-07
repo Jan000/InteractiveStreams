@@ -237,13 +237,16 @@ bool StreamEncoder::start() {
     }
 
     // Video encoding — input is already yuv420p so no swscale conversion needed
+    // Strict CBR: minrate == maxrate == bitrate, bufsize = 2x bitrate, nal-hrd cbr
     cmd << " -c:v " << m_codec
         << " -preset " << m_preset
         << " -profile:v " << m_profile
         << " -threads " << m_threads
         << " -b:v " << m_bitrate << "k"
-        << " -maxrate " << static_cast<int>(m_bitrate * m_maxrateFactor) << "k"
-        << " -bufsize " << static_cast<int>(m_bitrate * m_bufsizeFactor) << "k"
+        << " -minrate " << m_bitrate << "k"
+        << " -maxrate " << m_bitrate << "k"
+        << " -bufsize " << (m_bitrate * 2) << "k"
+        << " -nal-hrd cbr"
         << " -g " << m_fps * m_keyframeInterval
         << " -tune " << m_tune
         << " -x264-params \"sliced-threads=1\"";
