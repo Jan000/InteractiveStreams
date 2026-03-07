@@ -32,7 +32,7 @@ StreamEncoder::StreamEncoder(core::Config& config)
     m_profile          = config.get<std::string>("streaming.profile", "baseline");
     m_tune             = config.get<std::string>("streaming.tune", "zerolatency");
     m_keyframeInterval = config.get<int>("streaming.keyframe_interval", 2);
-    m_threads          = config.get<int>("streaming.threads", 6);
+    m_threads          = config.get<int>("streaming.threads", 2);
     m_cbr              = config.get<bool>("streaming.cbr", true);
     m_maxrateFactor    = config.get<float>("streaming.maxrate_factor", 1.2f);
     m_bufsizeFactor    = config.get<float>("streaming.bufsize_factor", 1.0f);
@@ -270,6 +270,7 @@ bool StreamEncoder::start() {
 
     // Explicit stream mapping
     cmd << " -map 0:v -map 1:a"
+        << " -flush_packets 1"
         << " -f flv"
         << " \"" << m_outputUrl << "\""
         << " 2>\"" << m_stderrLogPath << "\"";
@@ -294,8 +295,9 @@ bool StreamEncoder::start() {
         return false;
     }
 
-    // Set a large stdio buffer to reduce syscall overhead.
-    setvbuf(m_pipe, nullptr, _IOFBF, 2 * 1024 * 1024); // 2 MB buffered I/O
+    // Set a stdio buffer – large enough to batch small writes, small enough
+    // to avoid accumulating latency in the pipe.
+    setvbuf(m_pipe, nullptr, _IOFBF, 256 * 1024); // 256 KB buffered I/O
 
     m_running = true;
     m_thread = std::thread(&StreamEncoder::encoderThread, this);
@@ -359,7 +361,7 @@ void StreamEncoder::encodeFrame(const sf::Uint8* pixelData) {
 }
 
 void StreamEncoder::encoderThread() {
-    spdlog::info("[StreamEncoder] Encoder thread started.");
+    spdlog::info("[StreamEncoder] Encoder thread started (frame-paced at {} fps).", m_fps);
 
     const size_t pixelCount    = static_cast<size_t>(m_width) * m_height;
     const size_t yuvFrameSize  = pixelCount * 3 / 2;  // YUV420P: 1.5 bytes/pixel
@@ -368,25 +370,52 @@ void StreamEncoder::encoderThread() {
     std::vector<sf::Uint8> localBuffer(m_frameBuffer.size());  // RGBA
     std::vector<sf::Uint8> yuvBuffer(yuvFrameSize);            // YUV420P
 
+    bool hasFrame = false; // true once we've received at least one frame
+
+    // Frame-pacing: deliver frames to FFmpeg at exact intervals.
+    // This prevents bursty delivery that causes YouTube/Twitch buffering.
+    const auto frameDuration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(1.0 / m_fps));
+    auto nextFrameTime = std::chrono::steady_clock::now() + frameDuration;
+
     auto lastFpsTime = std::chrono::steady_clock::now();
     size_t fpsFrameCount = 0;
     size_t droppedFrames  = 0;
+    size_t dupFrames      = 0;
 
     while (m_running) {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this] { return m_frameReady || !m_running; });
+        // Wait until the next frame deadline (or shutdown).
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait_until(lock, nextFrameTime, [this] { return !m_running; });
+            if (!m_running) break;
 
-        if (!m_running) break;
-        if (!m_frameReady) continue;
+            if (m_frameReady) {
+                // New frame from the game – grab it.
+                std::memcpy(localBuffer.data(), m_frameBuffer.data(), localBuffer.size());
+                m_frameReady = false;
+                hasFrame = true;
+            } else if (hasFrame) {
+                // No new frame arrived – re-encode the last frame to keep
+                // the stream alive at a constant frame rate (duplicate).
+                dupFrames++;
+            }
+        }
 
-        // Grab the RGBA frame and release the lock immediately.
-        std::memcpy(localBuffer.data(), m_frameBuffer.data(), localBuffer.size());
-        m_frameReady = false;
-        lock.unlock();
+        // Advance the deadline. If encoding was slow and we fell behind,
+        // snap forward to avoid a burst of catch-up frames.
+        nextFrameTime += frameDuration;
+        auto now = std::chrono::steady_clock::now();
+        if (nextFrameTime < now) {
+            auto behind = now - nextFrameTime;
+            auto skipped = behind / frameDuration;
+            nextFrameTime = now + frameDuration;
+            droppedFrames += static_cast<size_t>(skipped);
+        }
+
+        if (!hasFrame) continue; // Nothing to encode yet
 
         // Convert RGBA → YUV420P (outside mutex).
-        // This replaces both the old stripAlpha AND FFmpeg's internal swscale,
-        // and the output is 3.1 MB instead of 6.2 MB (RGB24) or 8.3 MB (RGBA).
         rgbaToYuv420p(localBuffer.data(), yuvBuffer.data(), m_width, m_height);
 
         // Write YUV420P frame to FFmpeg's stdin (outside lock)
@@ -409,24 +438,19 @@ void StreamEncoder::encoderThread() {
         m_frameCount++;
         fpsFrameCount++;
 
-        // Track frame drops (main thread overwrote buffer while we were writing)
-        {
-            std::lock_guard<std::mutex> g(m_mutex);
-            if (m_frameReady) droppedFrames++;
-        }
-
         // Calculate FPS every second
-        auto now = std::chrono::steady_clock::now();
+        now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration<double>(now - lastFpsTime).count();
         if (elapsed >= 1.0) {
             m_currentFps = static_cast<float>(fpsFrameCount / elapsed);
-            if (droppedFrames > 0) {
-                spdlog::debug("[StreamEncoder] {:.1f} encode-fps, {} frame(s) dropped in last {:.1f}s",
-                              m_currentFps.load(), droppedFrames, elapsed);
-                droppedFrames = 0;
+            if (droppedFrames > 0 || dupFrames > 0) {
+                spdlog::debug("[StreamEncoder] {:.1f} fps | {} dup | {} skip in {:.1f}s",
+                              m_currentFps.load(), dupFrames, droppedFrames, elapsed);
             }
             fpsFrameCount = 0;
-            lastFpsTime = now;
+            droppedFrames = 0;
+            dupFrames     = 0;
+            lastFpsTime   = now;
         }
     }
 

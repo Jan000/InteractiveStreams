@@ -100,7 +100,7 @@ export function StreamCard({
   const [encoderProfile, setEncoderProfile] = useState(stream.profile ?? "baseline");
   const [tune, setTune] = useState(stream.tune ?? "zerolatency");
   const [keyframeInterval, setKeyframeInterval] = useState(stream.keyframeInterval ?? 2);
-  const [threads, setThreads] = useState(stream.threads ?? 6);
+  const [threads, setThreads] = useState(stream.threads ?? 2);
   const [cbr, setCbr] = useState(stream.cbr ?? true);
   const [maxrateFactor, setMaxrateFactor] = useState(stream.maxrateFactor ?? 1.2);
   const [bufsizeFactor, setBufsizeFactor] = useState(stream.bufsizeFactor ?? 1.0);
@@ -263,7 +263,7 @@ export function StreamCard({
       setEncoderProfile(stream.profile ?? "baseline");
       setTune(stream.tune ?? "zerolatency");
       setKeyframeInterval(stream.keyframeInterval ?? 2);
-      setThreads(stream.threads ?? 6);
+      setThreads(stream.threads ?? 2);
       setCbr(stream.cbr ?? true);
       setMaxrateFactor(stream.maxrateFactor ?? 1.2);
       setBufsizeFactor(stream.bufsizeFactor ?? 1.0);

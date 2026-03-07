@@ -85,7 +85,7 @@ const SCALAR_DEFAULTS: Record<string, unknown> = {
   profile: "baseline",
   tune: "zerolatency",
   keyframe_interval: 2,
-  threads: 6,
+  threads: 2,
   cbr: true,
   maxrate_factor: 1.2,
   bufsize_factor: 1.0,

@@ -52,7 +52,7 @@ struct StreamConfig {
     std::string profile = "baseline";
     std::string tune    = "zerolatency";
     int keyframeInterval = 2;    // GOP size in seconds
-    int threads  = 6;            // 0 = auto, 6 recommended for 8-core
+    int threads  = 2;            // 0 = auto, low values reduce contention
     bool cbr     = true;         // strict CBR encoding
     float maxrateFactor = 1.2f;  // VBR only
     float bufsizeFactor = 1.0f;  // VBR only
