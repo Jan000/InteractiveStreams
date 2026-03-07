@@ -69,12 +69,25 @@ public:
     std::string pendingGameName() const;
     SwitchMode  pendingSwitchMode() const;
 
+    /// Store per-game configuration settings.
+    /// These are applied via IGame::configure() whenever a game is loaded.
+    void setGameSettings(const std::string& gameId, const nlohmann::json& settings);
+
+    /// Get stored settings for a game.
+    nlohmann::json getGameSettings(const std::string& gameId) const;
+
+    /// Get all game settings.
+    nlohmann::json getAllGameSettings() const;
+
 private:
     std::unique_ptr<games::IGame> m_activeGame;
     std::string                   m_activeGameName;
 
     // Chat feedback callback (installed on every newly loaded game)
     games::ChatFeedbackCallback   m_chatFeedback;
+
+    // Per-game configuration settings
+    std::unordered_map<std::string, nlohmann::json> m_gameSettings;
 
     // Deferred switch state (guarded by mutex for thread safety)
     mutable std::mutex m_switchMutex;

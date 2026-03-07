@@ -10,6 +10,11 @@
 
 namespace is::games::gravity_brawl {
 
+// Helper: check if a userId represents a bot
+static inline bool isBot(const std::string& userId) {
+    return userId.size() >= 6 && userId.substr(0, 6) == "__bot_";
+}
+
 // ── Registration ─────────────────────────────────────────────────────────────
 REGISTER_GAME(GravityBrawl, "gravity_brawl");
 
@@ -125,6 +130,94 @@ void GravityBrawl::shutdown() {
     m_floatingTexts.clear();
     m_contactListener.reset();
     m_world.reset();
+}
+
+// ── Configuration ────────────────────────────────────────────────────────────
+
+void GravityBrawl::configure(const nlohmann::json& settings) {
+    if (settings.contains("bot_fill") && settings["bot_fill"].is_number_integer()) {
+        m_botFillTarget = settings["bot_fill"].get<int>();
+        spdlog::info("[GravityBrawl] Bot fill target set to {}", m_botFillTarget);
+    }
+    if (settings.contains("game_duration") && settings["game_duration"].is_number()) {
+        m_gameDuration = settings["game_duration"].get<double>();
+    }
+    if (settings.contains("lobby_duration") && settings["lobby_duration"].is_number()) {
+        m_lobbyDuration = settings["lobby_duration"].get<double>();
+    }
+    if (settings.contains("min_players") && settings["min_players"].is_number_integer()) {
+        m_minPlayers = settings["min_players"].get<int>();
+    }
+    if (settings.contains("cosmic_event_cooldown") && settings["cosmic_event_cooldown"].is_number()) {
+        m_cosmicEventCooldown = settings["cosmic_event_cooldown"].get<double>();
+    }
+}
+
+// ── Bot Fill ─────────────────────────────────────────────────────────────────
+
+void GravityBrawl::spawnBots() {
+    if (m_botFillTarget <= 0) return;
+
+    int currentAlive = 0;
+    for (const auto& [_, p] : m_planets) {
+        if (p.alive) currentAlive++;
+    }
+
+    int needed = m_botFillTarget - currentAlive;
+    for (int i = 0; i < needed; ++i) {
+        m_botCounter++;
+        std::string botId = "__bot_" + std::to_string(m_botCounter);
+
+        Planet& p = m_planets[botId];
+        p.userId = botId;
+        p.displayName = ""; // Bots are nameless
+        p.alive = true;
+        p.kills = 0;
+        p.deaths = 0;
+        p.survivalTime = 0.0;
+        p.score = 0;
+        p.hitCount = 0;
+        p.tier = PlanetTier::Asteroid;
+        p.baseRadius = 0.5f;
+        p.radiusMeters = 0.5f;
+        p.smashCooldown = 0.0f;
+        p.comboCount = 0;
+        p.comboWindowEnd = 0.0;
+        p.lastHitBy.clear();
+        p.lastHitTime = 0.0;
+        p.isKing = false;
+        p.hitFlashTimer = 0.0f;
+        p.trailTimer = 0.0f;
+        p.animTimer = 0.0f;
+        p.glowPulse = 0.0f;
+        p.supernovaTimer = 0.0f;
+
+        spawnPlanetBody(p);
+    }
+
+    if (needed > 0) {
+        spdlog::info("[GravityBrawl] Spawned {} bots (total: {})", needed, currentAlive + needed);
+    }
+}
+
+void GravityBrawl::updateBotAI(float dt) {
+    if (m_botFillTarget <= 0) return;
+
+    m_botAITimer -= dt;
+    if (m_botAITimer > 0.0f) return;
+    m_botAITimer = 0.3f; // Bot decisions every 300ms
+
+    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+
+    for (auto& [id, p] : m_planets) {
+        if (!p.alive || !p.body) continue;
+        if (id.substr(0, 6) != "__bot_") continue; // Only process bots
+
+        // Simple AI: smash with ~20% probability per tick
+        if (chance(m_rng) < 0.2f) {
+            cmdSmash(id);
+        }
+    }
 }
 
 // ── Chat Message Handling ────────────────────────────────────────────────────
@@ -378,8 +471,10 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
 
     try {
         auto& db = is::core::Application::instance().playerDatabase();
-        db.recordResult(a.userId, a.displayName, "gravity_brawl", 2, false);
-        db.recordResult(b.userId, b.displayName, "gravity_brawl", 2, false);
+        if (!isBot(a.userId))
+            db.recordResult(a.userId, a.displayName, "gravity_brawl", 2, false);
+        if (!isBot(b.userId))
+            db.recordResult(b.userId, b.displayName, "gravity_brawl", 2, false);
     } catch (...) {}
 
     // Floating text
@@ -390,6 +485,9 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
 // ── Phase Management ─────────────────────────────────────────────────────────
 
 void GravityBrawl::startCountdown() {
+    // Fill up with bots before the round starts
+    spawnBots();
+
     m_phase = GamePhase::Countdown;
     m_countdownTimer = 3.0;
     spdlog::info("[GravityBrawl] Countdown started.");
@@ -578,6 +676,9 @@ void GravityBrawl::update(double dt) {
         // Check deaths (black hole)
         checkBlackHoleDeaths();
 
+        // Bot AI
+        updateBotAI(fdt);
+
         // Survival points
         awardSurvivalPoints(dt);
 
@@ -610,12 +711,14 @@ void GravityBrawl::update(double dt) {
             }
             if (!winnerId.empty()) {
                 const auto& winner = m_planets[winnerId];
-                try {
-                    is::core::Application::instance().playerDatabase().recordResult(
-                        winnerId, winner.displayName, "gravity_brawl", 100, true);
-                } catch (...) {}
-                sendChatFeedback("🏆 " + winner.displayName + " wins Gravity Brawl with " +
-                                 std::to_string(winner.score) + " points!");
+                if (!isBot(winnerId)) {
+                    try {
+                        is::core::Application::instance().playerDatabase().recordResult(
+                            winnerId, winner.displayName, "gravity_brawl", 100, true);
+                    } catch (...) {}
+                    sendChatFeedback("🏆 " + winner.displayName + " wins Gravity Brawl with " +
+                                     std::to_string(winner.score) + " points!");
+                }
             }
         }
 
@@ -715,6 +818,9 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
     p.alive = false;
     p.deaths++;
 
+    bool victimIsBot = isBot(p.userId);
+    std::string victimName = victimIsBot ? "a rogue planet" : p.displayName;
+
     // Explosion particles
     sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
     emitExplosion(screenPos, getTierColor(p.tier), 80);
@@ -730,6 +836,7 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
         auto kit = m_planets.find(killerId);
         if (kit != m_planets.end() && kit->second.alive) {
             Planet& killer = kit->second;
+            bool killerIsBot = isBot(killerId);
 
             // Kill points
             int killPoints = 50;
@@ -749,32 +856,43 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
                 // Massive particle rain
                 emitExplosion(killerScreen, sf::Color(255, 215, 0), 150);
 
-                try {
-                    is::core::Application::instance().playerDatabase().recordResult(
-                        killerId, killer.displayName, "gravity_brawl", killPoints + bountyBonus, false);
-                } catch (...) {}
+                if (!killerIsBot) {
+                    try {
+                        is::core::Application::instance().playerDatabase().recordResult(
+                            killerId, killer.displayName, "gravity_brawl", killPoints + bountyBonus, false);
+                    } catch (...) {}
+                }
 
-                sendChatFeedback("👑💀 " + killer.displayName + " destroyed the King " +
-                                 p.displayName + " for +" + std::to_string(bountyBonus) + " bounty!");
+                if (!killerIsBot && !victimIsBot) {
+                    sendChatFeedback("👑💀 " + killer.displayName + " destroyed the King " +
+                                     victimName + " for +" + std::to_string(bountyBonus) + " bounty!");
+                }
             } else {
-                try {
-                    is::core::Application::instance().playerDatabase().recordResult(
-                        killerId, killer.displayName, "gravity_brawl", killPoints, false);
-                } catch (...) {}
+                if (!killerIsBot) {
+                    try {
+                        is::core::Application::instance().playerDatabase().recordResult(
+                            killerId, killer.displayName, "gravity_brawl", killPoints, false);
+                    } catch (...) {}
+                }
             }
 
-            // Kill feed
-            m_killFeed.push_front({killer.displayName, p.displayName, wasBounty, 6.0});
+            // Kill feed (use display name or "Bot" for bots)
+            std::string killerName = killerIsBot ? "Bot" : killer.displayName;
+            m_killFeed.push_front({killerName, victimName, wasBounty, 6.0});
             if (m_killFeed.size() > 8) m_killFeed.pop_back();
 
-            sendChatFeedback("🕳️ " + killer.displayName + " smashed " +
-                             p.displayName + " into the void!");
+            if (!killerIsBot) {
+                sendChatFeedback("🕳️ " + killer.displayName + " smashed " +
+                                 victimName + " into the void!");
+            }
         }
     } else {
         // Died by gravity (no attribution)
-        m_killFeed.push_front({"The Void", p.displayName, wasBounty, 6.0});
+        m_killFeed.push_front({"The Void", victimName, wasBounty, 6.0});
         if (m_killFeed.size() > 8) m_killFeed.pop_back();
-        sendChatFeedback("🕳️ " + p.displayName + " was consumed by the void!");
+        if (!victimIsBot) {
+            sendChatFeedback("🕳️ " + victimName + " was consumed by the void!");
+        }
     }
 
     // Destroy physics body
@@ -835,10 +953,12 @@ void GravityBrawl::updateCosmicEvent(float dt) {
             for (auto& [id, p] : m_planets) {
                 if (p.alive) {
                     p.score += survivorBonus;
-                    try {
-                        is::core::Application::instance().playerDatabase().recordResult(
-                            id, p.displayName, "gravity_brawl", survivorBonus, false);
-                    } catch (...) {}
+                    if (!isBot(id)) {
+                        try {
+                            is::core::Application::instance().playerDatabase().recordResult(
+                                id, p.displayName, "gravity_brawl", survivorBonus, false);
+                        } catch (...) {}
+                    }
                     sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
                     addFloatingText("+25 SURVIVED!", screenPos, sf::Color(100, 255, 100), 1.5f);
                 }
@@ -858,10 +978,12 @@ void GravityBrawl::awardSurvivalPoints(double dt) {
         for (auto& [id, p] : m_planets) {
             if (p.alive) {
                 p.score += 1;
-                try {
-                    is::core::Application::instance().playerDatabase().recordResult(
-                        id, p.displayName, "gravity_brawl", 1, false);
-                } catch (...) {}
+                if (!isBot(id)) {
+                    try {
+                        is::core::Application::instance().playerDatabase().recordResult(
+                            id, p.displayName, "gravity_brawl", 1, false);
+                    } catch (...) {}
+                }
             }
         }
     }
@@ -1209,8 +1331,8 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         renderCrown(target, screenPos, pixelRadius);
     }
 
-    // Name label
-    if (m_fontLoaded) {
+    // Name label (skip for bots — they are nameless spheres)
+    if (m_fontLoaded && !p.displayName.empty()) {
         sf::Text nameText;
         nameText.setFont(m_font);
         nameText.setString(p.displayName);
@@ -1336,10 +1458,12 @@ void GravityBrawl::renderKillFeed(sf::RenderTarget& target) {
 void GravityBrawl::renderLeaderboard(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
 
-    // Sort players by score
+    // Sort players by score (exclude bots from leaderboard)
     std::vector<const Planet*> sorted;
     for (const auto& [id, p] : m_planets) {
-        sorted.push_back(&p);
+        if (!p.displayName.empty()) { // Skip bots
+            sorted.push_back(&p);
+        }
     }
     std::sort(sorted.begin(), sorted.end(),
               [](const Planet* a, const Planet* b) { return a->score > b->score; });

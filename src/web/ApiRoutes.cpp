@@ -381,6 +381,52 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         res.set_content(arr.dump(2), "application/json");
     });
 
+    // ── Game Settings ────────────────────────────────────────────────────
+
+    // GET /api/games/settings - Get all per-game settings
+    server.Get("/api/games/settings", [&app](const httplib::Request&, httplib::Response& res) {
+        // Collect from all stream instances
+        nlohmann::json result = nlohmann::json::object();
+
+        // Use first stream's GameManager as source of truth for game settings
+        auto streams = app.streamManager().allStreams();
+        if (!streams.empty()) {
+            result = streams[0]->gameManager().getAllGameSettings();
+        }
+
+        res.set_content(result.dump(2), "application/json");
+    });
+
+    // PUT /api/games/settings - Update settings for a specific game
+    server.Put("/api/games/settings", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto body = nlohmann::json::parse(req.body, nullptr, false);
+        if (body.is_discarded() || !body.is_object()) {
+            res.status = 400;
+            res.set_content(R"({"error":"Invalid JSON"})", "application/json");
+            return;
+        }
+
+        // Apply settings to all stream instances
+        auto streams = app.streamManager().allStreams();
+        for (auto* stream : streams) {
+            for (auto& [gameId, settings] : body.items()) {
+                stream->gameManager().setGameSettings(gameId, settings);
+            }
+        }
+
+        // Persist in global config
+        auto& cfg = app.config().rawMut();
+        if (!cfg.contains("game_settings") || !cfg["game_settings"].is_object()) {
+            cfg["game_settings"] = nlohmann::json::object();
+        }
+        for (auto& [gameId, settings] : body.items()) {
+            cfg["game_settings"][gameId] = settings;
+        }
+        app.persistGlobalConfig();
+
+        res.set_content(R"({"ok":true})", "application/json");
+    });
+
     // ══════════════════════════════════════════════════════════════════════
     //  Settings  (read / write / save)
     // ══════════════════════════════════════════════════════════════════════

@@ -176,11 +176,19 @@ public:
     bool isGameOver() const override;
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
+    void configure(const nlohmann::json& settings) override;
 
 private:
     // ── Commands ─────────────────────────────────────────────────────────
     void cmdJoin(const std::string& userId, const std::string& displayName);
     void cmdSmash(const std::string& userId);
+
+    // ── Bot Fill ─────────────────────────────────────────────────────────
+    void spawnBots();
+    void updateBotAI(float dt);
+    int m_botFillTarget = 0;  ///< Target player count to fill with bots (0 = disabled)
+    int m_botCounter = 0;     ///< Counter for generating unique bot IDs
+    float m_botAITimer = 0.0f; ///< Timer for bot decision-making
 
     // ── Game logic ──────────────────────────────────────────────────────
     void startCountdown();

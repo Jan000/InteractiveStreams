@@ -36,6 +36,11 @@ public:
     /// Get the current font scale factor.
     float fontScale() const { return m_fontScale; }
 
+    /// Configure game-specific settings from JSON.
+    /// Called when a game is loaded or when settings change.
+    /// Games should override this to accept custom parameters.
+    virtual void configure(const nlohmann::json& settings) { (void)settings; }
+
     /// Set the chat feedback callback.  The stream instance installs this
     /// so that games can send confirmation messages to viewers.
     void setChatFeedback(ChatFeedbackCallback cb) { m_chatFeedback = std::move(cb); }

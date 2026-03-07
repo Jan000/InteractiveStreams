@@ -195,6 +195,22 @@ void Application::initialize() {
     auto streams = m_impl->streamManager->allStreams();
     if (!streams.empty()) m_impl->previewStreamId = streams[0]->config().id;
 
+    // Load and apply per-game settings to all streams
+    {
+        nlohmann::json gameSettings;
+        if (cfg.raw().contains("game_settings") && cfg.raw()["game_settings"].is_object()) {
+            gameSettings = cfg.raw()["game_settings"];
+        }
+        if (!gameSettings.empty()) {
+            for (auto* s : m_impl->streamManager->allStreams()) {
+                for (auto& [gameId, settings] : gameSettings.items()) {
+                    s->gameManager().setGameSettings(gameId, settings);
+                }
+            }
+            spdlog::info("Applied game settings for {} games.", gameSettings.size());
+        }
+    }
+
     // Tell ChannelManager how to check whether any stream is live.
     // YouTube platforms use this to defer liveChatId auto-detection until
     // a stream is actually encoding.
