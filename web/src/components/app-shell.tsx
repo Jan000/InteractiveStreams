@@ -42,9 +42,13 @@ const nav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [authState, setAuthState] = useState<"loading" | "ok" | "login" | "setup">("loading");
+  const [version, setVersion] = useState("v0.2.0");
 
   useEffect(() => {
     checkAuth();
+    api.getStatus().then((s) => {
+      if (s?.version) setVersion("v" + s.version);
+    }).catch(() => {});
   }, []);
 
   const checkAuth = async () => {
@@ -139,7 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Footer */}
           <div className="flex items-center justify-between px-3 py-3">
-            <span className="text-xs text-muted-foreground">v0.2.0</span>
+            <span className="text-xs text-muted-foreground">{version}</span>
             <div className="flex gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>

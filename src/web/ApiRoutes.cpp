@@ -36,7 +36,13 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     server.Get("/api/status", [&app](const httplib::Request&, httplib::Response& res) {
         nlohmann::json s;
+#ifdef IS_GIT_HASH
+        s["version"]  = std::string("0.2.0+") + IS_GIT_HASH;
+        s["gitHash"]  = IS_GIT_HASH;
+#else
         s["version"]  = "0.2.0";
+        s["gitHash"]  = "unknown";
+#endif
         s["streams"]  = app.streamManager().getStatus();
         s["channels"] = app.channelManager().getStatus();
 

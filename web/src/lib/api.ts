@@ -173,6 +173,7 @@ export interface StreamStatsEntry {
 
 export interface StatusResponse {
   version: string;
+  gitHash: string;
   streams: StreamState[];
   channels: ChannelState[];
   games: GameInfo[];

@@ -5,6 +5,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ─── Git commit hash for version info ────────────────────────────────────────
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT GIT_COMMIT_HASH)
+    set(GIT_COMMIT_HASH "unknown")
+endif()
+message(STATUS "Git commit hash: ${GIT_COMMIT_HASH}")
+add_compile_definitions(IS_GIT_HASH="${GIT_COMMIT_HASH}")
+
 # ─── Speed: FetchContent – kein Git-Update-Check für bereits gecachte Deps ───
 # Verhindert langsame Netzwerk-Abfragen bei jedem cmake --preset.
 # Neu klonen: 'build/_deps/*-subbuild' löschen und cmake --preset erneut aufrufen.
