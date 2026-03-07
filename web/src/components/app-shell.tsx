@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -12,6 +13,7 @@ import {
   Activity,
   BarChart3,
   Music,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -24,6 +26,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@/components/ui/tooltip";
+import LoginPage from "@/app/login/page";
 
 const nav = [
   { href: "/", label: "Streams", icon: MonitorPlay },
@@ -38,6 +41,59 @@ const nav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [authState, setAuthState] = useState<"loading" | "ok" | "login" | "setup">("loading");
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const status = await api.getAuthStatus();
+      if (!status.passwordSet) {
+        // Check if API key is the only auth – if so, user is already authed
+        // (getAuthStatus returns authenticated=true when no auth is configured)
+        if (status.authenticated) {
+          setAuthState("ok");
+        } else {
+          setAuthState("setup");
+        }
+      } else if (status.authenticated) {
+        setAuthState("ok");
+      } else {
+        setAuthState("login");
+      }
+    } catch {
+      // Server unreachable or no auth configured – show dashboard
+      setAuthState("ok");
+    }
+  };
+
+  const handleLoginSuccess = (token: string) => {
+    // Store token – the api.ts authHeaders already reads from localStorage
+    localStorage.setItem("is_session_token", token);
+    setAuthState("ok");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.authLogout();
+    } catch { /* ignore */ }
+    localStorage.removeItem("is_session_token");
+    setAuthState("login");
+  };
+
+  if (authState === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (authState === "login" || authState === "setup") {
+    return <LoginPage isSetup={authState === "setup"} onSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <TooltipProvider>
@@ -99,6 +155,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top">Save Config</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Logout</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>

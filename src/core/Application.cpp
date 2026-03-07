@@ -39,6 +39,7 @@ struct Application::Impl {
 
     int    targetFps      = 60;
     double fixedDeltaTime = 1.0 / 60.0;
+    bool   resetPassword  = false;
     std::string previewStreamId;
     std::atomic<bool> skipStreamPersistOnShutdown{false};
 };
@@ -56,11 +57,20 @@ Application::Application(int argc, char* argv[])
     }
 
     std::string configPath = "config/default.json";
-    if (argc > 1) configPath = argv[1];
+    bool resetPassword = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--reset-password") {
+            resetPassword = true;
+        } else {
+            configPath = arg;
+        }
+    }
 
     m_impl->config = std::make_unique<Config>(configPath);
     m_impl->targetFps = m_impl->config->get<int>("application.target_fps", 60);
     m_impl->fixedDeltaTime = 1.0 / static_cast<double>(m_impl->targetFps);
+    m_impl->resetPassword = resetPassword;
 }
 
 Application::~Application() {
@@ -74,6 +84,12 @@ void Application::initialize() {
     // ── Settings database (SQLite – persistent storage for ALL settings) ─
     m_impl->settingsDb = std::make_unique<SettingsDatabase>();
     m_impl->settingsDb->open("data/settings.db");
+
+    // Handle --reset-password flag
+    if (m_impl->resetPassword) {
+        m_impl->settingsDb->remove("auth_password");
+        spdlog::warn("[Auth] Password has been reset via --reset-password flag.");
+    }
 
     // Determine data source: SQLite (if populated) or JSON config (first run)
     bool hasSavedChannels = m_impl->settingsDb->has("channels");

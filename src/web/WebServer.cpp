@@ -2,6 +2,7 @@
 #include "web/ApiRoutes.h"
 #include "core/Application.h"
 #include "core/Config.h"
+#include "core/SettingsDatabase.h"
 #include <spdlog/spdlog.h>
 #include <fstream>
 
@@ -28,15 +29,34 @@ void WebServer::reloadApiKey() {
         m_apiKey.clear();
     }
     if (m_apiKey.empty()) {
-        spdlog::info("[WebServer] API authentication disabled (no api_key configured).");
+        spdlog::info("[WebServer] API key authentication disabled (no api_key configured).");
     } else {
-        spdlog::info("[WebServer] API authentication enabled (Bearer token required).");
+        spdlog::info("[WebServer] API key authentication enabled.");
     }
 }
 
+// ── Session management ──────────────────────────────────────────────────────
+
+void WebServer::addSession(const std::string& token) {
+    std::lock_guard<std::mutex> lock(m_sessionMutex);
+    m_sessions.insert(token);
+}
+
+void WebServer::removeSession(const std::string& token) {
+    std::lock_guard<std::mutex> lock(m_sessionMutex);
+    m_sessions.erase(token);
+}
+
+bool WebServer::hasSession(const std::string& token) const {
+    std::lock_guard<std::mutex> lock(m_sessionMutex);
+    return m_sessions.count(token) > 0;
+}
+
+bool WebServer::isPasswordAuthEnabled() const {
+    return m_app.settingsDb().has("auth_password");
+}
+
 void WebServer::setupAuth() {
-    // Pre-routing handler: protect /api/ endpoints when an API key is configured.
-    // Static dashboard files are always served without authentication.
     m_server->set_pre_routing_handler(
         [this](const httplib::Request& req, httplib::Response& res)
             -> httplib::Server::HandlerResponse {
@@ -46,34 +66,49 @@ void WebServer::setupAuth() {
         // Only protect API routes
         if (req.path.find("/api/") != 0) return httplib::Server::HandlerResponse::Unhandled;
 
-        // Skip auth if no key is configured
-        if (m_apiKey.empty()) return httplib::Server::HandlerResponse::Unhandled;
+        // Always allow auth endpoints (login, setup, status) without authentication
+        if (req.path.find("/api/auth/") == 0) return httplib::Server::HandlerResponse::Unhandled;
 
-        // Check Authorization header: "Bearer <key>"
+        // Determine if any auth method is active
+        bool hasApiKey = !m_apiKey.empty();
+        bool hasPasswordAuth = isPasswordAuthEnabled();
+        if (!hasApiKey && !hasPasswordAuth) return httplib::Server::HandlerResponse::Unhandled;
+
+        // Check session token (from password login)
         auto it = req.headers.find("Authorization");
         if (it != req.headers.end()) {
             const auto& val = it->second;
-            if (val.size() > 7 && val.substr(0, 7) == "Bearer " &&
-                val.substr(7) == m_apiKey) {
-                return httplib::Server::HandlerResponse::Unhandled; // authorised
+            if (val.size() > 7 && val.substr(0, 7) == "Bearer ") {
+                std::string token = val.substr(7);
+                // Check API key first
+                if (hasApiKey && token == m_apiKey) {
+                    return httplib::Server::HandlerResponse::Unhandled;
+                }
+                // Check session token
+                if (hasSession(token)) {
+                    return httplib::Server::HandlerResponse::Unhandled;
+                }
             }
         }
 
-        // Check X-API-Key header (alternative)
+        // Check X-API-Key header
         it = req.headers.find("X-API-Key");
-        if (it != req.headers.end() && it->second == m_apiKey) {
-            return httplib::Server::HandlerResponse::Unhandled; // authorised
+        if (it != req.headers.end()) {
+            if (hasApiKey && it->second == m_apiKey) {
+                return httplib::Server::HandlerResponse::Unhandled;
+            }
         }
 
-        // Check ?api_key= query parameter (for simple browser access)
-        if (req.has_param("api_key") && req.get_param_value("api_key") == m_apiKey) {
-            return httplib::Server::HandlerResponse::Unhandled; // authorised
+        // Check ?api_key= query parameter
+        if (req.has_param("api_key")) {
+            if (hasApiKey && req.get_param_value("api_key") == m_apiKey) {
+                return httplib::Server::HandlerResponse::Unhandled;
+            }
         }
 
         // Reject
         res.status = 401;
-        res.set_content(R"({"error":"Unauthorized – provide Bearer token, X-API-Key header, or ?api_key= parameter"})",
-                        "application/json");
+        res.set_content(R"({"error":"Unauthorized"})", "application/json");
         return httplib::Server::HandlerResponse::Handled;
     });
 }

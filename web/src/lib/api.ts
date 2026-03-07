@@ -205,8 +205,12 @@ function getApiKey(): string {
   return localStorage.getItem("is_api_key") ?? "";
 }
 
-/** Build auth headers if an API key is configured. */
+/** Build auth headers if an API key or session token is configured. */
 function authHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  // Prefer session token (from password login), fall back to API key
+  const sessionToken = localStorage.getItem("is_session_token") ?? "";
+  if (sessionToken) return { Authorization: `Bearer ${sessionToken}` };
   const key = getApiKey();
   if (!key) return {};
   return { Authorization: `Bearer ${key}` };
@@ -371,6 +375,17 @@ export const api = {
   resetStreamStats: (id: string) =>
     post<{ success: boolean }>(`/api/stats/streams/${id}/reset`),
   resetAllStats: () => post<{ success: boolean }>("/api/stats/reset"),
+
+  // Auth
+  getAuthStatus: () => get<{ passwordSet: boolean; authenticated: boolean }>("/api/auth/status"),
+  authSetup: (password: string) =>
+    post<{ success: boolean; token: string }>("/api/auth/setup", { password }),
+  authLogin: (password: string) =>
+    post<{ success: boolean; token: string }>("/api/auth/login", { password }),
+  authLogout: () =>
+    post<{ success: boolean }>("/api/auth/logout"),
+  authChangePassword: (oldPassword: string, newPassword: string) =>
+    post<{ success: boolean }>("/api/auth/change-password", { oldPassword, newPassword }),
 
   // Frame preview URL (not JSON – returns JPEG binary)
   frameUrl: (streamId: string) => `${BASE}/api/streams/${streamId}/frame`,

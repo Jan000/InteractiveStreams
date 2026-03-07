@@ -1,4 +1,5 @@
 #include "web/ApiRoutes.h"
+#include "web/WebServer.h"
 #include "core/Application.h"
 #include "core/Config.h"
 #include "core/ChannelManager.h"
@@ -10,6 +11,7 @@
 #include "core/SettingsDatabase.h"
 #include "core/AudioManager.h"
 #include "core/AudioMixer.h"
+#include "core/Sha256.h"
 #include "games/GameRegistry.h"
 #include "platform/twitch/TwitchApi.h"
 #include "platform/youtube/YouTubeApi.h"
@@ -59,6 +61,171 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         spdlog::warn("[API] Shutdown requested via web dashboard.");
         app.requestShutdown();
         res.set_content(R"({"success":true,"message":"Shutting down..."})", "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Auth  (password login, session tokens)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // GET /api/auth/status – check if password is set and if user is authenticated
+    server.Get("/api/auth/status", [&app](const httplib::Request& req, httplib::Response& res) {
+        bool passwordSet = app.settingsDb().has("auth_password");
+
+        // Check if current request has a valid session
+        bool authenticated = false;
+        auto it = req.headers.find("Authorization");
+        if (it != req.headers.end()) {
+            const auto& val = it->second;
+            if (val.size() > 7 && val.substr(0, 7) == "Bearer ") {
+                std::string token = val.substr(7);
+                authenticated = app.webServer().hasSession(token);
+                // Also accept API key
+                if (!authenticated) {
+                    std::string apiKey = app.config().get<std::string>("web.api_key", "");
+                    if (!apiKey.empty() && token == apiKey) authenticated = true;
+                }
+            }
+        }
+        // If no auth is configured at all, consider authenticated
+        if (!passwordSet && app.config().get<std::string>("web.api_key", "").empty()) {
+            authenticated = true;
+        }
+
+        nlohmann::json s;
+        s["passwordSet"]   = passwordSet;
+        s["authenticated"] = authenticated;
+        res.set_content(s.dump(), "application/json");
+    });
+
+    // POST /api/auth/setup – set password for first time (only if no password set yet)
+    server.Post("/api/auth/setup", [&app](const httplib::Request& req, httplib::Response& res) {
+        if (app.settingsDb().has("auth_password")) {
+            res.status = 400;
+            res.set_content(R"({"error":"Password already set. Use the console to reset."})",
+                            "application/json");
+            return;
+        }
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string password = body.value("password", "");
+            if (password.size() < 4) {
+                res.status = 400;
+                res.set_content(R"({"error":"Password must be at least 4 characters."})",
+                                "application/json");
+                return;
+            }
+            std::string salt = core::generateSalt();
+            std::string hash = core::hashPassword(password, salt);
+            nlohmann::json authData;
+            authData["salt"] = salt;
+            authData["hash"] = hash;
+            app.settingsDb().save("auth_password", authData);
+
+            // Issue session token
+            std::string token = core::generateToken();
+            app.webServer().addSession(token);
+
+            spdlog::info("[Auth] Password set up successfully.");
+            nlohmann::json r;
+            r["success"] = true;
+            r["token"]   = token;
+            res.set_content(r.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // POST /api/auth/login – login with password, returns session token
+    server.Post("/api/auth/login", [&app](const httplib::Request& req, httplib::Response& res) {
+        if (!app.settingsDb().has("auth_password")) {
+            res.status = 400;
+            res.set_content(R"({"error":"No password configured. Use /api/auth/setup first."})",
+                            "application/json");
+            return;
+        }
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string password = body.value("password", "");
+
+            auto authData = app.settingsDb().load("auth_password");
+            std::string salt = authData.value("salt", "");
+            std::string storedHash = authData.value("hash", "");
+
+            std::string hash = core::hashPassword(password, salt);
+            if (hash != storedHash) {
+                spdlog::warn("[Auth] Failed login attempt.");
+                res.status = 401;
+                res.set_content(R"({"error":"Invalid password."})", "application/json");
+                return;
+            }
+
+            std::string token = core::generateToken();
+            app.webServer().addSession(token);
+            spdlog::info("[Auth] Successful login.");
+
+            nlohmann::json r;
+            r["success"] = true;
+            r["token"]   = token;
+            res.set_content(r.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // POST /api/auth/logout – invalidate current session token
+    server.Post("/api/auth/logout", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto it = req.headers.find("Authorization");
+        if (it != req.headers.end()) {
+            const auto& val = it->second;
+            if (val.size() > 7 && val.substr(0, 7) == "Bearer ") {
+                app.webServer().removeSession(val.substr(7));
+            }
+        }
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // POST /api/auth/change-password – change the password (requires current session)
+    server.Post("/api/auth/change-password", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string oldPassword = body.value("oldPassword", "");
+            std::string newPassword = body.value("newPassword", "");
+
+            if (newPassword.size() < 4) {
+                res.status = 400;
+                res.set_content(R"({"error":"Password must be at least 4 characters."})",
+                                "application/json");
+                return;
+            }
+
+            // Verify old password
+            if (app.settingsDb().has("auth_password")) {
+                auto authData = app.settingsDb().load("auth_password");
+                std::string salt = authData.value("salt", "");
+                std::string storedHash = authData.value("hash", "");
+                if (core::hashPassword(oldPassword, salt) != storedHash) {
+                    res.status = 401;
+                    res.set_content(R"({"error":"Current password is incorrect."})",
+                                    "application/json");
+                    return;
+                }
+            }
+
+            // Set new password
+            std::string salt = core::generateSalt();
+            std::string hash = core::hashPassword(newPassword, salt);
+            nlohmann::json authData;
+            authData["salt"] = salt;
+            authData["hash"] = hash;
+            app.settingsDb().save("auth_password", authData);
+            spdlog::info("[Auth] Password changed successfully.");
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
     });
 
     // ══════════════════════════════════════════════════════════════════════
