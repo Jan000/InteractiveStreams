@@ -30,6 +30,7 @@ public:
     bool sendMessage(const std::string& text) override;
     nlohmann::json getStatus() const override;
     void configure(const nlohmann::json& settings) override;
+    nlohmann::json getCurrentSettings() const override;
 
 private:
     void pollLoop();

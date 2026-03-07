@@ -746,6 +746,15 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
             if (!cfg || cfg->platform != "youtube") continue;
 
             std::string oauthToken = cfg->settings.value("oauth_token", "");
+
+            // Prefer the live (possibly refreshed) token from the platform instance
+            if (auto* plat = cm.getPlatform(chId)) {
+                auto liveSettings = plat->getCurrentSettings();
+                if (liveSettings.contains("oauth_token") && !liveSettings["oauth_token"].get<std::string>().empty()) {
+                    oauthToken = liveSettings["oauth_token"].get<std::string>();
+                }
+            }
+
             if (oauthToken.empty()) {
                 spdlog::warn("[Stream '{}'] YouTube channel '{}' missing oauth_token – "
                              "cannot update broadcast info. Set an OAuth token in channel settings.",

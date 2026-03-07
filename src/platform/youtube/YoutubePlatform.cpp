@@ -42,6 +42,9 @@ bool YoutubePlatform::connect() {
         return false;
     }
 
+    // Refresh token before first API call (may be expired from previous session)
+    refreshTokenIfNeeded();
+
     // Auto-detect live chat ID if not manually provided
     if (m_liveChatId.empty()) {
         spdlog::info("[YouTube] No live_chat_id configured — auto-detecting via liveBroadcasts.list...");
@@ -179,6 +182,17 @@ nlohmann::json YoutubePlatform::getStatus() const {
 #endif
 
     return status;
+}
+
+nlohmann::json YoutubePlatform::getCurrentSettings() const {
+    // Return the live (possibly refreshed) OAuth token and expiry so that
+    // other components (e.g. StreamInstance) can use the latest credentials.
+    nlohmann::json s = nlohmann::json::object();
+    if (!m_oauthToken.empty()) {
+        s["oauth_token"]        = m_oauthToken;
+        s["oauth_token_expiry"] = m_oauthTokenExpiry;
+    }
+    return s;
 }
 
 void YoutubePlatform::pollLoop() {

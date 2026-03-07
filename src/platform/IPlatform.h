@@ -39,6 +39,10 @@ public:
 
     /// Configure the platform from JSON settings.
     virtual void configure(const nlohmann::json& settings) = 0;
+
+    /// Return the platform's current live settings (e.g. refreshed tokens).
+    /// Default returns an empty object; override if settings can change at runtime.
+    virtual nlohmann::json getCurrentSettings() const { return nlohmann::json::object(); }
 };
 
 } // namespace is::platform
