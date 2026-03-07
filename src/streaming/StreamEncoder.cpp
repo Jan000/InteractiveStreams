@@ -88,10 +88,10 @@ bool StreamEncoder::start() {
     cmd << m_ffmpegPath
         << " -y"
         << " -loglevel warning"
-        // Video input: raw RGBA frames from stdin
+        // Video input: raw RGB24 frames from stdin (alpha stripped by encoder thread)
         << " -f rawvideo"
         << " -vcodec rawvideo"
-        << " -pix_fmt rgba"
+        << " -pix_fmt rgb24"
         << " -s " << m_width << "x" << m_height
         << " -r " << m_fps
         << " -i -"
@@ -101,13 +101,14 @@ bool StreamEncoder::start() {
         << " -c:v " << m_codec
         << " -pix_fmt yuv420p"
         << " -preset " << m_preset
-        << " -profile:v baseline"  // Simplest/fastest H.264 profile
-        << " -threads 0"           // Use all available CPU cores
+        << " -profile:v baseline"    // Simplest/fastest H.264 profile
+        << " -threads 0"             // Use all available CPU cores
         << " -b:v " << m_bitrate << "k"
-        << " -maxrate " << static_cast<int>(m_bitrate * 1.5) << "k"
-        << " -bufsize " << m_bitrate * 2 << "k"
-        << " -g " << m_fps * 2      // Keyframe interval
-        << " -tune zerolatency"     // Low-latency: sliced-threads + no B-frames + no lookahead
+        << " -maxrate " << static_cast<int>(m_bitrate * 1.2) << "k"
+        << " -bufsize " << m_bitrate << "k"   // Tight VBV for consistent bitrate
+        << " -g " << m_fps * 2        // Keyframe interval
+        << " -tune zerolatency"       // Low-latency encoding
+        << " -x264-params \"sliced-threads=1\""  // Force slice-based multi-core encoding
         // Audio encoding (silence)
         << " -c:a aac -b:a 128k -ar 44100"
         << " -shortest"  // Stop when the shortest input (video) ends
@@ -135,8 +136,8 @@ bool StreamEncoder::start() {
     }
 
     // Set a large stdio buffer to reduce syscall overhead.
-    // Default pipe buffer is tiny (4-8 KB); each frame is ~8 MB RGBA at 1080x1920.
-    setvbuf(m_pipe, nullptr, _IOFBF, 4 * 1024 * 1024); // 4 MB buffered I/O
+    // Default pipe buffer is tiny (4-8 KB); each RGB24 frame is ~6.2 MB at 1080x1920.
+    setvbuf(m_pipe, nullptr, _IOFBF, 2 * 1024 * 1024); // 2 MB buffered I/O
 
     m_running = true;
     m_thread = std::thread(&StreamEncoder::encoderThread, this);
@@ -190,10 +191,13 @@ void StreamEncoder::encodeFrame(const sf::Uint8* pixelData) {
 void StreamEncoder::encoderThread() {
     spdlog::info("[StreamEncoder] Encoder thread started.");
 
-    // Local buffer so we can release the mutex before the (potentially slow)
-    // pipe fwrite.  This way the main thread can always overwrite the shared
-    // m_frameBuffer without blocking on pipe I/O.
-    std::vector<sf::Uint8> localBuffer(m_frameBuffer.size());
+    const size_t pixelCount  = static_cast<size_t>(m_width) * m_height;
+    const size_t rgbFrameSize = pixelCount * 3;  // RGB24
+
+    // Local RGBA buffer (fast memcpy under mutex) + RGB24 buffer (written to pipe).
+    // Two separate buffers so the alpha strip runs OUTSIDE the mutex.
+    std::vector<sf::Uint8> localBuffer(m_frameBuffer.size());  // RGBA
+    std::vector<sf::Uint8> rgbBuffer(rgbFrameSize);            // RGB24
 
     auto lastFpsTime = std::chrono::steady_clock::now();
     size_t fpsFrameCount = 0;
@@ -206,31 +210,29 @@ void StreamEncoder::encoderThread() {
         if (!m_running) break;
         if (!m_frameReady) continue;
 
-        // Grab the frame and release the lock immediately — the heavy
-        // fwrite must happen without blocking the main thread.
+        // Grab the RGBA frame and release the lock immediately.
         std::memcpy(localBuffer.data(), m_frameBuffer.data(), localBuffer.size());
         m_frameReady = false;
         lock.unlock();
 
-        // Write frame to FFmpeg's stdin (outside lock)
-        if (m_pipe) {
-            size_t frameSize = localBuffer.size();
-            size_t written = fwrite(localBuffer.data(), 1, frameSize, m_pipe);
+        // Strip alpha channel: RGBA → RGB24 (outside mutex, saves 25% pipe I/O)
+        stripAlpha(localBuffer.data(), rgbBuffer.data(), pixelCount);
 
-            if (written != frameSize) {
+        // Write RGB24 frame to FFmpeg's stdin (outside lock)
+        if (m_pipe) {
+            size_t written = fwrite(rgbBuffer.data(), 1, rgbFrameSize, m_pipe);
+
+            if (written != rgbFrameSize) {
                 if (written == 0 || ferror(m_pipe)) {
                     spdlog::error("[StreamEncoder] FFmpeg pipe broken (wrote {}/{} bytes). "
                                   "FFmpeg likely exited – check {}.",
-                                  written, frameSize, m_stderrLogPath);
+                                  written, rgbFrameSize, m_stderrLogPath);
                     m_failed = true;
                     m_running = false;
                     break;
                 }
-                spdlog::warn("[StreamEncoder] Incomplete frame write: {}/{}", written, frameSize);
+                spdlog::warn("[StreamEncoder] Incomplete frame write: {}/{}", written, rgbFrameSize);
             }
-            // NOTE: no fflush — the 4 MB setvbuf handles batching; fflush
-            //       after every ~8 MB frame would force a synchronous kernel
-            //       write and destroy pipe throughput.
         }
 
         m_frameCount++;
@@ -261,6 +263,27 @@ void StreamEncoder::encoderThread() {
     if (m_pipe) fflush(m_pipe);
 
     spdlog::info("[StreamEncoder] Encoder thread exiting.");
+}
+
+void StreamEncoder::stripAlpha(const sf::Uint8* rgba, sf::Uint8* rgb, size_t pixelCount) {
+    // Process 4 pixels per iteration for better auto-vectorisation.
+    // Each iteration: read 16 bytes (4×RGBA), write 12 bytes (4×RGB).
+    const size_t bulk = pixelCount & ~size_t(3); // round down to multiple of 4
+    size_t i = 0;
+    for (; i < bulk; i += 4) {
+        const sf::Uint8* s = rgba + i * 4;
+        sf::Uint8*       d = rgb  + i * 3;
+        d[0]  = s[0];  d[1]  = s[1];  d[2]  = s[2];   // pixel 0
+        d[3]  = s[4];  d[4]  = s[5];  d[5]  = s[6];   // pixel 1
+        d[6]  = s[8];  d[7]  = s[9];  d[8]  = s[10];  // pixel 2
+        d[9]  = s[12]; d[10] = s[13]; d[11] = s[14];  // pixel 3
+    }
+    // Handle remaining 0–3 pixels
+    for (; i < pixelCount; ++i) {
+        rgb[i * 3 + 0] = rgba[i * 4 + 0];
+        rgb[i * 3 + 1] = rgba[i * 4 + 1];
+        rgb[i * 3 + 2] = rgba[i * 4 + 2];
+    }
 }
 
 } // namespace is::streaming

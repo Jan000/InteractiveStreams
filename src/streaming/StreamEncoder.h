@@ -63,6 +63,10 @@ public:
 private:
     void encoderThread();
 
+    /// Strip RGBA pixels to RGB24 (discards alpha channel).
+    /// Reads from `rgba` (width*height*4 bytes), writes to `rgb` (width*height*3 bytes).
+    static void stripAlpha(const sf::Uint8* rgba, sf::Uint8* rgb, size_t pixelCount);
+
     // FFmpeg process
     FILE*         m_pipe     = nullptr;
     std::string   m_ffmpegPath;
