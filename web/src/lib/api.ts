@@ -51,6 +51,9 @@ export interface StreamState {
   scoreboardAllTimeTitle?: string;
   scoreboardRecentTitle?: string;
   scoreboardRecentHours?: number;
+  scoreboardCycleSecs?: number;
+  scoreboardFadeSecs?: number;
+  scoreboardChatInterval?: number;
   // Vote overlay font scale
   voteOverlayFontScale?: number;
   // Live scoreboard data
@@ -282,6 +285,9 @@ export const api = {
 
   // Games
   getGames: () => get<GameInfo[]>("/api/games"),
+  getGameSettings: () => get<Record<string, Record<string, unknown>>>("/api/games/settings"),
+  updateGameSettings: (data: Record<string, Record<string, unknown>>) =>
+    put<{ success: boolean }>("/api/games/settings", data),
 
   // Settings
   getSettings: () => get<Record<string, unknown>>("/api/settings"),
