@@ -135,11 +135,11 @@ COPY --from=dashboard-builder --chown=streams:streams /app/web/out/ dashboard/
 # 4. Compiled binary from cpp-builder (changes most often – C++ code changes)
 COPY --from=cpp-builder --chown=streams:streams /app/build/InteractiveStreams ./
 
-# Data directory for SQLite databases (persist via volume)
+# Runtime directories (data = SQLite via volume, logs = spdlog output)
 # Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
-RUN mkdir -p data /tmp/.X11-unix \
+RUN mkdir -p data logs /tmp/.X11-unix \
     && chmod 1777 /tmp/.X11-unix \
-    && chown streams:streams data
+    && chown streams:streams data logs
 
 USER streams
 
