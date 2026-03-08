@@ -227,6 +227,7 @@ private:
     void renderCountdown(sf::RenderTarget& target);
     void renderCosmicEventWarning(sf::RenderTarget& target);
     void renderFloatingTexts(sf::RenderTarget& target);
+    void renderGameOverScreen(sf::RenderTarget& target);
     float currentBlackHoleGravity() const;
 
     /// Scale a font size by the current font scale factor.

@@ -99,6 +99,11 @@ struct GravityBrawlTestAccess {
 
     // ── Physics world ────────────────────────────────────────────────────
     static b2World* world(GravityBrawl& game) { return game.m_world.get(); }
+
+    // ── Bot system ───────────────────────────────────────────────────────
+    static int& botFillTarget(GravityBrawl& game) { return game.m_botFillTarget; }
+    static float& botAITimer(GravityBrawl& game) { return game.m_botAITimer; }
+    static void updateBotAI(GravityBrawl& game, float dt) { game.updateBotAI(dt); }
 };
 
 } // namespace is::games::gravity_brawl
@@ -1572,6 +1577,285 @@ TEST_SUITE("GB AutoPlay") {
         bool gameFinished = (TA::phase(game) == GamePhase::GameOver);
         CHECK((totalKills > 0 || gameFinished));
 
+        game.shutdown();
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ BOT AI IMPROVEMENTS █████████████████████████████████████████████████████
+// ══════════════════════════════════════════════════════════════════════════════
+
+TEST_SUITE("GB BotAI") {
+
+    TEST_CASE("Bots spam smash during cosmic events") {
+        GravityBrawl game;
+        game.initialize();
+        game.configure({{"game_duration", 120.0}, {"bot_fill", 6}, {"min_players", 2}});
+        TA::seedRng(game, 99u);
+
+        // Join 2 humans to trigger countdown
+        game.onChatMessage(makeMsg("h1", "H1", "!join"));
+        game.onChatMessage(makeMsg("h2", "H2", "!join"));
+
+        // Advance through lobby + countdown into playing
+        tick(game, 600); // 10s
+
+        if (TA::phase(game) != GamePhase::Playing) {
+            TA::phase(game) = GamePhase::Playing;
+            TA::startPlaying(game);
+        }
+
+        // Record bot combo counts before cosmic event
+        int combosBefore = 0;
+        for (const auto& [id, p] : TA::planets(game)) {
+            if (id.substr(0, 6) == "__bot_")
+                combosBefore += p.comboCount;
+        }
+
+        // Trigger cosmic event
+        TA::cosmicEventActive(game) = 10.0;
+
+        // Tick with bot AI running — bots should smash aggressively
+        int botSmashes = 0;
+        for (int step = 0; step < 30; ++step) {
+            // Count alive bots before
+            int botsBefore = 0;
+            for (const auto& [id, p] : TA::planets(game))
+                if (p.alive && id.substr(0, 6) == "__bot_") botsBefore++;
+
+            game.update(1.0 / 60.0);
+
+            // Count smash activity (combo counts increasing = smash happened)
+            for (const auto& [id, p] : TA::planets(game)) {
+                if (id.substr(0, 6) == "__bot_" && p.comboCount > 0)
+                    botSmashes++;
+            }
+        }
+
+        // Bots should have attempted smashes during cosmic event
+        // With 70% probability per 300ms tick over 0.5s we expect many
+        CHECK(botSmashes > 0);
+        game.shutdown();
+    }
+
+    TEST_CASE("Bots attempt supernova via combo building") {
+        GravityBrawl game;
+        game.initialize();
+        game.configure({{"game_duration", 120.0}, {"bot_fill", 4}, {"min_players", 2}});
+        TA::seedRng(game, 55u);
+
+        game.onChatMessage(makeMsg("h1", "H1", "!join"));
+        game.onChatMessage(makeMsg("h2", "H2", "!join"));
+
+        // Get to playing phase
+        tick(game, 600);
+        if (TA::phase(game) != GamePhase::Playing) {
+            TA::phase(game) = GamePhase::Playing;
+            TA::startPlaying(game);
+        }
+
+        // Trigger cosmic event so bots spam smash (70% per tick)
+        TA::cosmicEventActive(game) = 10.0;
+
+        // Run for several seconds — bots should build combos
+        bool anyBotReachedHighCombo = false;
+        for (int step = 0; step < 300; ++step) { // 5 seconds
+            game.update(1.0 / 60.0);
+            for (const auto& [id, p] : TA::planets(game)) {
+                if (id.substr(0, 6) == "__bot_" && p.comboCount >= 3)
+                    anyBotReachedHighCombo = true;
+            }
+        }
+
+        // With cosmic event active, bots should build combo counts
+        CHECK(anyBotReachedHighCombo);
+        game.shutdown();
+    }
+
+    TEST_CASE("Bots escape when near black hole") {
+        GravityBrawl game;
+        game.initialize();
+        game.configure({{"game_duration", 120.0}, {"bot_fill", 4}, {"min_players", 2}});
+        TA::seedRng(game, 77u);
+
+        game.onChatMessage(makeMsg("h1", "H1", "!join"));
+        game.onChatMessage(makeMsg("h2", "H2", "!join"));
+
+        // Advance through lobby + countdown to trigger bot spawning
+        tick(game, 600);
+
+        // Ensure we're in Playing phase
+        if (TA::phase(game) != GamePhase::Playing) {
+            TA::phase(game) = GamePhase::Playing;
+            TA::startPlaying(game);
+        }
+
+        // Find a bot
+        std::string botId;
+        for (auto& [id, p] : TA::planets(game)) {
+            if (id.size() >= 6 && id.substr(0, 6) == "__bot_" && p.alive && p.body) {
+                botId = id;
+                // Move to 30% of safe orbit (danger zone)
+                float safeOrbit = ARENA_RADIUS * 0.78f;
+                float dangerDist = safeOrbit * 0.3f;
+                p.body->SetTransform(
+                    b2Vec2(WORLD_CENTER_X + dangerDist, WORLD_CENTER_Y), 0.0f);
+                p.body->SetLinearVelocity(b2Vec2(0, 0));
+                break;
+            }
+        }
+
+        if (botId.empty()) {
+            // No bots spawned (all may have died) — skip test gracefully
+            game.shutdown();
+            return;
+        }
+
+        // Force bot AI timer to fire immediately
+        TA::botAITimer(game) = 0.0f;
+
+        // Record the bot's position before AI tick
+        auto& bot = TA::planets(game)[botId];
+        float distBefore = distanceToCenter(bot);
+
+        // Run a few ticks — the bot should smash to escape
+        for (int i = 0; i < 10; ++i) {
+            game.update(1.0 / 60.0);
+        }
+
+        // Bot should have attempted escape (smash was triggered)
+        // Check that the bot either gained velocity away from center or had a smash
+        if (bot.alive && bot.body) {
+            b2Vec2 vel = bot.body->GetLinearVelocity();
+            float speed = vel.Length();
+            // After smash, bot should have significant velocity
+            CHECK(speed > 1.0f);
+        }
+        game.shutdown();
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ GRAVITY BONUS CAP ██████████████████████████████████████████████████████
+// ══════════════════════════════════════════════════════════════════════════════
+
+TEST_SUITE("GB GravityCap") {
+
+    TEST_CASE("Consumed gravity bonus is capped at half of gravity cap") {
+        GravityBrawl game;
+        game.initialize();
+        game.configure({{"game_duration", 120.0}});
+
+        float gravityCap = TA::blackHoleGravityCap(game);
+        float maxBonus = gravityCap * 0.5f; // Expected cap
+
+        // Set consumed bonus way above cap
+        TA::blackHoleConsumedGravityBonus(game) = gravityCap * 2.0f;
+
+        float gravity = TA::currentBlackHoleGravity(game);
+        float baseGravity = 6.0f; // m_blackHoleBaseGravity default
+
+        // The consumed bonus should be capped, so total gravity =
+        // base + timer*growthFactor + min(consumed, cap*0.5)
+        CHECK(gravity < baseGravity + maxBonus + 1.0f); // Allow small timer growth tolerance
+        CHECK(gravity >= baseGravity + maxBonus - 0.1f);
+
+        game.shutdown();
+    }
+
+    TEST_CASE("Gravity grows linearly with time but bonus caps") {
+        GravityBrawl game;
+        game.initialize();
+        game.configure({{"game_duration", 300.0}});
+
+        // Set huge consumed bonus
+        TA::blackHoleConsumedGravityBonus(game) = 100.0f;
+
+        // Measure at time 0
+        TA::gameTimer(game) = 0.0;
+        float g0 = TA::currentBlackHoleGravity(game);
+
+        // Measure at time 100
+        TA::gameTimer(game) = 100.0;
+        float g100 = TA::currentBlackHoleGravity(game);
+
+        // Growth should be from time only (bonus is capped, same both times)
+        float expectedGrowth = 100.0f * 0.02f; // 2.0
+        CHECK(std::abs((g100 - g0) - expectedGrowth) < 0.1f);
+
+        game.shutdown();
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ██ RENDER ORDER ████████████████████████████████████████████████████████████
+// ══════════════════════════════════════════════════════════════════════════════
+
+TEST_SUITE("GB RenderOrder") {
+
+    TEST_CASE("GameOver screen renders without crash") {
+        GravityBrawl game;
+        game.initialize();
+
+        // Add players with scores
+        float angle = 0.0f;
+        for (int i = 0; i < 5; ++i) {
+            auto& p = addPlanet(game, "p" + std::to_string(i),
+                                "Player" + std::to_string(i), angle);
+            p.score = (5 - i) * 100; // Descending scores
+            p.kills = (5 - i) * 2;
+            angle += 1.2f;
+        }
+
+        TA::phase(game) = GamePhase::GameOver;
+
+        sf::RenderTexture rt;
+        if (tryCreateRT(rt, static_cast<unsigned>(SCREEN_W),
+                            static_cast<unsigned>(SCREEN_H))) {
+            rt.clear(sf::Color::Black);
+            REQUIRE_NOTHROW(game.render(rt, 0.5));
+            rt.display();
+
+            // Verify something was drawn (not all black)
+            sf::Image img = rt.getTexture().copyToImage();
+            std::size_t bright = countBrightSamples(img, 80, 20);
+            CHECK(bright >= 2);
+        }
+        game.shutdown();
+    }
+
+    TEST_CASE("Cosmic overlay does not wash out UI text") {
+        GravityBrawl game;
+        game.initialize();
+
+        addPlanet(game, "p1", "Alice", 0.0f);
+        addPlanet(game, "p2", "Bob", 3.14f);
+
+        TA::phase(game) = GamePhase::Playing;
+        TA::cosmicEventActive(game) = 5.0;
+
+        sf::RenderTexture rt;
+        if (tryCreateRT(rt, static_cast<unsigned>(SCREEN_W),
+                            static_cast<unsigned>(SCREEN_H))) {
+            rt.clear(sf::Color::Black);
+            REQUIRE_NOTHROW(game.render(rt, 0.5));
+            rt.display();
+
+            // The red overlay should have max alpha 40 (not opaque)
+            sf::Image img = rt.getTexture().copyToImage();
+            // Sample top area where UI text lives
+            int maxRedAlpha = 0;
+            for (unsigned x = 100; x < 980; x += 50) {
+                auto px = img.getPixel(x, 20);
+                // Pure red overlay would be (255, 0, 0, alpha)
+                // After blending, R channel should be moderate, not overwhelmed
+                if (px.r > 200 && px.g < 30 && px.b < 30)
+                    maxRedAlpha = std::max(maxRedAlpha, static_cast<int>(px.a));
+            }
+            // The cosmic overlay should not be fully opaque in the UI region
+            // (since we draw cosmic overlay BEFORE UI, text should be on top)
+            CHECK(maxRedAlpha < 200);
+        }
         game.shutdown();
     }
 }

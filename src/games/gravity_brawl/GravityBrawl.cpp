@@ -295,10 +295,40 @@ void GravityBrawl::updateBotAI(float dt) {
 
     for (auto& [id, p] : m_planets) {
         if (!p.alive || !p.body) continue;
-        if (id.substr(0, 6) != "__bot_") continue; // Only process bots
+        if (id.substr(0, 6) != "__bot_") continue;
 
-        // Simple AI: smash with ~20% probability per tick
-        if (chance(m_rng) < 0.2f) {
+        b2Vec2 pos = p.body->GetPosition();
+        float dx = pos.x - WORLD_CENTER_X;
+        float dy = pos.y - WORLD_CENTER_Y;
+        float distToCenter = std::sqrt(dx * dx + dy * dy);
+        float safeOrbit = ARENA_RADIUS * m_safeOrbitRadiusFactor;
+
+        // Priority 1: During cosmic events, spam smash to escape (builds supernova too)
+        if (m_cosmicEventActive > 0.0) {
+            if (chance(m_rng) < 0.7f) {
+                cmdSmash(id);
+            }
+            continue;
+        }
+
+        // Priority 2: If dangerously close to black hole, smash to escape
+        if (distToCenter < safeOrbit * 0.5f) {
+            if (chance(m_rng) < 0.6f) {
+                cmdSmash(id);
+            }
+            continue;
+        }
+
+        // Priority 3: If within combo window, keep pressing to reach supernova
+        if (p.comboCount >= 3 && m_gameTimer < p.comboWindowEnd) {
+            cmdSmash(id);
+            continue;
+        }
+
+        // Normal behavior: smash with probability based on proximity to enemies
+        float smashChance = 0.2f;
+        if (distToCenter < safeOrbit * 0.7f) smashChance = 0.35f;
+        if (chance(m_rng) < smashChance) {
             cmdSmash(id);
         }
     }
@@ -1282,14 +1312,19 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
     // Floating texts
     renderFloatingTexts(target);
 
-    // UI overlay
+    // Cosmic event warning (before UI so text remains readable)
+    if (m_cosmicEventActive > 0.0) {
+        renderCosmicEventWarning(target);
+    }
+
+    // UI overlay (on top of cosmic warning)
     renderUI(target);
     renderKillFeed(target);
     // In-game leaderboard removed; global scoreboard overlay handles it
 
-    // Cosmic event warning
-    if (m_cosmicEventActive > 0.0) {
-        renderCosmicEventWarning(target);
+    // GameOver scoreboard
+    if (m_phase == GamePhase::GameOver) {
+        renderGameOverScreen(target);
     }
 
     // Countdown
@@ -1853,6 +1888,93 @@ void GravityBrawl::renderCountdown(sf::RenderTarget& target) {
     target.draw(text);
 }
 
+// ── Game Over Screen ─────────────────────────────────────────────────────────
+
+void GravityBrawl::renderGameOverScreen(sf::RenderTarget& target) {
+    // Semi-transparent dark overlay
+    sf::RectangleShape overlay(sf::Vector2f(SCREEN_W, SCREEN_H));
+    overlay.setFillColor(sf::Color(0, 0, 0, 120));
+    target.draw(overlay);
+
+    if (!m_fontLoaded) return;
+
+    // Sort players by score descending
+    std::vector<const Planet*> ranked;
+    ranked.reserve(m_planets.size());
+    for (const auto& [id, p] : m_planets) {
+        if (p.displayName.empty()) continue; // Skip bots
+        ranked.push_back(&p);
+    }
+    std::sort(ranked.begin(), ranked.end(),
+              [](const Planet* a, const Planet* b) { return a->score > b->score; });
+
+    float centerX = SCREEN_W / 2.0f;
+    float startY = SCREEN_H * 0.25f;
+
+    // Winner announcement
+    if (!ranked.empty()) {
+        sf::Text winnerText;
+        winnerText.setFont(m_font);
+        winnerText.setString(ranked[0]->displayName + " WINS!");
+        winnerText.setCharacterSize(fs(42));
+        winnerText.setFillColor(sf::Color(255, 215, 0));
+        winnerText.setOutlineColor(sf::Color(0, 0, 0, 220));
+        winnerText.setOutlineThickness(3.0f);
+        sf::FloatRect wb = winnerText.getLocalBounds();
+        winnerText.setOrigin(wb.left + wb.width / 2.0f, wb.top + wb.height / 2.0f);
+        winnerText.setPosition(centerX, startY);
+        target.draw(winnerText);
+        startY += fs(42) + 20.0f;
+    }
+
+    // Score header
+    {
+        sf::Text headerText;
+        headerText.setFont(m_font);
+        headerText.setString("FINAL STANDINGS");
+        headerText.setCharacterSize(fs(24));
+        headerText.setFillColor(sf::Color(200, 180, 255, 220));
+        headerText.setOutlineColor(sf::Color(0, 0, 0, 180));
+        headerText.setOutlineThickness(1.0f);
+        sf::FloatRect hb = headerText.getLocalBounds();
+        headerText.setOrigin(hb.left + hb.width / 2.0f, hb.top + hb.height / 2.0f);
+        headerText.setPosition(centerX, startY);
+        target.draw(headerText);
+        startY += fs(24) + 15.0f;
+    }
+
+    // Player rankings (top 8)
+    int maxDisplay = std::min(static_cast<int>(ranked.size()), 8);
+    for (int i = 0; i < maxDisplay; ++i) {
+        const Planet* p = ranked[i];
+
+        // Rank colors: gold, silver, bronze, then white
+        sf::Color rankColor;
+        if (i == 0)      rankColor = sf::Color(255, 215, 0);
+        else if (i == 1) rankColor = sf::Color(192, 192, 192);
+        else if (i == 2) rankColor = sf::Color(205, 127, 50);
+        else             rankColor = sf::Color(180, 180, 200);
+
+        std::string entry = "#" + std::to_string(i + 1) + "  " + p->displayName +
+                            "   " + std::to_string(p->score) + " pts  (" +
+                            std::to_string(p->kills) + " kills)";
+
+        sf::Text entryText;
+        entryText.setFont(m_font);
+        entryText.setString(entry);
+        entryText.setCharacterSize(fs(18));
+        entryText.setFillColor(rankColor);
+        entryText.setOutlineColor(sf::Color(0, 0, 0, 180));
+        entryText.setOutlineThickness(1.0f);
+        sf::FloatRect eb = entryText.getLocalBounds();
+        entryText.setOrigin(eb.left + eb.width / 2.0f, eb.top + eb.height / 2.0f);
+        entryText.setPosition(centerX, startY);
+        target.draw(entryText);
+
+        startY += fs(18) + 8.0f;
+    }
+}
+
 // ── IGame Interface ──────────────────────────────────────────────────────────
 
 bool GravityBrawl::isRoundComplete() const {
@@ -1906,7 +2028,9 @@ nlohmann::json GravityBrawl::getState() const {
 }
 
 float GravityBrawl::currentBlackHoleGravity() const {
-    return m_blackHoleBaseGravity + static_cast<float>(m_gameTimer) * m_blackHoleTimeGrowthFactor + m_blackHoleConsumedGravityBonus;
+    float base = m_blackHoleBaseGravity + static_cast<float>(m_gameTimer) * m_blackHoleTimeGrowthFactor;
+    float cappedBonus = std::min(m_blackHoleConsumedGravityBonus, m_blackHoleGravityCap * 0.5f);
+    return base + cappedBonus;
 }
 
 std::vector<std::pair<std::string, int>> GravityBrawl::getLeaderboard() const {
