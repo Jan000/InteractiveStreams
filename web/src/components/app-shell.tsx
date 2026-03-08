@@ -49,6 +49,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     api.getStatus().then((s) => {
       if (s?.gitHash && s.gitHash !== "unknown") {
         setGitHash(s.gitHash);
+      } else if (s?.version?.includes("+")) {
+        setGitHash(s.version.split("+").pop() ?? "");
       }
     }).catch(() => {});
   }, []);

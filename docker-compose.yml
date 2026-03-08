@@ -7,7 +7,14 @@
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_COMMIT_HASH: ${GIT_COMMIT_HASH:-}
+        SOURCE_COMMIT: ${SOURCE_COMMIT:-}
+        COOLIFY_GIT_COMMIT_SHA: ${COOLIFY_GIT_COMMIT_SHA:-}
+        COMMIT_SHA: ${COMMIT_SHA:-}
+        GITHUB_SHA: ${GITHUB_SHA:-}
     container_name: interactive-streams
     # No ports: mapping – Coolify's Traefik reverse proxy handles routing
     # based on the EXPOSE 8080 in the Dockerfile and the configured FQDN.
@@ -18,6 +25,11 @@ services:
       - streams-data:/home/streams/app/data          # SQLite databases (persistent)
     environment:
       - DISPLAY=:99
+      - GIT_COMMIT_HASH=${GIT_COMMIT_HASH:-}
+      - SOURCE_COMMIT=${SOURCE_COMMIT:-}
+      - COOLIFY_GIT_COMMIT_SHA=${COOLIFY_GIT_COMMIT_SHA:-}
+      - COMMIT_SHA=${COMMIT_SHA:-}
+      - GITHUB_SHA=${GITHUB_SHA:-}
       - LIBGL_ALWAYS_SOFTWARE=1   # Force Mesa software renderer (no GPU in container)
       - GALLIUM_DRIVER=llvmpipe   # Use llvmpipe software rasterizer explicitly
     restart: unless-stopped

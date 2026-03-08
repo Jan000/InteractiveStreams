@@ -80,6 +80,8 @@ public:
     nlohmann::json getAllGameSettings() const;
 
 private:
+    void applyPendingSettings();
+
     std::unique_ptr<games::IGame> m_activeGame;
     std::string                   m_activeGameName;
 
@@ -88,6 +90,8 @@ private:
 
     // Per-game configuration settings
     std::unordered_map<std::string, nlohmann::json> m_gameSettings;
+    std::unordered_map<std::string, nlohmann::json> m_pendingSettings;
+    mutable std::mutex m_settingsMutex;
 
     // Deferred switch state (guarded by mutex for thread safety)
     mutable std::mutex m_switchMutex;

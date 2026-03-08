@@ -52,22 +52,37 @@ export function NumericInput({
   onBlur,
   ...props
 }: NumericInputProps) {
-  const format = (n: number) =>
-    integer ? String(Math.round(n)) : String(n);
+  const stepDecimals = React.useMemo(() => {
+    if (!step || step <= 0) return undefined;
+    const stepStr = String(step);
+    return stepStr.includes(".") ? stepStr.split(".")[1].length : 0;
+  }, [step]);
+
+  const format = React.useCallback((n: number) => {
+    if (integer) return String(Math.round(n));
+    if (!Number.isFinite(n)) return "";
+
+    if (stepDecimals !== undefined) {
+      return n.toFixed(stepDecimals).replace(/\.?0+$/, "");
+    }
+
+    return n.toFixed(10).replace(/\.?0+$/, "");
+  }, [integer, stepDecimals]);
 
   const [text, setText] = React.useState(() => format(value));
+  const [isEditing, setIsEditing] = React.useState(false);
 
   // Track the last value that was committed so we can detect external changes
   // (e.g. server poll refresh) vs. the user typing.
   const lastCommitted = React.useRef(value);
 
   React.useEffect(() => {
-    if (value !== lastCommitted.current) {
+    if (!isEditing && value !== lastCommitted.current) {
       lastCommitted.current = value;
       setText(format(value));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [format, isEditing, value]);
 
   const parse = (raw: string): number => {
     const normalized = raw.trim().replace(/,/g, ".");
@@ -79,39 +94,44 @@ export function NumericInput({
     if (min !== undefined && isFinite(min)) v = Math.max(min, v);
     if (max !== undefined && isFinite(max)) v = Math.min(max, v);
     if (integer) return Math.round(v);
-    if (step && step > 0) {
-      const decimals = String(step).includes(".")
-        ? String(step).split(".")[1].length
-        : 0;
-      v = Math.round(v / step) * step;
-      v = parseFloat(v.toFixed(decimals));
-    }
-    return v;
+    return Number(v.toFixed(Math.max(stepDecimals ?? 6, 6)));
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
     setText(raw);
-    // Propagate valid intermediate values so the parent state stays
-    // roughly in sync while the user is typing (no clamp during editing).
-    const n = parse(raw);
-    if (isFinite(n) && !isNaN(n)) {
-      onChange(n);
-    }
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    let n = parse(text);
+  const commitValue = React.useCallback((raw: string) => {
+    let n = parse(raw);
     if (!isFinite(n) || isNaN(n)) {
-      // Restore last committed value if input is unparseable
       n = lastCommitted.current;
     } else {
       n = clampAndRound(n);
     }
+
     lastCommitted.current = n;
     setText(format(n));
     onChange(n);
+  }, [format, onChange]);
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    setIsEditing(false);
+    commitValue(text);
     onBlur?.(e);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    props.onKeyDown?.(e);
+    if (e.defaultPrevented) return;
+
+    if (e.key === "Enter") {
+      commitValue(text);
+      e.currentTarget.blur();
+    } else if (e.key === "Escape") {
+      setText(format(lastCommitted.current));
+      e.currentTarget.blur();
+    }
   };
 
   return (
@@ -122,8 +142,13 @@ export function NumericInput({
       // Remove native spin buttons (they're useless without type="number")
       className={cn("[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none", className)}
       value={text}
+      onFocus={(e) => {
+        setIsEditing(true);
+        props.onFocus?.(e);
+      }}
       onChange={handleChange}
       onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
     />
   );
 }

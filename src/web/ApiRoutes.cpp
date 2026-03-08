@@ -19,6 +19,8 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 
 namespace is::web {
 
@@ -26,6 +28,50 @@ namespace is::web {
 static std::string pathParam(const httplib::Request& req, size_t idx = 1) {
     if (idx < req.matches.size()) return std::string(req.matches[idx]);
     return "";
+}
+
+static std::string normalizeGitHash(std::string value) {
+    value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    }), value.end());
+
+    if (value.empty() || value == "unknown") {
+        return "unknown";
+    }
+
+    if (value.size() > 8) {
+        value = value.substr(0, 8);
+    }
+    return value;
+}
+
+static std::string resolveGitHash() {
+#ifdef IS_GIT_HASH
+    auto compileHash = normalizeGitHash(IS_GIT_HASH);
+    if (compileHash != "unknown") {
+        return compileHash;
+    }
+#endif
+
+    constexpr const char* ENV_NAMES[] = {
+        "IS_GIT_HASH",
+        "GIT_COMMIT_HASH",
+        "SOURCE_COMMIT",
+        "COOLIFY_GIT_COMMIT_SHA",
+        "COMMIT_SHA",
+        "GITHUB_SHA"
+    };
+
+    for (const char* envName : ENV_NAMES) {
+        if (const char* value = std::getenv(envName)) {
+            auto resolved = normalizeGitHash(value);
+            if (resolved != "unknown") {
+                return resolved;
+            }
+        }
+    }
+
+    return "unknown";
 }
 
 void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
@@ -36,13 +82,9 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     server.Get("/api/status", [&app](const httplib::Request&, httplib::Response& res) {
         nlohmann::json s;
-#ifdef IS_GIT_HASH
-        s["version"]  = std::string("0.2.0+") + IS_GIT_HASH;
-        s["gitHash"]  = IS_GIT_HASH;
-#else
-        s["version"]  = "0.2.0";
-        s["gitHash"]  = "unknown";
-#endif
+        const auto gitHash = resolveGitHash();
+        s["version"]  = gitHash != "unknown" ? std::string("0.2.0+") + gitHash : "0.2.0";
+        s["gitHash"]  = gitHash;
         s["streams"]  = app.streamManager().getStatus();
         s["channels"] = app.channelManager().getStatus();
 

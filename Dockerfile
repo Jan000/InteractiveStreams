@@ -26,6 +26,12 @@ RUN --mount=type=cache,id=is-nextjs-cache,target=/app/web/.next/cache \
 # ── Stage 2: Build the C++ application ───────────────────────────────────────
 FROM ubuntu:24.04 AS cpp-builder
 
+ARG GIT_COMMIT_HASH=
+ARG SOURCE_COMMIT=
+ARG COOLIFY_GIT_COMMIT_SHA=
+ARG COMMIT_SHA=
+ARG GITHUB_SHA=
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Cache APT package lists and downloaded .deb files between builds
@@ -67,9 +73,11 @@ COPY --from=dashboard-builder /app/web/out/ web/out/
 # all external dependencies (SFML, Box2D, spdlog, gRPC, etc.) are downloaded
 # and compiled ONCE and reused across every subsequent build.
 RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
+    export EFFECTIVE_GIT_HASH="${GIT_COMMIT_HASH:-${SOURCE_COMMIT:-${COOLIFY_GIT_COMMIT_SHA:-${COMMIT_SHA:-${GITHUB_SHA}}}}}" && \
     cmake -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DIS_BUILD_TESTS=OFF \
+          -DGIT_COMMIT_HASH_OVERRIDE="${EFFECTIVE_GIT_HASH}" \
           -DFETCHCONTENT_BASE_DIR=/fetchcontent-cache \
           -DSFML_BUILD_SHARED_LIBS=OFF \
           -DBUILD_SHARED_LIBS=OFF \
@@ -86,6 +94,12 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM ubuntu:24.04 AS runtime
+
+ARG GIT_COMMIT_HASH=
+ARG SOURCE_COMMIT=
+ARG COOLIFY_GIT_COMMIT_SHA=
+ARG COMMIT_SHA=
+ARG GITHUB_SHA=
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -127,6 +141,11 @@ USER streams
 # and falls back to nothing instead of llvmpipe.
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
+ENV GIT_COMMIT_HASH=${GIT_COMMIT_HASH}
+ENV SOURCE_COMMIT=${SOURCE_COMMIT}
+ENV COOLIFY_GIT_COMMIT_SHA=${COOLIFY_GIT_COMMIT_SHA}
+ENV COMMIT_SHA=${COMMIT_SHA}
+ENV GITHUB_SHA=${GITHUB_SHA}
 # Force OpenAL-Soft to use the null (silent) audio backend.
 # Without this, OpenAL-Soft calls abort() when no audio device is found
 # (ALSA/PulseAudio are not present in the container).

@@ -27,10 +27,18 @@ void GameManager::loadGame(const std::string& name) {
     m_activeGame->initialize();
 
     // Apply stored per-game settings
-    auto sit = m_gameSettings.find(name);
-    if (sit != m_gameSettings.end() && !sit->second.empty()) {
-        m_activeGame->configure(sit->second);
-        spdlog::info("Applied {} settings for game '{}'.", sit->second.size(), name);
+    nlohmann::json settingsToApply;
+    {
+        std::lock_guard<std::mutex> lock(m_settingsMutex);
+        auto sit = m_gameSettings.find(name);
+        if (sit != m_gameSettings.end()) {
+            settingsToApply = sit->second;
+        }
+        m_pendingSettings.erase(name);
+    }
+    if (!settingsToApply.empty()) {
+        m_activeGame->configure(settingsToApply);
+        spdlog::info("Applied {} settings for game '{}'.", settingsToApply.size(), name);
     }
 
     spdlog::info("Game '{}' loaded and initialized.", name);
@@ -129,12 +137,14 @@ void GameManager::handleChatMessage(const platform::ChatMessage& msg) {
 }
 
 void GameManager::update(double dt) {
+    applyPendingSettings();
     if (m_activeGame) {
         m_activeGame->update(dt);
     }
 }
 
 void GameManager::render(sf::RenderTarget& target, double alpha) {
+    applyPendingSettings();
     if (m_activeGame) {
         m_activeGame->render(target, alpha);
     }
@@ -160,26 +170,46 @@ SwitchMode GameManager::pendingSwitchMode() const {
 }
 
 void GameManager::setGameSettings(const std::string& gameId, const nlohmann::json& settings) {
-    m_gameSettings[gameId] = settings;
-
-    // If this game is currently active, apply immediately
-    if (m_activeGame && m_activeGameName == gameId) {
-        m_activeGame->configure(settings);
-        spdlog::info("Applied live settings update for game '{}'.", gameId);
+    {
+        std::lock_guard<std::mutex> lock(m_settingsMutex);
+        m_gameSettings[gameId] = settings;
+        m_pendingSettings[gameId] = settings;
     }
+
+    spdlog::info("Queued live settings update for game '{}'.", gameId);
 }
 
 nlohmann::json GameManager::getGameSettings(const std::string& gameId) const {
+    std::lock_guard<std::mutex> lock(m_settingsMutex);
     auto it = m_gameSettings.find(gameId);
     return (it != m_gameSettings.end()) ? it->second : nlohmann::json::object();
 }
 
 nlohmann::json GameManager::getAllGameSettings() const {
+    std::lock_guard<std::mutex> lock(m_settingsMutex);
     nlohmann::json result = nlohmann::json::object();
     for (const auto& [id, settings] : m_gameSettings) {
         result[id] = settings;
     }
     return result;
+}
+
+void GameManager::applyPendingSettings() {
+    if (!m_activeGame) return;
+
+    nlohmann::json settingsToApply;
+    {
+        std::lock_guard<std::mutex> lock(m_settingsMutex);
+        auto it = m_pendingSettings.find(m_activeGameName);
+        if (it == m_pendingSettings.end()) return;
+        settingsToApply = it->second;
+        m_pendingSettings.erase(it);
+    }
+
+    if (!settingsToApply.empty()) {
+        m_activeGame->configure(settingsToApply);
+        spdlog::info("Applied live settings update for active game '{}'.", m_activeGameName);
+    }
 }
 
 } // namespace is::core

@@ -5,14 +5,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(GIT_COMMIT_HASH_OVERRIDE "" CACHE STRING "Override git commit hash for builds without .git metadata")
+
 # ─── Git commit hash for version info ────────────────────────────────────────
-execute_process(
-    COMMAND git rev-parse --short HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_COMMIT_HASH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
+if(GIT_COMMIT_HASH_OVERRIDE)
+    set(GIT_COMMIT_HASH "${GIT_COMMIT_HASH_OVERRIDE}")
+else()
+    execute_process(
+        COMMAND git rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_COMMIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
 if(NOT GIT_COMMIT_HASH)
     set(GIT_COMMIT_HASH "unknown")
 endif()

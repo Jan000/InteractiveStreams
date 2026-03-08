@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Gamepad2, Save, RotateCcw, Type, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import { api, GameInfo, TextElementData } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,6 @@ export default function GamesPage() {
   const [textDefaults, setTextDefaults] = useState<Record<string, TextElementData[]>>({});
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
-  const initialLoad = useRef(true);
 
   const fetchData = useCallback(async () => {
     try {
@@ -51,13 +50,9 @@ export default function GamesPage() {
         api.getTextElements(),
       ]);
       setGames(gameList);
-      if (initialLoad.current) {
-        setSettings(gameSettings);
-        // Deep clone defaults for reset
-        setTextDefaults(JSON.parse(JSON.stringify(textEls)));
-        setTextElements(textEls);
-        initialLoad.current = false;
-      }
+      setSettings(gameSettings);
+      setTextDefaults(JSON.parse(JSON.stringify(textEls)));
+      setTextElements(textEls);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load game data");
     } finally {
@@ -103,8 +98,9 @@ export default function GamesPage() {
         payload[gameId].text_elements = elements;
       }
       await api.updateGameSettings(payload);
+      await fetchData();
       setDirty(false);
-      toast.success("Game settings saved");
+      toast.success("Game settings saved and applied");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save settings");
     }
