@@ -87,6 +87,17 @@
             },
             "group": "test",
             "problemMatcher": []
+        },
+        {
+            "label": "Run InteractiveStreams (Release)",
+            "type": "shell",
+            "command": "${workspaceFolder}/build/Release/InteractiveStreams.exe",
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}/build/Release"
+            },
+            "dependsOn": "CMake: Build (Release)",
+            "problemMatcher": []
         }
     ]
 }

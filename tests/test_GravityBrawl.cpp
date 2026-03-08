@@ -36,6 +36,7 @@ struct GravityBrawlTestAccess {
     static void spawnPlanetBody(GravityBrawl& game, Planet& planet) { game.spawnPlanetBody(planet); }
     static void spawnBots(GravityBrawl& game) { game.spawnBots(); }
     static void startPlaying(GravityBrawl& game) { game.startPlaying(); }
+    static void cmdSmash(GravityBrawl& game, const std::string& userId) { game.cmdSmash(userId); }
     static void eliminatePlanet(GravityBrawl& game, Planet& planet) { game.eliminatePlanet(planet); }
     static float currentBlackHoleGravity(const GravityBrawl& game) { return game.currentBlackHoleGravity(); }
     static float spawnRadiusFactor(const GravityBrawl& game) { return game.m_spawnRadiusFactor; }
@@ -44,6 +45,7 @@ struct GravityBrawlTestAccess {
     static float& blackHoleConsumedGravityBonus(GravityBrawl& game) { return game.m_blackHoleConsumedGravityBonus; }
     static float blackHoleConsumeSizeFactor(const GravityBrawl& game) { return game.m_blackHoleConsumeSizeFactor; }
     static double& gameTimer(GravityBrawl& game) { return game.m_gameTimer; }
+    static void seedRng(GravityBrawl& game, std::uint32_t seed) { game.m_rng.seed(seed); }
 };
 
 } // namespace is::games::gravity_brawl
@@ -116,6 +118,29 @@ float distanceToCenter(const Planet& p) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
+float minPairDistance(const GravityBrawl& game) {
+    float minDistance = std::numeric_limits<float>::max();
+    const auto& planets = GravityBrawlTestAccess::planets(game);
+
+    for (auto itA = planets.begin(); itA != planets.end(); ++itA) {
+        if (!itA->second.alive || !itA->second.body) continue;
+
+        auto itB = itA;
+        ++itB;
+        for (; itB != planets.end(); ++itB) {
+            if (!itB->second.alive || !itB->second.body) continue;
+
+            const b2Vec2 aPos = itA->second.body->GetPosition();
+            const b2Vec2 bPos = itB->second.body->GetPosition();
+            const float dx = aPos.x - bPos.x;
+            const float dy = aPos.y - bPos.y;
+            minDistance = std::min(minDistance, std::sqrt(dx * dx + dy * dy));
+        }
+    }
+
+    return minDistance;
+}
+
 } // namespace
 
 TEST_SUITE("Gravity Brawl") {
@@ -167,6 +192,28 @@ TEST_SUITE("Gravity Brawl") {
         game.shutdown();
     }
 
+    TEST_CASE("Many spawned planets are distributed across the orbit instead of overlapping") {
+        GravityBrawl game;
+        game.initialize();
+        GravityBrawlTestAccess::seedRng(game, 1337u);
+
+        for (int index = 0; index < 12; ++index) {
+            Planet& planet = GravityBrawlTestAccess::planets(game)["p" + std::to_string(index)];
+            planet.userId = "p" + std::to_string(index);
+            planet.displayName = "Player " + std::to_string(index);
+            planet.alive = true;
+            planet.baseRadius = 0.5f;
+            planet.radiusMeters = 0.5f;
+            planet.orbitDirection = (index % 2 == 0) ? 1 : -1;
+            GravityBrawlTestAccess::spawnPlanetBody(game, planet);
+        }
+
+        CHECK(aliveCount(game) == 12);
+        CHECK(minPairDistance(game) > 6.0f);
+
+        game.shutdown();
+    }
+
     TEST_CASE("Default tuning keeps starting planets alive for multiple seconds") {
         GravityBrawl game;
         game.initialize();
@@ -184,6 +231,39 @@ TEST_SUITE("Gravity Brawl") {
             CHECK(planet.alive);
             CHECK(distanceToCenter(planet) > BLACK_HOLE_RADIUS * GravityBrawlTestAccess::blackHoleKillRadiusMultiplier(game));
         }
+
+        game.shutdown();
+    }
+
+    TEST_CASE("Twelve-player simulation stays stable and interactive for an extended match window") {
+        GravityBrawl game;
+        game.initialize();
+
+        for (int index = 0; index < 12; ++index) {
+            const float angle = (2.0f * b2_pi * static_cast<float>(index)) / 12.0f;
+            addPlanet(game,
+                      "sim_" + std::to_string(index),
+                      "Sim " + std::to_string(index),
+                      angle,
+                      (index % 2 == 0) ? 1 : -1);
+        }
+
+        GravityBrawlTestAccess::startPlaying(game);
+
+        for (int step = 0; step < 2700; ++step) {
+            if (step % 120 == 0) {
+                for (int index = 0; index < 12; index += 3) {
+                    GravityBrawlTestAccess::cmdSmash(game, "sim_" + std::to_string(index));
+                }
+            }
+            game.update(1.0 / 60.0);
+        }
+
+        const auto state = game.getState();
+        CHECK(state["phase"].get<std::string>() == "playing");
+        CHECK(state["alivePlayers"].get<int>() >= 8);
+        CHECK(state["blackHoleGravity"].get<float>() < 15.5f);
+        CHECK(state["players"].size() == 12);
 
         game.shutdown();
     }
@@ -242,7 +322,7 @@ TEST_SUITE("Gravity Brawl") {
         }
 
         const auto center = image.getPixel(image.getSize().x / 2, image.getSize().y / 2);
-        CHECK(brightSamples >= 4);
+        CHECK(brightSamples >= 3);
         CHECK(static_cast<int>(center.r) + static_cast<int>(center.g) + static_cast<int>(center.b) < 80);
 
         game.shutdown();

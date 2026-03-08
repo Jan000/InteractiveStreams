@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
+# CMake 3.31 rejects legacy policy baselines from older third-party CMakeLists.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 # ─── Test Framework: doctest (header-only) ────────────────────────────────────
 FetchContent_Declare(
     doctest
@@ -77,4 +80,6 @@ endif()
 # Register with CTest
 list(APPEND CMAKE_MODULE_PATH ${doctest_SOURCE_DIR}/scripts/cmake)
 include(doctest)
-doctest_discover_tests(InteractiveStreams_Tests)
+doctest_discover_tests(InteractiveStreams_Tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)

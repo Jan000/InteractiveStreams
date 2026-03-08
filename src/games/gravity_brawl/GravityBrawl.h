@@ -213,6 +213,7 @@ private:
     void awardSurvivalPoints(double dt);
     void eliminatePlanet(Planet& p);
     void spawnPlanetBody(Planet& p);
+    float chooseSpawnAngle();
 
     // ── Rendering ───────────────────────────────────────────────────────
     void renderBlackHole(sf::RenderTarget& target);

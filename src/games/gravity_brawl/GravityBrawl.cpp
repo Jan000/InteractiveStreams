@@ -416,10 +416,52 @@ void GravityBrawl::cmdSmash(const std::string& userId) {
 
 // ── Spawn ────────────────────────────────────────────────────────────────────
 
+float GravityBrawl::chooseSpawnAngle() {
+    std::vector<float> occupiedAngles;
+    occupiedAngles.reserve(m_planets.size());
+
+    for (const auto& [_, planet] : m_planets) {
+        if (!planet.alive || !planet.body) continue;
+
+        const b2Vec2 pos = planet.body->GetPosition();
+        float angle = std::atan2(pos.y - WORLD_CENTER_Y, pos.x - WORLD_CENTER_X);
+        if (angle < 0.0f) {
+            angle += 2.0f * b2_pi;
+        }
+        occupiedAngles.push_back(angle);
+    }
+
+    if (occupiedAngles.empty()) {
+        std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * b2_pi);
+        return angleDist(m_rng);
+    }
+
+    std::sort(occupiedAngles.begin(), occupiedAngles.end());
+
+    float bestAngle = occupiedAngles.front();
+    float bestGap = 0.0f;
+    for (size_t index = 0; index < occupiedAngles.size(); ++index) {
+        const float current = occupiedAngles[index];
+        const float next = occupiedAngles[(index + 1) % occupiedAngles.size()];
+        const float gap = (index + 1 < occupiedAngles.size())
+            ? (next - current)
+            : ((next + 2.0f * b2_pi) - current);
+
+        if (gap > bestGap) {
+            bestGap = gap;
+            bestAngle = current + gap * 0.5f;
+        }
+    }
+
+    while (bestAngle >= 2.0f * b2_pi) {
+        bestAngle -= 2.0f * b2_pi;
+    }
+    return bestAngle;
+}
+
 void GravityBrawl::spawnPlanetBody(Planet& p) {
-    // Random angle on safe orbit
-    std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * b2_pi);
-    float angle = angleDist(m_rng);
+    // Prefer the midpoint of the largest free orbital arc so many joins do not overlap.
+    float angle = chooseSpawnAngle();
     float spawnRadius = ARENA_RADIUS * m_spawnRadiusFactor;
 
     float x = WORLD_CENTER_X + spawnRadius * std::cos(angle);
@@ -1330,7 +1372,7 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
 
 void GravityBrawl::renderOrbitTrails(sf::RenderTarget& target) {
     sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
-    float orbitR = ARENA_RADIUS * 0.7f * PIXELS_PER_METER;
+    float orbitR = ARENA_RADIUS * m_safeOrbitRadiusFactor * PIXELS_PER_METER;
 
     // Faint orbit circle
     sf::CircleShape orbit(orbitR);
@@ -1342,7 +1384,7 @@ void GravityBrawl::renderOrbitTrails(sf::RenderTarget& target) {
     target.draw(orbit);
 
     // Danger zone ring (inner)
-    float dangerR = BLACK_HOLE_RADIUS * 2.0f * PIXELS_PER_METER;
+    float dangerR = BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier * PIXELS_PER_METER;
     sf::CircleShape danger(dangerR);
     danger.setOrigin(dangerR, dangerR);
     danger.setPosition(center);
