@@ -14,6 +14,8 @@
 
 namespace is::games::gravity_brawl {
 
+struct GravityBrawlTestAccess;
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 static constexpr float ARENA_RADIUS      = 18.0f;   // meters – safe orbit radius
@@ -182,6 +184,8 @@ public:
     std::vector<std::pair<std::string, int>> getLeaderboard() const override;
     void configure(const nlohmann::json& settings) override;
     nlohmann::json getSettings() const override;
+
+    friend struct GravityBrawlTestAccess;
 
 private:
     // ── Commands ─────────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ set(TEST_SOURCES
     test_LocalPlatform.cpp
     test_Grid.cpp
     test_ColorConquest.cpp
+    test_GravityBrawl.cpp
 )
 
 # ─── Tested source files (no main.cpp) ───────────────────────────────────────
@@ -30,8 +31,11 @@ set(TESTED_SOURCES
     ${CMAKE_SOURCE_DIR}/src/core/Logger.cpp
     ${CMAKE_SOURCE_DIR}/src/games/GameRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/games/chaos_arena/PhysicsWorld.cpp
+    ${CMAKE_SOURCE_DIR}/src/games/gravity_brawl/GravityBrawl.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/local/LocalPlatform.cpp
     ${CMAKE_SOURCE_DIR}/src/games/color_conquest/Grid.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/Background.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/PostProcessing.cpp
 )
 
 add_executable(InteractiveStreams_Tests
