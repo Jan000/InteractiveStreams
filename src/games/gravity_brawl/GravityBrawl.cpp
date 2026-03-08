@@ -123,6 +123,7 @@ void GravityBrawl::initialize() {
     m_gameTimer = 0.0;
     m_cosmicEventTimer = m_cosmicEventCooldown;
     m_cosmicEventActive = 0.0;
+    m_blackHoleConsumedGravityBonus = 0.0f;
     m_currentKingId.clear();
     m_blackHolePulse = 0.0f;
     m_blackHoleRotation = 0.0f;
@@ -167,6 +168,45 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("cosmic_event_cooldown") && settings["cosmic_event_cooldown"].is_number()) {
         m_cosmicEventCooldown = settings["cosmic_event_cooldown"].get<double>();
     }
+    if (settings.contains("spawn_radius_factor") && settings["spawn_radius_factor"].is_number()) {
+        m_spawnRadiusFactor = std::max(0.1f, settings["spawn_radius_factor"].get<float>());
+    }
+    if (settings.contains("spawn_orbit_speed") && settings["spawn_orbit_speed"].is_number()) {
+        m_spawnOrbitSpeed = std::max(0.0f, settings["spawn_orbit_speed"].get<float>());
+    }
+    if (settings.contains("safe_orbit_radius_factor") && settings["safe_orbit_radius_factor"].is_number()) {
+        m_safeOrbitRadiusFactor = std::max(0.1f, settings["safe_orbit_radius_factor"].get<float>());
+    }
+    if (settings.contains("orbital_gravity_strength") && settings["orbital_gravity_strength"].is_number()) {
+        m_orbitalGravityStrength = std::max(0.0f, settings["orbital_gravity_strength"].get<float>());
+    }
+    if (settings.contains("orbital_outer_pull_multiplier") && settings["orbital_outer_pull_multiplier"].is_number()) {
+        m_orbitalOuterPullMultiplier = std::max(0.0f, settings["orbital_outer_pull_multiplier"].get<float>());
+    }
+    if (settings.contains("orbital_safe_zone_pull_multiplier") && settings["orbital_safe_zone_pull_multiplier"].is_number()) {
+        m_orbitalSafeZonePullMultiplier = std::max(0.0f, settings["orbital_safe_zone_pull_multiplier"].get<float>());
+    }
+    if (settings.contains("orbital_tangential_strength") && settings["orbital_tangential_strength"].is_number()) {
+        m_orbitalTangentialStrength = std::max(0.0f, settings["orbital_tangential_strength"].get<float>());
+    }
+    if (settings.contains("black_hole_gravity_strength") && settings["black_hole_gravity_strength"].is_number()) {
+        m_blackHoleBaseGravity = std::max(0.0f, settings["black_hole_gravity_strength"].get<float>());
+    }
+    if (settings.contains("black_hole_time_growth_factor") && settings["black_hole_time_growth_factor"].is_number()) {
+        m_blackHoleTimeGrowthFactor = std::max(0.0f, settings["black_hole_time_growth_factor"].get<float>());
+    }
+    if (settings.contains("black_hole_consume_size_factor") && settings["black_hole_consume_size_factor"].is_number()) {
+        m_blackHoleConsumeSizeFactor = std::max(0.0f, settings["black_hole_consume_size_factor"].get<float>());
+    }
+    if (settings.contains("black_hole_gravity_cap") && settings["black_hole_gravity_cap"].is_number()) {
+        m_blackHoleGravityCap = std::max(0.0f, settings["black_hole_gravity_cap"].get<float>());
+    }
+    if (settings.contains("black_hole_kill_radius_multiplier") && settings["black_hole_kill_radius_multiplier"].is_number()) {
+        m_blackHoleKillRadiusMultiplier = std::max(0.1f, settings["black_hole_kill_radius_multiplier"].get<float>());
+    }
+    if (settings.contains("event_gravity_multiplier") && settings["event_gravity_multiplier"].is_number()) {
+        m_eventGravityMul = std::max(0.0f, settings["event_gravity_multiplier"].get<float>());
+    }
     // Text element overrides
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
@@ -180,6 +220,19 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"lobby_duration", m_lobbyDuration},
         {"min_players", m_minPlayers},
         {"cosmic_event_cooldown", m_cosmicEventCooldown},
+        {"spawn_radius_factor", m_spawnRadiusFactor},
+        {"spawn_orbit_speed", m_spawnOrbitSpeed},
+        {"safe_orbit_radius_factor", m_safeOrbitRadiusFactor},
+        {"orbital_gravity_strength", m_orbitalGravityStrength},
+        {"orbital_outer_pull_multiplier", m_orbitalOuterPullMultiplier},
+        {"orbital_safe_zone_pull_multiplier", m_orbitalSafeZonePullMultiplier},
+        {"orbital_tangential_strength", m_orbitalTangentialStrength},
+        {"black_hole_gravity_strength", m_blackHoleBaseGravity},
+        {"black_hole_time_growth_factor", m_blackHoleTimeGrowthFactor},
+        {"black_hole_consume_size_factor", m_blackHoleConsumeSizeFactor},
+        {"black_hole_gravity_cap", m_blackHoleGravityCap},
+        {"black_hole_kill_radius_multiplier", m_blackHoleKillRadiusMultiplier},
+        {"event_gravity_multiplier", m_eventGravityMul},
         {"text_elements", textElementsJson()}
     };
 }
@@ -367,7 +420,7 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
     // Random angle on safe orbit
     std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * b2_pi);
     float angle = angleDist(m_rng);
-    float spawnRadius = ARENA_RADIUS * 0.8f; // Slightly inside the full orbit
+    float spawnRadius = ARENA_RADIUS * m_spawnRadiusFactor;
 
     float x = WORLD_CENTER_X + spawnRadius * std::cos(angle);
     float y = WORLD_CENTER_Y + spawnRadius * std::sin(angle);
@@ -399,7 +452,7 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
     p.orbitDirection = dirDist(m_rng) ? 1 : -1;
 
     // Give initial tangential velocity for orbit
-    float speed = 5.0f; // orbital speed
+    float speed = m_spawnOrbitSpeed;
     float dir = static_cast<float>(p.orbitDirection);
     float vx = -speed * std::sin(angle) * dir;
     float vy =  speed * std::cos(angle) * dir;
@@ -559,6 +612,7 @@ void GravityBrawl::startPlaying() {
     m_gameTimer = 0.0;
     m_cosmicEventTimer = m_cosmicEventCooldown;
     m_cosmicEventActive = 0.0;
+    m_blackHoleConsumedGravityBonus = 0.0f;
     m_survivalAccum = 0.0;
     spdlog::info("[GravityBrawl] Game started!");
 }
@@ -796,6 +850,7 @@ void GravityBrawl::update(double dt) {
 // ── Orbital Forces ───────────────────────────────────────────────────────────
 
 void GravityBrawl::applyOrbitalForces(float dt) {
+    (void)dt;
     for (auto& [id, p] : m_planets) {
         if (!p.alive || !p.body) continue;
 
@@ -808,21 +863,21 @@ void GravityBrawl::applyOrbitalForces(float dt) {
         b2Vec2 dir(toCenter.x / dist, toCenter.y / dist);
 
         // Gravitational pull toward center (inversely weakens near safe orbit)
-        float targetDist = ARENA_RADIUS * 0.7f;
-        float pullStrength = m_normalGravity;
+        float targetDist = ARENA_RADIUS * m_safeOrbitRadiusFactor;
+        float pullStrength = m_orbitalGravityStrength;
 
         // Stronger pull if too far out, weaker if near safe orbit
         if (dist > targetDist * 1.2f) {
-            pullStrength *= 1.5f;
+            pullStrength *= m_orbitalOuterPullMultiplier;
         } else if (dist > targetDist * 0.8f && dist < targetDist * 1.2f) {
-            pullStrength *= 0.5f; // Gentle in safe zone
+            pullStrength *= m_orbitalSafeZonePullMultiplier;
         }
 
         // Tangential force for orbit (perpendicular to radial direction)
         // Direction depends on the planet's assigned orbit direction
         float orbDir = static_cast<float>(p.orbitDirection);
         b2Vec2 tangent(-dir.y * orbDir, dir.x * orbDir);
-        float orbitalSpeed = 4.0f;
+        float orbitalSpeed = m_orbitalTangentialStrength;
 
         // Apply forces
         float mass = p.body->GetMass();
@@ -836,7 +891,9 @@ void GravityBrawl::applyOrbitalForces(float dt) {
 }
 
 void GravityBrawl::applyBlackHoleGravity(float dt) {
+    (void)dt;
     float gravMul = (m_cosmicEventActive > 0.0) ? m_eventGravityMul : 1.0f;
+    float effectiveGravity = currentBlackHoleGravity() * gravMul;
 
     for (auto& [id, p] : m_planets) {
         if (!p.alive || !p.body) continue;
@@ -847,9 +904,9 @@ void GravityBrawl::applyBlackHoleGravity(float dt) {
 
         if (dist < 0.5f) continue;
 
-        // Black hole pull: stronger the closer you get
-        float pullForce = (m_normalGravity * gravMul * 2.0f) / (dist * 0.5f);
-        pullForce = std::min(pullForce, 80.0f); // Cap it
+        float distanceFromKillZone = std::max(1.0f, dist - BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier);
+        float pullForce = effectiveGravity / distanceFromKillZone;
+        pullForce = std::min(pullForce, m_blackHoleGravityCap);
 
         b2Vec2 dir(toCenter.x / dist, toCenter.y / dist);
         float mass = p.body->GetMass();
@@ -871,7 +928,7 @@ void GravityBrawl::checkBlackHoleDeaths() {
         float dist = std::sqrt(dx * dx + dy * dy);
 
         // Kill zone is 20% larger than the visual radius
-        if (dist < BLACK_HOLE_RADIUS * 1.2f) {
+        if (dist < BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier) {
             eliminatePlanet(p);
         }
     }
@@ -888,6 +945,13 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
     // Explosion particles
     sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
     emitExplosion(screenPos, getTierColor(p.tier), 80);
+
+    if (m_phase == GamePhase::Playing) {
+        float gravityGain = std::max(0.0f, p.radiusMeters * m_blackHoleConsumeSizeFactor);
+        m_blackHoleConsumedGravityBonus += gravityGain;
+        spdlog::info("[GravityBrawl] Black hole gravity increased by {:.2f} (total bonus {:.2f}) after consuming '{}'",
+                     gravityGain, m_blackHoleConsumedGravityBonus, victimName);
+    }
 
     // Kill attribution
     std::string killerId = p.lastHitBy;
@@ -1756,6 +1820,8 @@ nlohmann::json GravityBrawl::getState() const {
     state["gameDuration"] = m_gameDuration;
     state["cosmicEventActive"] = m_cosmicEventActive > 0.0;
     state["cosmicEventTimer"] = m_cosmicEventTimer;
+    state["blackHoleGravity"] = currentBlackHoleGravity();
+    state["blackHoleConsumedGravityBonus"] = m_blackHoleConsumedGravityBonus;
 
     int alive = 0, total = 0;
     nlohmann::json players = nlohmann::json::array();
@@ -1778,6 +1844,10 @@ nlohmann::json GravityBrawl::getState() const {
     state["currentKing"] = m_currentKingId;
 
     return state;
+}
+
+float GravityBrawl::currentBlackHoleGravity() const {
+    return m_blackHoleBaseGravity + static_cast<float>(m_gameTimer) * m_blackHoleTimeGrowthFactor + m_blackHoleConsumedGravityBonus;
 }
 
 std::vector<std::pair<std::string, int>> GravityBrawl::getLeaderboard() const {

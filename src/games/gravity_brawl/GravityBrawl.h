@@ -222,6 +222,7 @@ private:
     void renderCountdown(sf::RenderTarget& target);
     void renderCosmicEventWarning(sf::RenderTarget& target);
     void renderFloatingTexts(sf::RenderTarget& target);
+    float currentBlackHoleGravity() const;
 
     /// Scale a font size by the current font scale factor.
     unsigned int fs(int base) const {
@@ -280,8 +281,20 @@ private:
     double m_cosmicEventTimer    = 60.0;  // countdown to next event
     double m_cosmicEventDuration = 10.0;  // how long the event lasts
     double m_cosmicEventActive   = 0.0;   // > 0 means event is active
-    float  m_normalGravity       = 12.0f; // base pull toward center
-    float  m_eventGravityMul     = 3.0f;  // multiplier during event
+    float  m_spawnRadiusFactor            = 0.92f;
+    float  m_spawnOrbitSpeed              = 7.25f;
+    float  m_safeOrbitRadiusFactor        = 0.78f;
+    float  m_orbitalGravityStrength       = 8.0f;
+    float  m_orbitalOuterPullMultiplier   = 1.25f;
+    float  m_orbitalSafeZonePullMultiplier = 0.35f;
+    float  m_orbitalTangentialStrength    = 8.75f;
+    float  m_blackHoleBaseGravity         = 6.0f;
+    float  m_blackHoleTimeGrowthFactor    = 0.02f;
+    float  m_blackHoleConsumeSizeFactor   = 1.75f;
+    float  m_blackHoleConsumedGravityBonus = 0.0f;
+    float  m_blackHoleGravityCap          = 30.0f;
+    float  m_blackHoleKillRadiusMultiplier = 1.0f;
+    float  m_eventGravityMul              = 2.2f;  // multiplier during event
 
     // Black hole visual
     float  m_blackHolePulse      = 0.0f;
