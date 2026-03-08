@@ -53,17 +53,15 @@ include(FetchContent)
 # SFML 2.6 – Rendering & Window
 FetchContent_Declare(
     sfml
-    GIT_REPOSITORY https://github.com/SFML/SFML.git
-    GIT_TAG        2.6.1
-    GIT_SHALLOW    TRUE
+    URL https://github.com/SFML/SFML/archive/refs/tags/2.6.1.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # Box2D – Physics
 FetchContent_Declare(
     box2d
-    GIT_REPOSITORY https://github.com/erincatto/box2d.git
-    GIT_TAG        v2.4.1
-    GIT_SHALLOW    TRUE
+    URL https://github.com/erincatto/box2d/archive/refs/tags/v2.4.1.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
 set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
@@ -71,25 +69,22 @@ set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
 # nlohmann/json – JSON handling
 FetchContent_Declare(
     json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-    GIT_SHALLOW    TRUE
+    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # cpp-httplib – Embedded HTTP server for admin dashboard
 FetchContent_Declare(
     httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG        v0.15.3
-    GIT_SHALLOW    TRUE
+    URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.15.3.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # spdlog – Logging
 FetchContent_Declare(
     spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.13.0
-    GIT_SHALLOW    TRUE
+    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.13.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # stb – Header-only image utilities (JPEG encoding for web preview)
@@ -320,10 +315,15 @@ if(UNIX AND NOT APPLE)
     )
 endif()
 
-# Copy assets to build directory
+set(IS_COPY_IF_STALE_SCRIPT "${CMAKE_SOURCE_DIR}/cmake/CopyIfStale.cmake")
+
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+    COMMAND "${CMAKE_COMMAND}"
+        -DINPUT_DIR="${CMAKE_SOURCE_DIR}/assets"
+        -DOUTPUT_DIR="$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
+        -DSTAMP_FILE="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_assets_$<CONFIG>.stamp"
+        -P "${IS_COPY_IF_STALE_SCRIPT}"
+    VERBATIM
 )
 
 # ─── Web Dashboard (Next.js static export) ───────────────────────────────────
@@ -363,18 +363,21 @@ if(BUN_EXECUTABLE)
         VERBATIM
     )
 
-    # Step 2: custom target – always evaluated by the build system.
-    add_custom_target(WebDashboard ALL DEPENDS "${WEB_BUILD_STAMP}")
+    # Step 2: dashboard build target. Only the app depends on it, so test-only
+    # builds do not pay the dashboard build cost.
+    add_custom_target(WebDashboard DEPENDS "${WEB_BUILD_STAMP}")
 
     # Step 3: make the main executable wait for the dashboard before copying.
     add_dependencies(${PROJECT_NAME} WebDashboard)
 
-    # Step 4: copy the freshly built output next to the executable.
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                "${CMAKE_SOURCE_DIR}/web/out"
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard"
-        COMMENT "Copying web dashboard to build directory..."
+        COMMAND "${CMAKE_COMMAND}"
+            -DINPUT_DIR="${CMAKE_SOURCE_DIR}/web/out"
+            -DOUTPUT_DIR="$<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard"
+            -DSTAMP_FILE="${CMAKE_BINARY_DIR}/web_dashboard_copy_$<CONFIG>.stamp"
+            -DINPUT_STAMP="${WEB_BUILD_STAMP}"
+            -P "${IS_COPY_IF_STALE_SCRIPT}"
+        VERBATIM
     )
 else()
     message(WARNING
@@ -384,17 +387,23 @@ else()
     # Fallback: copy whatever is already in web/out/ if it exists.
     if(EXISTS "${CMAKE_SOURCE_DIR}/web/out")
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                    "${CMAKE_SOURCE_DIR}/web/out"
-                    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard"
+            COMMAND "${CMAKE_COMMAND}"
+                -DINPUT_DIR="${CMAKE_SOURCE_DIR}/web/out"
+                -DOUTPUT_DIR="$<TARGET_FILE_DIR:${PROJECT_NAME}>/dashboard"
+                -DSTAMP_FILE="${CMAKE_BINARY_DIR}/web_dashboard_copy_$<CONFIG>.stamp"
+                -P "${IS_COPY_IF_STALE_SCRIPT}"
+            VERBATIM
         )
     endif()
 endif()
 
-# Copy config to build directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/config $<TARGET_FILE_DIR:${PROJECT_NAME}>/config
+    COMMAND "${CMAKE_COMMAND}"
+        -DINPUT_DIR="${CMAKE_SOURCE_DIR}/config"
+        -DOUTPUT_DIR="$<TARGET_FILE_DIR:${PROJECT_NAME}>/config"
+        -DSTAMP_FILE="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_config_$<CONFIG>.stamp"
+        -P "${IS_COPY_IF_STALE_SCRIPT}"
+    VERBATIM
 )
 
 # Copy SFML DLLs next to executable (Windows)

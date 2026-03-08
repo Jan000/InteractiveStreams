@@ -6,9 +6,8 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # ─── Test Framework: doctest (header-only) ────────────────────────────────────
 FetchContent_Declare(
     doctest
-    GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG        v2.4.11
-    GIT_SHALLOW    TRUE
+    URL https://github.com/doctest/doctest/archive/refs/tags/v2.4.11.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(doctest)

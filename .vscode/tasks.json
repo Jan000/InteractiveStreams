@@ -23,7 +23,11 @@
                 "--build",
                 "build",
                 "--config",
-                "Debug"
+                "Debug",
+                "--target",
+                "InteractiveStreams",
+                "--",
+                "/verbosity:minimal"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -44,7 +48,11 @@
                 "--build",
                 "build",
                 "--config",
-                "Release"
+                "Release",
+                "--target",
+                "InteractiveStreams",
+                "--",
+                "/verbosity:minimal"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -63,12 +71,38 @@
                 "build",
                 "--config",
                 "Debug",
-                "--clean-first"
+                "--clean-first",
+                "--target",
+                "InteractiveStreams",
+                "--",
+                "/verbosity:minimal"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "group": "build",
+            "problemMatcher": [
+                "$msCompile"
+            ]
+        },
+        {
+            "label": "CMake: Build Tests (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build",
+                "--config",
+                "Debug",
+                "--target",
+                "InteractiveStreams_Tests",
+                "--",
+                "/verbosity:minimal"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
             "problemMatcher": [
                 "$msCompile"
             ]
@@ -85,6 +119,7 @@
             "options": {
                 "cwd": "${workspaceFolder}/build"
             },
+            "dependsOn": "CMake: Build Tests (Debug)",
             "group": "test",
             "problemMatcher": []
         },
