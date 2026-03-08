@@ -64,6 +64,7 @@ COPY CMakeLists.txt CMakePresets.json ./
 # but we only need the directory structure and file list – not contents.
 # Unfortunately CMake validates source file existence, so we copy everything.
 COPY src/ src/
+COPY cmake/ cmake/
 COPY config/ config/
 COPY assets/ assets/
 COPY --from=dashboard-builder /app/web/out/ web/out/
