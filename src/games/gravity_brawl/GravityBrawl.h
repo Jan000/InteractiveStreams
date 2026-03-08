@@ -75,6 +75,9 @@ struct Planet {
     std::string lastHitBy;              // userId of last player that hit us
     double      lastHitTime    = 0.0;   // when the hit happened
 
+    // Orbit direction: +1 = counter-clockwise, -1 = clockwise
+    int         orbitDirection = 1;
+
     // Visual timers
     float       hitFlashTimer  = 0.0f;
     float       trailTimer     = 0.0f;
@@ -176,6 +179,7 @@ public:
     bool isGameOver() const override;
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
+    std::vector<std::pair<std::string, int>> getLeaderboard() const override;
     void configure(const nlohmann::json& settings) override;
 
 private:

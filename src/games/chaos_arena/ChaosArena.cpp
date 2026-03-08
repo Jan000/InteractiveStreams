@@ -1426,4 +1426,14 @@ nlohmann::json ChaosArena::getCommands() const {
     });
 }
 
+std::vector<std::pair<std::string, int>> ChaosArena::getLeaderboard() const {
+    std::vector<std::pair<std::string, int>> result;
+    for (const auto& [id, p] : m_players) {
+        result.emplace_back(p.displayName, p.score);
+    }
+    std::sort(result.begin(), result.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    return result;
+}
+
 } // namespace is::games::chaos_arena

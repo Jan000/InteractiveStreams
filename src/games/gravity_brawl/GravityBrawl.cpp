@@ -345,7 +345,7 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
     b2BodyDef bodyDef;
     bodyDef.type = b2_dynamicBody;
     bodyDef.position.Set(x, y);
-    bodyDef.linearDamping = 0.3f;
+    bodyDef.linearDamping = 0.5f;
     bodyDef.angularDamping = 1.0f;
     bodyDef.fixedRotation = true;
     bodyDef.userData.pointer = reinterpret_cast<uintptr_t>(&p);
@@ -363,10 +363,15 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
 
     p.body->CreateFixture(&fixDef);
 
+    // 50% chance clockwise vs counter-clockwise orbit
+    std::uniform_int_distribution<int> dirDist(0, 1);
+    p.orbitDirection = dirDist(m_rng) ? 1 : -1;
+
     // Give initial tangential velocity for orbit
     float speed = 5.0f; // orbital speed
-    float vx = -speed * std::sin(angle);
-    float vy =  speed * std::cos(angle);
+    float dir = static_cast<float>(p.orbitDirection);
+    float vx = -speed * std::sin(angle) * dir;
+    float vy =  speed * std::cos(angle) * dir;
     p.body->SetLinearVelocity(b2Vec2(vx, vy));
 
     // Store initial position for interpolation
@@ -382,20 +387,45 @@ void GravityBrawl::triggerSmash(Planet& p) {
 
     p.smashCooldown = Planet::SMASH_COOLDOWN;
 
-    b2Vec2 vel = p.body->GetLinearVelocity();
-    float speed = vel.Length();
-    if (speed < 0.1f) {
-        // Default dash direction: away from center
-        b2Vec2 pos = p.body->GetPosition();
-        b2Vec2 dir(pos.x - WORLD_CENTER_X, pos.y - WORLD_CENTER_Y);
-        float len = dir.Length();
-        if (len > 0.01f) dir = b2Vec2(dir.x / len, dir.y / len);
-        p.body->ApplyLinearImpulseToCenter(b2Vec2(dir.x * 15.0f, dir.y * 15.0f), true);
+    // Auto-aim: find the nearest alive enemy and dash toward them
+    b2Vec2 myPos = p.body->GetPosition();
+    float bestDist = 999999.0f;
+    b2Vec2 bestDir(0.0f, 0.0f);
+    bool foundTarget = false;
+
+    for (const auto& [id, other] : m_planets) {
+        if (!other.alive || !other.body || id == p.userId) continue;
+        b2Vec2 otherPos = other.body->GetPosition();
+        b2Vec2 diff(otherPos.x - myPos.x, otherPos.y - myPos.y);
+        float dist = diff.Length();
+        if (dist > 0.1f && dist < bestDist) {
+            bestDist = dist;
+            bestDir = b2Vec2(diff.x / dist, diff.y / dist);
+            foundTarget = true;
+        }
+    }
+
+    float impulse = 12.0f + p.getMassScale() * 2.0f;
+
+    if (foundTarget) {
+        // Dash toward the nearest enemy
+        p.body->ApplyLinearImpulseToCenter(
+            b2Vec2(bestDir.x * impulse, bestDir.y * impulse), true);
     } else {
-        // Boost in current direction
-        b2Vec2 dir(vel.x / speed, vel.y / speed);
-        float impulse = 12.0f + p.getMassScale() * 2.0f;
-        p.body->ApplyLinearImpulseToCenter(b2Vec2(dir.x * impulse, dir.y * impulse), true);
+        // No target: boost in current velocity direction or away from center
+        b2Vec2 vel = p.body->GetLinearVelocity();
+        float speed = vel.Length();
+        if (speed < 0.1f) {
+            b2Vec2 dir(myPos.x - WORLD_CENTER_X, myPos.y - WORLD_CENTER_Y);
+            float len = dir.Length();
+            if (len > 0.01f) dir = b2Vec2(dir.x / len, dir.y / len);
+            p.body->ApplyLinearImpulseToCenter(
+                b2Vec2(dir.x * 15.0f, dir.y * 15.0f), true);
+        } else {
+            b2Vec2 dir(vel.x / speed, vel.y / speed);
+            p.body->ApplyLinearImpulseToCenter(
+                b2Vec2(dir.x * impulse, dir.y * impulse), true);
+        }
     }
 
     // Trail effect
@@ -758,7 +788,9 @@ void GravityBrawl::applyOrbitalForces(float dt) {
         }
 
         // Tangential force for orbit (perpendicular to radial direction)
-        b2Vec2 tangent(-dir.y, dir.x);
+        // Direction depends on the planet's assigned orbit direction
+        float orbDir = static_cast<float>(p.orbitDirection);
+        b2Vec2 tangent(-dir.y * orbDir, dir.x * orbDir);
         float orbitalSpeed = 4.0f;
 
         // Apply forces
@@ -807,7 +839,8 @@ void GravityBrawl::checkBlackHoleDeaths() {
         float dy = pos.y - WORLD_CENTER_Y;
         float dist = std::sqrt(dx * dx + dy * dy);
 
-        if (dist < BLACK_HOLE_RADIUS) {
+        // Kill zone is 20% larger than the visual radius
+        if (dist < BLACK_HOLE_RADIUS * 1.2f) {
             eliminatePlanet(p);
         }
     }
@@ -939,7 +972,7 @@ void GravityBrawl::triggerCosmicEvent() {
     m_cosmicEventTimer = m_cosmicEventCooldown;
 
     spdlog::info("[GravityBrawl] COSMIC EVENT: Black hole is hungry!");
-    sendChatFeedback("🚨 THE BLACK HOLE IS HUNGRY! Spam !s to escape! 🚨");
+    sendChatFeedback("THE BLACK HOLE IS HUNGRY! Spam !s to escape!");
 }
 
 void GravityBrawl::updateCosmicEvent(float dt) {
@@ -1098,7 +1131,7 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
     // UI overlay
     renderUI(target);
     renderKillFeed(target);
-    renderLeaderboard(target);
+    // In-game leaderboard removed; global scoreboard overlay handles it
 
     // Cosmic event warning
     if (m_cosmicEventActive > 0.0) {
@@ -1435,7 +1468,7 @@ void GravityBrawl::renderKillFeed(sf::RenderTarget& target) {
         sf::Uint8 a = static_cast<sf::Uint8>(alpha * 220);
 
         std::string text = entry.killer + " ▸ " + entry.victim;
-        if (entry.wasBounty) text += " 👑";
+        if (entry.wasBounty) text += " [BOUNTY]";
 
         sf::Text feedText;
         feedText.setFont(m_font);
@@ -1487,8 +1520,8 @@ void GravityBrawl::renderLeaderboard(sf::RenderTarget& target) {
     for (const auto* p : sorted) {
         if (shown >= 10) break;
 
-        std::string prefix = p->isKing ? "👑 " : "";
-        std::string status = p->alive ? "" : " 💀";
+        std::string prefix = p->isKing ? "[K] " : "";
+        std::string status = p->alive ? "" : " [DEAD]";
         std::string text = prefix + p->displayName + status +
                           " - " + std::to_string(p->score) +
                           " (" + std::to_string(p->kills) + "K)";
@@ -1611,7 +1644,7 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
     if (m_cosmicEventActive <= 0.0 && m_cosmicEventTimer < 10.0 && m_phase == GamePhase::Playing) {
         sf::Text warningText;
         warningText.setFont(m_font);
-        warningText.setString("⚠ BLACK HOLE HUNGERS IN " +
+        warningText.setString("BLACK HOLE HUNGERS IN " +
                               std::to_string(static_cast<int>(m_cosmicEventTimer)) + "s");
         warningText.setCharacterSize(fs(12));
         warningText.setFillColor(sf::Color(255, 100, 100, 200));
@@ -1640,7 +1673,7 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
     // Warning text
     sf::Text warning;
     warning.setFont(m_font);
-    warning.setString("🚨 BLACK HOLE SURGE! SPAM !s TO ESCAPE! 🚨");
+    warning.setString("BLACK HOLE SURGE! SPAM !s TO ESCAPE!");
     warning.setCharacterSize(fs(16));
     warning.setFillColor(sf::Color(255, 50, 50, static_cast<sf::Uint8>(180 + pulse * 75)));
     warning.setOutlineColor(sf::Color(0, 0, 0, 220));
@@ -1744,6 +1777,17 @@ nlohmann::json GravityBrawl::getState() const {
     state["currentKing"] = m_currentKingId;
 
     return state;
+}
+
+std::vector<std::pair<std::string, int>> GravityBrawl::getLeaderboard() const {
+    std::vector<std::pair<std::string, int>> result;
+    for (const auto& [id, p] : m_planets) {
+        if (p.displayName.empty()) continue; // Skip bots
+        result.emplace_back(p.displayName, p.score);
+    }
+    std::sort(result.begin(), result.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    return result;
 }
 
 nlohmann::json GravityBrawl::getCommands() const {

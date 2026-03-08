@@ -13,6 +13,7 @@
 #include <thread>
 #include <chrono>
 #include <unordered_map>
+#include <utility>
 #include <nlohmann/json.hpp>
 
 namespace is::streaming { class StreamEncoder; }
@@ -113,8 +114,12 @@ struct StreamConfig {
     int    scoreboardFontSize    = 20;       ///< Base font size for entries
     std::string scoreboardAllTimeTitle  = "ALL TIME";
     std::string scoreboardRecentTitle   = "LAST 24H";
+    std::string scoreboardRoundTitle    = "CURRENT ROUND";
     int    scoreboardRecentHours = 24;       ///< Time window for recent scoreboard
-    double scoreboardCycleSecs   = 10.0;     ///< Seconds per panel before switching
+    double scoreboardCycleSecs   = 10.0;     ///< Default seconds per panel (fallback)
+    double scoreboardAllTimeSecs = 10.0;     ///< Seconds for all-time panel (0=skip)
+    double scoreboardRecentSecs  = 10.0;     ///< Seconds for recent panel (0=skip)
+    double scoreboardRoundSecs   = 8.0;      ///< Seconds for round panel (0=skip)
     double scoreboardFadeSecs    = 1.0;      ///< Crossfade duration in seconds
     int    scoreboardChatInterval = 120;     ///< Seconds between chat posts (0 = disabled)
     // ── Vote overlay font scale ─────────────────────────────────────────
@@ -196,6 +201,8 @@ private:
     void updateJpegBuffer();
     void updateScoreboardCache();
     void sendScoreboardToChat();
+    void rebuildScoreboardPanels();
+    double currentPanelDuration() const;
     void sendPeriodicInfoMessage();
     void updatePlatformInfo(const std::string& gameId);
     std::vector<std::string> getAvailableGameIds() const;
@@ -244,12 +251,16 @@ private:
     // Global scoreboard overlay (cached from PlayerDatabase)
     std::vector<ScoreEntry> m_scoreboardCache;
     std::vector<ScoreEntry> m_scoreboardRecentCache;
+    std::vector<std::pair<std::string, int>> m_scoreboardRoundCache;
     double m_scoreboardRefreshTimer = 0.0;
     static constexpr double SCOREBOARD_REFRESH_INTERVAL = 5.0; // seconds
 
     // Scoreboard panel cycling (animated fade)
+    // Panel indices: built dynamically from enabled panels (duration > 0)
     double m_scoreboardCycleTimer = 0.0;
-    bool   m_scoreboardShowRecent = false; ///< false = all-time, true = recent
+    int    m_scoreboardPanelIndex = 0;       ///< current panel (0,1,2 mapped to enabled panels)
+    enum class ScoreboardPanel { AllTime, Recent, Round };
+    std::vector<ScoreboardPanel> m_scoreboardPanels; ///< ordered enabled panels
 
     // Periodic scoreboard chat posting
     double m_scoreboardChatTimer  = 0.0;

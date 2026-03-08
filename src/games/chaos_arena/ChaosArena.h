@@ -60,6 +60,7 @@ public:
     bool isGameOver() const override;
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
+    std::vector<std::pair<std::string, int>> getLeaderboard() const override;
     int maxPlayers() const override { return m_maxPlayers; }
 
 private:

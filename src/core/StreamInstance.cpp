@@ -34,6 +34,9 @@ StreamInstance::StreamInstance(const StreamConfig& config)
     // Font for vote overlay (may fail if not found)
     m_fontLoaded = m_font.loadFromFile("assets/fonts/JetBrainsMono-Regular.ttf");
 
+    // Build initial scoreboard panel list
+    rebuildScoreboardPanels();
+
     // Load the initial game
     if (!m_config.fixedGame.empty()) {
         m_gameManager->loadGame(m_config.fixedGame);
@@ -96,15 +99,27 @@ void StreamInstance::update(double dt) {
     if (m_scoreboardRefreshTimer >= SCOREBOARD_REFRESH_INTERVAL) {
         m_scoreboardRefreshTimer = 0.0;
         updateScoreboardCache();
+
+        // Refresh round leaderboard from active game
+        if (auto* game = m_gameManager->activeGame()) {
+            m_scoreboardRoundCache = game->getLeaderboard();
+        } else {
+            m_scoreboardRoundCache.clear();
+        }
+
+        // Rebuild panel list (panels may appear/disappear as caches change)
+        rebuildScoreboardPanels();
     }
 
-    // Cycle scoreboard panels (all-time ↔ recent)
-    if (m_config.scoreboardCycleSecs > 0.0) {
+    // Cycle scoreboard panels (all-time / recent / round)
+    if (!m_scoreboardPanels.empty()) {
         m_scoreboardCycleTimer += dt;
-        double fullCycle = m_config.scoreboardCycleSecs + m_config.scoreboardFadeSecs;
+        double panelDuration = currentPanelDuration();
+        double fullCycle = panelDuration + m_config.scoreboardFadeSecs;
         if (m_scoreboardCycleTimer >= fullCycle) {
             m_scoreboardCycleTimer = 0.0;
-            m_scoreboardShowRecent = !m_scoreboardShowRecent;
+            m_scoreboardPanelIndex = (m_scoreboardPanelIndex + 1)
+                                     % static_cast<int>(m_scoreboardPanels.size());
         }
     }
 
@@ -533,9 +548,38 @@ void StreamInstance::updateScoreboardCache() {
                                               m_config.scoreboardRecentHours);
 }
 
+void StreamInstance::rebuildScoreboardPanels() {
+    m_scoreboardPanels.clear();
+    if (m_config.scoreboardAllTimeSecs > 0.0 && !m_scoreboardCache.empty())
+        m_scoreboardPanels.push_back(ScoreboardPanel::AllTime);
+    if (m_config.scoreboardRecentSecs > 0.0 && !m_scoreboardRecentCache.empty())
+        m_scoreboardPanels.push_back(ScoreboardPanel::Recent);
+    if (m_config.scoreboardRoundSecs > 0.0 && !m_scoreboardRoundCache.empty())
+        m_scoreboardPanels.push_back(ScoreboardPanel::Round);
+
+    // Clamp panel index
+    if (m_scoreboardPanels.empty()) {
+        m_scoreboardPanelIndex = 0;
+    } else if (m_scoreboardPanelIndex >= static_cast<int>(m_scoreboardPanels.size())) {
+        m_scoreboardPanelIndex = 0;
+    }
+}
+
+double StreamInstance::currentPanelDuration() const {
+    if (m_scoreboardPanels.empty()) return m_config.scoreboardCycleSecs;
+    auto panel = m_scoreboardPanels[static_cast<size_t>(
+        m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
+    switch (panel) {
+    case ScoreboardPanel::AllTime: return m_config.scoreboardAllTimeSecs;
+    case ScoreboardPanel::Recent:  return m_config.scoreboardRecentSecs;
+    case ScoreboardPanel::Round:   return m_config.scoreboardRoundSecs;
+    }
+    return m_config.scoreboardCycleSecs;
+}
+
 void StreamInstance::renderGlobalScoreboard() {
     if (!m_fontLoaded) return;
-    if (m_scoreboardCache.empty() && m_scoreboardRecentCache.empty()) return;
+    if (m_scoreboardPanels.empty()) return;
 
     float w = static_cast<float>(width());
 
@@ -547,37 +591,31 @@ void StreamInstance::renderGlobalScoreboard() {
     float padY   = 8.0f;
     float panelW = w * 0.30f;
 
-    // Compute crossfade alpha: 255 during display, fading during transition
+    // Compute crossfade alpha
     uint8_t alpha = 255;
-    double fadeSecs = m_config.scoreboardFadeSecs;
-    double cycleSecs = m_config.scoreboardCycleSecs;
+    double fadeSecs  = m_config.scoreboardFadeSecs;
+    double cycleSecs = currentPanelDuration();
     if (fadeSecs > 0.0 && cycleSecs > 0.0) {
         double t = m_scoreboardCycleTimer;
         if (t < fadeSecs) {
-            // Fading in
             alpha = static_cast<uint8_t>(255.0 * (t / fadeSecs));
         } else if (t > cycleSecs) {
-            // Fading out
             alpha = static_cast<uint8_t>(255.0 * (1.0 - (t - cycleSecs) / fadeSecs));
         }
     }
 
-    // Choose which panel(s) to show
-    const auto& entries = m_scoreboardShowRecent ? m_scoreboardRecentCache : m_scoreboardCache;
-    const auto& title   = m_scoreboardShowRecent ? m_config.scoreboardRecentTitle
-                                                 : m_config.scoreboardAllTimeTitle;
+    // Determine current panel type
+    ScoreboardPanel panel = m_scoreboardPanels[static_cast<size_t>(
+        m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
 
-    if (entries.empty()) return;
-
-    // Helper lambda to draw one scoreboard panel with given alpha
-    auto drawPanel = [&](float panelX, float panelY,
-                         const std::string& panelTitle,
-                         const std::vector<ScoreEntry>& panelEntries,
-                         uint8_t panelAlpha) {
+    // Helper lambda to draw a ScoreEntry panel
+    auto drawScorePanel = [&](float panelX, float panelY,
+                              const std::string& panelTitle,
+                              const std::vector<ScoreEntry>& panelEntries,
+                              uint8_t panelAlpha) {
         int count = static_cast<int>(panelEntries.size());
         float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
 
-        // Background
         sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
         bg.setPosition(panelX, panelY);
         bg.setFillColor(sf::Color(10, 10, 20, static_cast<uint8_t>(180 * panelAlpha / 255)));
@@ -585,7 +623,6 @@ void StreamInstance::renderGlobalScoreboard() {
         bg.setOutlineThickness(1.5f);
         m_renderTexture.draw(bg);
 
-        // Header
         sf::Text header;
         header.setFont(m_font);
         header.setString(panelTitle);
@@ -596,7 +633,6 @@ void StreamInstance::renderGlobalScoreboard() {
         header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
         m_renderTexture.draw(header);
 
-        // Entries
         float y = panelY + padY + headerH;
         int rank = 1;
         for (const auto& entry : panelEntries) {
@@ -628,9 +664,83 @@ void StreamInstance::renderGlobalScoreboard() {
         }
     };
 
+    // Helper lambda to draw a pair-based round panel
+    auto drawRoundPanel = [&](float panelX, float panelY,
+                              const std::string& panelTitle,
+                              const std::vector<std::pair<std::string, int>>& panelEntries,
+                              uint8_t panelAlpha) {
+        int count = std::min(static_cast<int>(panelEntries.size()), m_config.scoreboardTopN);
+        float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
+
+        sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
+        bg.setPosition(panelX, panelY);
+        bg.setFillColor(sf::Color(10, 10, 20, static_cast<uint8_t>(180 * panelAlpha / 255)));
+        bg.setOutlineColor(sf::Color(80, 130, 200, static_cast<uint8_t>(150 * panelAlpha / 255)));
+        bg.setOutlineThickness(1.5f);
+        m_renderTexture.draw(bg);
+
+        sf::Text header;
+        header.setFont(m_font);
+        header.setString(panelTitle);
+        header.setCharacterSize(static_cast<unsigned int>(headerFontSize));
+        header.setFillColor(sf::Color(255, 215, 0, panelAlpha));
+        header.setStyle(sf::Text::Bold);
+        auto hb = header.getLocalBounds();
+        header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
+        m_renderTexture.draw(header);
+
+        float y = panelY + padY + headerH;
+        int rank = 1;
+        for (const auto& [name, score] : panelEntries) {
+            if (rank > m_config.scoreboardTopN) break;
+            std::string line = std::to_string(rank) + ". " + name;
+
+            sf::Text nameText;
+            nameText.setFont(m_font);
+            nameText.setString(line);
+            nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
+            sf::Color nameColor = rank == 1 ? sf::Color(255, 215, 0, panelAlpha) :
+                                  rank == 2 ? sf::Color(200, 200, 200, panelAlpha) :
+                                  rank == 3 ? sf::Color(205, 127, 50, panelAlpha) :
+                                              sf::Color(170, 170, 190, panelAlpha);
+            nameText.setFillColor(nameColor);
+            nameText.setPosition(panelX + padX, y);
+            m_renderTexture.draw(nameText);
+
+            sf::Text ptsText;
+            ptsText.setFont(m_font);
+            ptsText.setString(std::to_string(score) + " pts");
+            ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
+            ptsText.setFillColor(sf::Color(88, 166, 255, panelAlpha));
+            auto pb = ptsText.getLocalBounds();
+            ptsText.setPosition(panelX + panelW - pb.width - padX, y);
+            m_renderTexture.draw(ptsText);
+
+            y += lineH;
+            rank++;
+        }
+    };
+
     float panelX = w - panelW - 12.0f;
     float panelY = 12.0f;
-    drawPanel(panelX, panelY, title, entries, alpha);
+
+    switch (panel) {
+    case ScoreboardPanel::AllTime:
+        if (!m_scoreboardCache.empty())
+            drawScorePanel(panelX, panelY, m_config.scoreboardAllTimeTitle,
+                           m_scoreboardCache, alpha);
+        break;
+    case ScoreboardPanel::Recent:
+        if (!m_scoreboardRecentCache.empty())
+            drawScorePanel(panelX, panelY, m_config.scoreboardRecentTitle,
+                           m_scoreboardRecentCache, alpha);
+        break;
+    case ScoreboardPanel::Round:
+        if (!m_scoreboardRoundCache.empty())
+            drawRoundPanel(panelX, panelY, m_config.scoreboardRoundTitle,
+                           m_scoreboardRoundCache, alpha);
+        break;
+    }
 }
 
 void StreamInstance::sendPeriodicInfoMessage() {
@@ -668,16 +778,34 @@ void StreamInstance::sendScoreboardToChat() {
         return msg;
     };
 
-    // Alternate which scoreboard we post (all-time / recent)
-    // Use the same flag as the overlay, so chat and overlay stay in sync
+    // Post whichever panel is currently showing
     std::string msg;
-    if (!m_scoreboardShowRecent && !m_scoreboardCache.empty()) {
+    if (!m_scoreboardPanels.empty()) {
+        auto panel = m_scoreboardPanels[static_cast<size_t>(
+            m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
+        if (panel == ScoreboardPanel::AllTime && !m_scoreboardCache.empty()) {
+            msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
+        } else if (panel == ScoreboardPanel::Recent && !m_scoreboardRecentCache.empty()) {
+            msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
+        } else if (panel == ScoreboardPanel::Round && !m_scoreboardRoundCache.empty()) {
+            // Format round leaderboard from pair-based cache
+            std::string title = m_config.scoreboardRoundTitle;
+            std::string roundMsg = "🏆 " + title + ": ";
+            int rank = 1;
+            for (const auto& [name, score] : m_scoreboardRoundCache) {
+                if (rank > 1) roundMsg += " | ";
+                roundMsg += "#" + std::to_string(rank) + " " + name
+                         + " (" + std::to_string(score) + "pts)";
+                if (++rank > 5) break;
+            }
+            msg = roundMsg;
+        }
+    }
+    // Fallback: post something if the current panel is empty
+    if (msg.empty() && !m_scoreboardCache.empty()) {
         msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
-    } else if (m_scoreboardShowRecent && !m_scoreboardRecentCache.empty()) {
-        msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
-    } else if (!m_scoreboardCache.empty()) {
-        msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
-    } else if (!m_scoreboardRecentCache.empty()) {
+    }
+    if (msg.empty() && !m_scoreboardRecentCache.empty()) {
         msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
     }
 
@@ -1125,8 +1253,12 @@ nlohmann::json StreamInstance::getState() const {
     s["scoreboardFontSize"]     = m_config.scoreboardFontSize;
     s["scoreboardAllTimeTitle"] = m_config.scoreboardAllTimeTitle;
     s["scoreboardRecentTitle"]  = m_config.scoreboardRecentTitle;
+    s["scoreboardRoundTitle"]   = m_config.scoreboardRoundTitle;
     s["scoreboardRecentHours"]  = m_config.scoreboardRecentHours;
     s["scoreboardCycleSecs"]    = m_config.scoreboardCycleSecs;
+    s["scoreboardAllTimeSecs"]  = m_config.scoreboardAllTimeSecs;
+    s["scoreboardRecentSecs"]   = m_config.scoreboardRecentSecs;
+    s["scoreboardRoundSecs"]    = m_config.scoreboardRoundSecs;
     s["scoreboardFadeSecs"]     = m_config.scoreboardFadeSecs;
     s["scoreboardChatInterval"] = m_config.scoreboardChatInterval;
     s["voteOverlayFontScale"]   = m_config.voteOverlayFontScale;
@@ -1148,6 +1280,14 @@ nlohmann::json StreamInstance::getState() const {
                           {"wins", e.wins}});
         }
         s["scoreboardRecent"] = sb;
+    }
+    // Global scoreboard (current round)
+    {
+        nlohmann::json sb = nlohmann::json::array();
+        for (const auto& [name, score] : m_scoreboardRoundCache) {
+            sb.push_back({{"name", name}, {"points", score}});
+        }
+        s["scoreboardRound"] = sb;
     }
 
     // Per-stream statistics
@@ -1234,8 +1374,12 @@ nlohmann::json StreamInstance::toJson() const {
     j["scoreboard_font_size"]      = m_config.scoreboardFontSize;
     j["scoreboard_alltime_title"]  = m_config.scoreboardAllTimeTitle;
     j["scoreboard_recent_title"]   = m_config.scoreboardRecentTitle;
+    j["scoreboard_round_title"]    = m_config.scoreboardRoundTitle;
     j["scoreboard_recent_hours"]   = m_config.scoreboardRecentHours;
     j["scoreboard_cycle_secs"]     = m_config.scoreboardCycleSecs;
+    j["scoreboard_alltime_secs"]   = m_config.scoreboardAllTimeSecs;
+    j["scoreboard_recent_secs"]    = m_config.scoreboardRecentSecs;
+    j["scoreboard_round_secs"]     = m_config.scoreboardRoundSecs;
     j["scoreboard_fade_secs"]      = m_config.scoreboardFadeSecs;
     j["scoreboard_chat_interval"]  = m_config.scoreboardChatInterval;
 
@@ -1335,8 +1479,12 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.scoreboardFontSize   = j.value("scoreboard_font_size", 20);
     c.scoreboardAllTimeTitle  = j.value("scoreboard_alltime_title", std::string("ALL TIME"));
     c.scoreboardRecentTitle   = j.value("scoreboard_recent_title", std::string("LAST 24H"));
+    c.scoreboardRoundTitle    = j.value("scoreboard_round_title", std::string("CURRENT ROUND"));
     c.scoreboardRecentHours   = j.value("scoreboard_recent_hours", 24);
     c.scoreboardCycleSecs     = j.value("scoreboard_cycle_secs", 10.0);
+    c.scoreboardAllTimeSecs   = j.value("scoreboard_alltime_secs", 10.0);
+    c.scoreboardRecentSecs    = j.value("scoreboard_recent_secs", 10.0);
+    c.scoreboardRoundSecs     = j.value("scoreboard_round_secs", 8.0);
     c.scoreboardFadeSecs      = j.value("scoreboard_fade_secs", 1.0);
     c.scoreboardChatInterval  = j.value("scoreboard_chat_interval", 120);
 

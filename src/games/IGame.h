@@ -3,6 +3,8 @@
 #include "platform/ChatMessage.h"
 #include <SFML/Graphics.hpp>
 #include <string>
+#include <vector>
+#include <utility>
 #include <functional>
 #include <nlohmann/json.hpp>
 
@@ -73,6 +75,11 @@ public:
 
     /// Get available chat commands as JSON.
     virtual nlohmann::json getCommands() const = 0;
+
+    /// Get current in-game leaderboard for overlay display.
+    /// Returns a list of (displayName, score) pairs, already sorted descending.
+    /// Default: empty (no in-game leaderboard).
+    virtual std::vector<std::pair<std::string, int>> getLeaderboard() const { return {}; }
 
 protected:
     /// Send a feedback message to viewers via the installed callback.
