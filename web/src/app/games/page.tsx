@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Gamepad2, Save, RotateCcw, Type, Eye, EyeOff, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { Gamepad2, Save, RotateCcw, Type, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import { api, GameInfo, TextElementData } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,11 +26,11 @@ const GAME_FIELDS: Record<string, Array<{
   defaultValue: number;
 }>> = {
   gravity_brawl: [
-    { key: "bot_fill", label: "Bot Fill", description: "Fill lobby to N players with bots (0 = disabled)", type: "int", min: 0, max: 50, defaultValue: 0 },
-    { key: "game_duration", label: "Game Duration (s)", description: "Length of the battle phase in seconds", type: "float", min: 30, max: 600, step: 10, defaultValue: 120 },
-    { key: "lobby_duration", label: "Lobby Duration (s)", description: "How long the lobby waits before starting", type: "float", min: 5, max: 120, step: 5, defaultValue: 30 },
-    { key: "min_players", label: "Min Players", description: "Minimum players to start a round (bots count)", type: "int", min: 1, max: 20, defaultValue: 2 },
-    { key: "cosmic_event_cooldown", label: "Cosmic Event Cooldown (s)", description: "Cooldown between cosmic events (asteroids, black holes)", type: "float", min: 5, max: 120, step: 5, defaultValue: 30 },
+    { key: "bot_fill", label: "Bot Fill", description: "Fill lobby to N players with bots (0 = disabled)", type: "int", min: 0, defaultValue: 0 },
+    { key: "game_duration", label: "Game Duration (s)", description: "Length of the battle phase in seconds", type: "float", min: 0, step: 10, defaultValue: 120 },
+    { key: "lobby_duration", label: "Lobby Duration (s)", description: "How long the lobby waits before starting", type: "float", min: 0, step: 5, defaultValue: 30 },
+    { key: "min_players", label: "Min Players", description: "Minimum players to start a round (bots count)", type: "int", min: 0, defaultValue: 2 },
+    { key: "cosmic_event_cooldown", label: "Cosmic Event Cooldown (s)", description: "Cooldown between cosmic events (asteroids, black holes)", type: "float", min: 0, step: 5, defaultValue: 30 },
   ],
 };
 
@@ -247,8 +247,6 @@ export default function GamesPage() {
                           <NumericInput
                             value={el.x}
                             onChange={(v) => updateTextElement(game.id, el.id, "x", v)}
-                            min={0}
-                            max={100}
                             step={0.5}
                             className="h-8 text-xs"
                           />
@@ -257,8 +255,6 @@ export default function GamesPage() {
                           <NumericInput
                             value={el.y}
                             onChange={(v) => updateTextElement(game.id, el.id, "y", v)}
-                            min={0}
-                            max={100}
                             step={0.5}
                             className="h-8 text-xs"
                           />
@@ -267,8 +263,7 @@ export default function GamesPage() {
                           <NumericInput
                             value={el.font_size}
                             onChange={(v) => updateTextElement(game.id, el.id, "font_size", v)}
-                            min={6}
-                            max={200}
+                            min={1}
                             step={1}
                             integer
                             className="h-8 text-xs"

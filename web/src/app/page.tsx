@@ -40,6 +40,21 @@ export default function StreamsPage() {
   const [previewFps, setPreviewFps] = useState(10);
   const [profiles, setProfiles] = useState<StreamProfile[]>([]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("is_preview_fps");
+    if (saved === null) return;
+    const parsed = Number(saved);
+    if (Number.isFinite(parsed) && PREVIEW_SPEEDS.some((s) => s.fps === parsed)) {
+      setPreviewFps(parsed);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("is_preview_fps", String(previewFps));
+  }, [previewFps]);
+
   // Fetch profiles once and on refresh
   const loadProfiles = useCallback(async () => {
     try {
