@@ -239,6 +239,14 @@ nlohmann::json GravityBrawl::getSettings() const {
 
 // ── Bot Fill ─────────────────────────────────────────────────────────────────
 
+static const char* BOT_NAMES[] = {
+    "Nova", "Pulsar", "Quasar", "Nebula", "Comet",
+    "Vortex", "Cosmo", "Astro", "Eclipse", "Zenith",
+    "Photon", "Plasma", "Orion", "Sirius", "Andromeda",
+    "Blazar", "Lumen", "Flux", "Ion", "Meteor"
+};
+static constexpr int NUM_BOT_NAMES = sizeof(BOT_NAMES) / sizeof(BOT_NAMES[0]);
+
 void GravityBrawl::spawnBots() {
     if (m_botFillTarget <= 0) return;
 
@@ -254,7 +262,7 @@ void GravityBrawl::spawnBots() {
 
         Planet& p = m_planets[botId];
         p.userId = botId;
-        p.displayName = ""; // Bots are nameless
+        p.displayName = BOT_NAMES[(m_botCounter - 1) % NUM_BOT_NAMES];
         p.alive = true;
         p.kills = 0;
         p.deaths = 0;
@@ -914,6 +922,13 @@ void GravityBrawl::update(double dt) {
                     sendChatFeedback("🏆 " + winner.displayName + " wins Gravity Brawl with " +
                                      std::to_string(winner.score) + " points!");
                 }
+
+                // Celebration particles for the winner
+                if (winner.body) {
+                    sf::Vector2f winPos = worldToScreen(winner.body->GetPosition());
+                    emitExplosion(winPos, sf::Color(255, 215, 0), 200);
+                    emitExplosion(winPos, sf::Color(255, 255, 255), 100);
+                }
             }
         }
 
@@ -1155,8 +1170,25 @@ void GravityBrawl::triggerCosmicEvent() {
     m_cosmicEventActive = m_cosmicEventDuration;
     m_cosmicEventTimer = m_cosmicEventCooldown;
 
-    spdlog::info("[GravityBrawl] COSMIC EVENT: Black hole is hungry!");
-    sendChatFeedback("THE BLACK HOLE IS HUNGRY! Spam !s to escape!");
+    // Pick a random event flavor
+    std::uniform_int_distribution<int> eventDist(0, 2);
+    int eventType = eventDist(m_rng);
+
+    std::string message;
+    switch (eventType) {
+    case 0:
+        message = "🕳️ THE BLACK HOLE IS HUNGRY! Spam !s to escape!";
+        break;
+    case 1:
+        message = "⚡ GRAVITATIONAL SURGE! The void pulls harder!";
+        break;
+    case 2:
+        message = "🌀 SPACETIME RIFT! Orbit destabilizing!";
+        break;
+    }
+
+    spdlog::info("[GravityBrawl] COSMIC EVENT triggered (type {})", eventType);
+    sendChatFeedback(message);
 }
 
 void GravityBrawl::updateCosmicEvent(float dt) {
@@ -1902,7 +1934,7 @@ void GravityBrawl::renderGameOverScreen(sf::RenderTarget& target) {
     std::vector<const Planet*> ranked;
     ranked.reserve(m_planets.size());
     for (const auto& [id, p] : m_planets) {
-        if (p.displayName.empty()) continue; // Skip bots
+        if (isBot(id)) continue; // Skip bots from scoreboard
         ranked.push_back(&p);
     }
     std::sort(ranked.begin(), ranked.end(),
@@ -2036,7 +2068,7 @@ float GravityBrawl::currentBlackHoleGravity() const {
 std::vector<std::pair<std::string, int>> GravityBrawl::getLeaderboard() const {
     std::vector<std::pair<std::string, int>> result;
     for (const auto& [id, p] : m_planets) {
-        if (p.displayName.empty()) continue; // Skip bots
+        if (isBot(id)) continue; // Skip bots
         result.emplace_back(p.displayName, p.score);
     }
     std::sort(result.begin(), result.end(),
