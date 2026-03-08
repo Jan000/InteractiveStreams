@@ -24,6 +24,10 @@ RUN --mount=type=cache,id=is-nextjs-cache,target=/app/web/.next/cache \
     bun run build
 
 # ── Stage 2: Build the C++ application ───────────────────────────────────────
+# Only compiles the binary.  Assets, config, and dashboard are copied directly
+# into the runtime stage from the build context / dashboard-builder – this is
+# more reliable than depending on CMake POST_BUILD copy commands in Docker and
+# also improves caching (asset/config changes no longer invalidate the C++ build).
 FROM ubuntu:24.04 AS cpp-builder
 
 ARG GIT_COMMIT_HASH=
@@ -57,17 +61,12 @@ ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
 WORKDIR /app
 
 # ── Step 1: CMake configure (cached when CMakeLists.txt unchanged) ────────
-# Copy only build-system files first so the configure layer is cached
-# independently of source code changes.
+# Only build-system files and source code are needed for compilation.
+# assets/, config/, and web/out/ are NOT copied here – they go directly
+# to the runtime stage, which decouples asset changes from C++ rebuilds.
 COPY CMakeLists.txt CMakePresets.json ./
-# src/ must exist at configure time for add_executable validation,
-# but we only need the directory structure and file list – not contents.
-# Unfortunately CMake validates source file existence, so we copy everything.
 COPY src/ src/
 COPY cmake/ cmake/
-COPY config/ config/
-COPY assets/ assets/
-COPY --from=dashboard-builder /app/web/out/ web/out/
 
 # Configure with FetchContent cache mount.
 # FETCHCONTENT_BASE_DIR points to a persistent BuildKit cache volume so that
@@ -89,6 +88,8 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
 # ── Step 2: Build (ccache reuses unchanged object files across rebuilds) ──
 # The ccache mount persists compiled objects between Docker builds.
 # Combined with FetchContent cache, only actually-changed TUs are recompiled.
+# POST_BUILD copy commands (CopyIfStale) will silently skip because assets/
+# config/ are not present – that's expected; we copy them in the runtime stage.
 RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
     --mount=type=cache,id=is-ccache,target=/ccache \
     cmake --build build --config Release -j$(nproc)
@@ -115,24 +116,30 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN useradd -m -s /bin/bash streams
 WORKDIR /home/streams/app
 
-# Copy compiled binary and runtime assets
-COPY --from=cpp-builder /app/build/InteractiveStreams ./
-COPY --from=cpp-builder /app/build/assets/ assets/
-COPY --from=cpp-builder /app/build/config/ config/
-COPY --from=cpp-builder /app/build/dashboard/ dashboard/
+# ── Copy runtime files, ordered by change frequency (least → most) ────────
+# This maximizes Docker layer cache hits: a C++ code change only invalidates
+# the binary layer and below, not the config/assets/dashboard layers above.
 
-# Force headless mode in the server config (no SFML preview window on a headless server).
-# SFML still needs an OpenGL context for RenderTexture – supplied by Xvfb + Mesa DRI.
-# Also mute audio since there is no sound card in the container.
+# 1. Config (rarely changes) – owned by streams, patched for headless mode
+COPY --chown=streams:streams config/ config/
 RUN sed -i 's/"headless": false/"headless": true/' config/default.json \
     && sed -i 's/"muted": false/"muted": true/' config/default.json \
     && grep -E '"headless"|"muted"' config/default.json
+
+# 2. Assets (rarely changes)
+COPY --chown=streams:streams assets/ assets/
+
+# 3. Dashboard from dashboard-builder (changes when web/src changes)
+COPY --from=dashboard-builder --chown=streams:streams /app/web/out/ dashboard/
+
+# 4. Compiled binary from cpp-builder (changes most often – C++ code changes)
+COPY --from=cpp-builder --chown=streams:streams /app/build/InteractiveStreams ./
 
 # Data directory for SQLite databases (persist via volume)
 # Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
 RUN mkdir -p data /tmp/.X11-unix \
     && chmod 1777 /tmp/.X11-unix \
-    && chown -R streams:streams /home/streams/app
+    && chown streams:streams data
 
 USER streams
 

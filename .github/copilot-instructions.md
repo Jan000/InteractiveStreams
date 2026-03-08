@@ -476,9 +476,9 @@ Zwei Auth-Mechanismen: **API-Key** (legacy) und **Password-Login** (Session-basi
 ## Docker & CI/CD
 
 ### Dockerfile (Multi-Stage)
-1. **Stage 1** (`dashboard-builder`): `oven/bun:1` – `bun install && bun run build`
-2. **Stage 2** (`cpp-builder`): `ubuntu:24.04` + CMake + Dependencies – `cmake --build && ctest`
-3. **Stage 3** (`runtime`): `ubuntu:24.04` + FFmpeg + Xvfb – Minimales Runtime-Image
+1. **Stage 1** (`dashboard-builder`): `oven/bun:1` – `bun install && bun run build` → erzeugt `web/out/`
+2. **Stage 2** (`cpp-builder`): `ubuntu:24.04` + CMake + Dependencies – kompiliert nur die Binary (keine Assets/Config/Dashboard)
+3. **Stage 3** (`runtime`): `ubuntu:24.04` + FFmpeg + Xvfb – kopiert Binary aus cpp-builder, Assets/Config direkt aus Build-Context, Dashboard aus dashboard-builder. COPY-Layer nach Änderungshäufigkeit sortiert (Config → Assets → Dashboard → Binary) für optimales Caching.
 
 ### docker-compose.yml
 - Service `app` auf Port 8080
