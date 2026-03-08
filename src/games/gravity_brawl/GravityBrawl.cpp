@@ -326,6 +326,9 @@ void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
 }
 
 void GravityBrawl::cmdJoin(const std::string& userId, const std::string& displayName) {
+    // Block joins after game ends
+    if (m_phase == GamePhase::GameOver) return;
+
     // Check if already alive
     auto it = m_planets.find(userId);
     if (it != m_planets.end() && it->second.alive) {
@@ -584,6 +587,10 @@ void GravityBrawl::triggerSupernova(Planet& p) {
             float force = (1.0f - dist / supernovaRadius) * 30.0f;
             other.body->ApplyLinearImpulseToCenter(
                 b2Vec2(dir.x * force, dir.y * force), true);
+
+            // Credit the supernova user for potential kills
+            other.lastHitBy = p.userId;
+            other.lastHitTime = m_gameTimer;
         }
     }
 
@@ -598,6 +605,7 @@ void GravityBrawl::triggerSupernova(Planet& p) {
 
 void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
     if (impulse < 2.0f) return; // Ignore gentle touches
+    if (m_phase != GamePhase::Playing) return; // No scoring outside active play
 
     // Both planets get pushed — mark last-hit-by for kill attribution
     double now = m_gameTimer;
@@ -893,6 +901,10 @@ void GravityBrawl::update(double dt) {
 
 void GravityBrawl::applyOrbitalForces(float dt) {
     (void)dt;
+    // During cosmic events, boost orbital restoring forces to compensate for
+    // the increased black hole gravity — keeps the game challenging but fair
+    float eventBoost = (m_cosmicEventActive > 0.0) ? (1.0f + (m_eventGravityMul - 1.0f) * 0.5f) : 1.0f;
+
     for (auto& [id, p] : m_planets) {
         if (!p.alive || !p.body) continue;
 
@@ -904,15 +916,20 @@ void GravityBrawl::applyOrbitalForces(float dt) {
 
         b2Vec2 dir(toCenter.x / dist, toCenter.y / dist);
 
-        // Gravitational pull toward center (inversely weakens near safe orbit)
+        // Restoring radial force toward safe orbit band
         float targetDist = ARENA_RADIUS * m_safeOrbitRadiusFactor;
-        float pullStrength = m_orbitalGravityStrength;
+        float pullStrength = m_orbitalGravityStrength * eventBoost;
 
-        // Stronger pull if too far out, weaker if near safe orbit
         if (dist > targetDist * 1.2f) {
+            // Too far out → stronger inward pull
             pullStrength *= m_orbitalOuterPullMultiplier;
         } else if (dist > targetDist * 0.8f && dist < targetDist * 1.2f) {
+            // In safe band → gentle inward pull
             pullStrength *= m_orbitalSafeZonePullMultiplier;
+        } else {
+            // Inside safe orbit → push OUTWARD (negative = reverse direction)
+            float penetration = (targetDist * 0.8f - dist) / (targetDist * 0.8f);
+            pullStrength *= -(0.8f + 1.5f * penetration);
         }
 
         // Tangential force for orbit (perpendicular to radial direction)
