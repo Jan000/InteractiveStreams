@@ -52,6 +52,8 @@ public:
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
     int maxPlayers() const override { return 0; } // unlimited by design
+    void configure(const nlohmann::json& settings) override;
+    nlohmann::json getSettings() const override;
 
 private:
     // ── Command handlers ────────────────────────────────────────

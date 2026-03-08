@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <unordered_map>
 #include <functional>
 #include <nlohmann/json.hpp>
 
@@ -13,6 +14,47 @@ namespace is::games {
 /// Callback type for sending chat feedback to viewers.
 /// Games call this to send confirmation messages (e.g. "Player joined!").
 using ChatFeedbackCallback = std::function<void(const std::string& message)>;
+
+// ── Text-element layout ──────────────────────────────────────────────────────
+
+/// Alignment modes for a text element.
+enum class TextAlign { Left, Center, Right };
+
+/// Describes default + overridden layout for a single rendered text element.
+/// Positions are expressed as *percentages* of the render target (0..100).
+struct TextElement {
+    std::string id;             ///< Unique key (e.g. "title", "join_hint")
+    std::string label;          ///< Human-readable label for UI
+    float       x       = 50.f; ///< X position (% of screen width, 0=left, 100=right)
+    float       y       = 5.f;  ///< Y position (% of screen height, 0=top, 100=bottom)
+    int         fontSize = 24;  ///< Base font size in pixels (before fontScale)
+    TextAlign   align    = TextAlign::Center;
+    bool        visible  = true;
+
+    // Serialization helpers
+    nlohmann::json toJson() const {
+        return {
+            {"id", id}, {"label", label},
+            {"x", x}, {"y", y},
+            {"font_size", fontSize},
+            {"align", align == TextAlign::Left ? "left" : align == TextAlign::Right ? "right" : "center"},
+            {"visible", visible}
+        };
+    }
+
+    static TextElement fromJson(const nlohmann::json& j) {
+        TextElement te;
+        te.id       = j.value("id", "");
+        te.label    = j.value("label", te.id);
+        te.x        = j.value("x", 50.f);
+        te.y        = j.value("y", 5.f);
+        te.fontSize = j.value("font_size", 24);
+        te.visible  = j.value("visible", true);
+        std::string a = j.value("align", "center");
+        te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
+        return te;
+    }
+};
 
 /// Abstract interface that all games must implement.
 /// This is the core extension point for adding new games.
@@ -42,6 +84,9 @@ public:
     /// Called when a game is loaded or when settings change.
     /// Games should override this to accept custom parameters.
     virtual void configure(const nlohmann::json& settings) { (void)settings; }
+
+    /// Return current game-specific settings as JSON.
+    virtual nlohmann::json getSettings() const { return {}; }
 
     /// Set the chat feedback callback.  The stream instance installs this
     /// so that games can send confirmation messages to viewers.
@@ -81,14 +126,100 @@ public:
     /// Default: empty (no in-game leaderboard).
     virtual std::vector<std::pair<std::string, int>> getLeaderboard() const { return {}; }
 
+    // ── Text-element layout API ──────────────────────────────────────────────
+
+    /// Return the list of text elements this game supports (with current values).
+    const std::vector<TextElement>& textElements() const { return m_textElements; }
+
+    /// Apply text-element overrides from JSON (called from configure()).
+    void applyTextOverrides(const nlohmann::json& arr) {
+        if (!arr.is_array()) return;
+        for (const auto& j : arr) {
+            std::string id = j.value("id", "");
+            for (auto& te : m_textElements) {
+                if (te.id == id) {
+                    if (j.contains("x"))         te.x        = j["x"].get<float>();
+                    if (j.contains("y"))         te.y        = j["y"].get<float>();
+                    if (j.contains("font_size")) te.fontSize = j["font_size"].get<int>();
+                    if (j.contains("visible"))   te.visible  = j["visible"].get<bool>();
+                    if (j.contains("align")) {
+                        std::string a = j["align"].get<std::string>();
+                        te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Serialize text elements to JSON array.
+    nlohmann::json textElementsJson() const {
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& te : m_textElements) arr.push_back(te.toJson());
+        return arr;
+    }
+
 protected:
     /// Send a feedback message to viewers via the installed callback.
     void sendChatFeedback(const std::string& message) {
         if (m_chatFeedback) m_chatFeedback(message);
     }
 
+    /// Look up a text element by id.  Returns nullptr if not found.
+    const TextElement* te(const std::string& id) const {
+        for (const auto& e : m_textElements)
+            if (e.id == id) return &e;
+        return nullptr;
+    }
+
+    /// Resolve position of a named text element to pixel coordinates.
+    /// targetW/targetH = render target size.
+    /// Returns {pixelX, pixelY, resolvedFontSize, align, visible}.
+    struct ResolvedText {
+        float     px, py;
+        unsigned  fontSize;
+        TextAlign align;
+        bool      visible;
+    };
+
+    ResolvedText resolve(const std::string& id, float targetW, float targetH) const {
+        const TextElement* e = te(id);
+        if (!e) return {0, 0, 16, TextAlign::Center, true};
+        float px = e->x * targetW / 100.f;
+        float py = e->y * targetH / 100.f;
+        unsigned fs = static_cast<unsigned>(std::max(1.f, e->fontSize * m_fontScale));
+        return {px, py, fs, e->align, e->visible};
+    }
+
+    /// Position an sf::Text using a ResolvedText.
+    static void applyTextLayout(sf::Text& text, const ResolvedText& r) {
+        text.setCharacterSize(r.fontSize);
+        auto lb = text.getLocalBounds();
+        switch (r.align) {
+        case TextAlign::Left:
+            text.setOrigin(0.f, 0.f);
+            break;
+        case TextAlign::Center:
+            text.setOrigin(lb.left + lb.width / 2.f, 0.f);
+            break;
+        case TextAlign::Right:
+            text.setOrigin(lb.left + lb.width, 0.f);
+            break;
+        }
+        text.setPosition(r.px, r.py);
+    }
+
+    /// Register default text elements.  Games call this in their constructor.
+    void registerTextElement(const std::string& id, const std::string& label,
+                             float x, float y, int fontSize,
+                             TextAlign align = TextAlign::Center,
+                             bool visible = true) {
+        m_textElements.push_back({id, label, x, y, fontSize, align, visible});
+    }
+
     float m_fontScale = 1.0f;
     ChatFeedbackCallback m_chatFeedback;
+    std::vector<TextElement> m_textElements;
 };
 
 } // namespace is::games

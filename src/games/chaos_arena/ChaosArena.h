@@ -62,6 +62,8 @@ public:
     nlohmann::json getCommands() const override;
     std::vector<std::pair<std::string, int>> getLeaderboard() const override;
     int maxPlayers() const override { return m_maxPlayers; }
+    void configure(const nlohmann::json& settings) override;
+    nlohmann::json getSettings() const override;
 
 private:
     // Chat command handlers

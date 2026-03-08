@@ -37,8 +37,6 @@ export interface StreamState {
   gameDescriptions?: Record<string, string>;
   gameInfoMessages?: Record<string, string>;
   gameInfoIntervals?: Record<string, number>;
-  // Per-game font scales (multiplier, default 1.0)
-  gameFontScales?: Record<string, number>;
   // Per-game player limits (0 = unlimited)
   gamePlayerLimits?: Record<string, number>;
   // Per-game platform display names (Twitch / YouTube)
@@ -47,15 +45,12 @@ export interface StreamState {
   gameYoutubeTitles?: Record<string, string>;
   // Scoreboard overlay settings
   scoreboardTopN?: number;
-  scoreboardFontSize?: number;
   scoreboardAllTimeTitle?: string;
   scoreboardRecentTitle?: string;
   scoreboardRecentHours?: number;
   scoreboardCycleSecs?: number;
   scoreboardFadeSecs?: number;
   scoreboardChatInterval?: number;
-  // Vote overlay font scale
-  voteOverlayFontScale?: number;
   // Live scoreboard data
   scoreboard?: Array<{ name: string; points: number; wins: number }>;
   scoreboardRecent?: Array<{ name: string; points: number; wins: number }>;
@@ -95,6 +90,16 @@ export interface GameInfo {
   id: string;
   name: string;
   description: string;
+}
+
+export interface TextElementData {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  font_size: number;
+  align: "left" | "center" | "right";
+  visible: boolean;
 }
 
 export interface ScoreEntry {
@@ -293,6 +298,7 @@ export const api = {
   getGameSettings: () => get<Record<string, Record<string, unknown>>>("/api/games/settings"),
   updateGameSettings: (data: Record<string, Record<string, unknown>>) =>
     put<{ success: boolean }>("/api/games/settings", data),
+  getTextElements: () => get<Record<string, TextElementData[]>>("/api/games/text-elements"),
 
   // Settings
   getSettings: () => get<Record<string, unknown>>("/api/settings"),

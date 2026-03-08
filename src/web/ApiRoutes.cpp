@@ -556,6 +556,34 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     // ── Game Settings ────────────────────────────────────────────────────
 
+    // GET /api/games/text-elements - Get default text elements for all games
+    server.Get("/api/games/text-elements", [&app](const httplib::Request&, httplib::Response& res) {
+        auto& registry = is::games::GameRegistry::instance();
+        nlohmann::json result = nlohmann::json::object();
+
+        // Get stored settings for applying overrides
+        nlohmann::json storedSettings;
+        auto streams = app.streamManager().allStreams();
+        if (!streams.empty()) {
+            storedSettings = streams[0]->gameManager().getAllGameSettings();
+        }
+
+        for (const auto& gameId : registry.list()) {
+            auto game = registry.create(gameId);
+            if (game) {
+                game->initialize();
+                // Apply any stored overrides to reflect current state
+                if (storedSettings.contains(gameId)) {
+                    game->configure(storedSettings[gameId]);
+                }
+                result[gameId] = game->textElementsJson();
+                game->shutdown();
+            }
+        }
+
+        res.set_content(result.dump(2), "application/json");
+    });
+
     // GET /api/games/settings - Get all per-game settings
     server.Get("/api/games/settings", [&app](const httplib::Request&, httplib::Response& res) {
         // Collect from all stream instances

@@ -82,6 +82,22 @@ sf::Vector2f GravityBrawl::worldToScreen(b2Vec2 pos) const {
 void GravityBrawl::initialize() {
     spdlog::info("[GravityBrawl] Initializing...");
 
+    // Register configurable text elements (id, label, x%, y%, fontSize, align, visible)
+    if (m_textElements.empty()) {
+        //                          id                  label                        x%     y%    fs   align
+        registerTextElement("title",           "Game Title",                  50.f,  0.8f, 22, TextAlign::Center);
+        registerTextElement("info_text",       "Info / Status",               50.f,  2.3f, 13, TextAlign::Center);
+        registerTextElement("join_hint",       "Join Hint (bottom)",          50.f, 97.9f, 11, TextAlign::Center);
+        registerTextElement("event_warning",   "Black Hole Warning Bar",      50.f,  3.6f, 12, TextAlign::Center);
+        registerTextElement("cosmic_warning",  "Cosmic Event Warning",        50.f,  3.9f, 16, TextAlign::Center);
+        registerTextElement("cosmic_timer",    "Cosmic Timer (near BH)",      50.f, 25.0f, 24, TextAlign::Center);
+        registerTextElement("countdown",       "Countdown Number",            50.f, 30.0f, 80, TextAlign::Center);
+        registerTextElement("kill_feed",       "Kill Feed",                   98.6f, 5.2f, 11, TextAlign::Right);
+        registerTextElement("player_name",     "Player Name Label",           50.f, 50.f,  11, TextAlign::Center);
+        registerTextElement("player_score",    "Player Score Label",          50.f, 50.f,   9, TextAlign::Center);
+        registerTextElement("floating_text",   "Floating Score Text",         50.f, 50.f,  16, TextAlign::Center);
+    }
+
     // Create Box2D world with zero gravity (we apply custom forces)
     m_world = std::make_unique<b2World>(b2Vec2(0.0f, 0.0f));
     m_contactListener = std::make_unique<ContactListener>(*this);
@@ -151,6 +167,21 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("cosmic_event_cooldown") && settings["cosmic_event_cooldown"].is_number()) {
         m_cosmicEventCooldown = settings["cosmic_event_cooldown"].get<double>();
     }
+    // Text element overrides
+    if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
+        applyTextOverrides(settings["text_elements"]);
+    }
+}
+
+nlohmann::json GravityBrawl::getSettings() const {
+    return {
+        {"bot_fill", m_botFillTarget},
+        {"game_duration", m_gameDuration},
+        {"lobby_duration", m_lobbyDuration},
+        {"min_players", m_minPlayers},
+        {"cosmic_event_cooldown", m_cosmicEventCooldown},
+        {"text_elements", textElementsJson()}
+    };
 }
 
 // ── Bot Fill ─────────────────────────────────────────────────────────────────
@@ -1366,30 +1397,36 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
 
     // Name label (skip for bots — they are nameless spheres)
     if (m_fontLoaded && !p.displayName.empty()) {
-        sf::Text nameText;
-        nameText.setFont(m_font);
-        nameText.setString(p.displayName);
-        nameText.setCharacterSize(fs(11));
-        nameText.setFillColor(sf::Color(255, 255, 255, 220));
-        nameText.setOutlineColor(sf::Color(0, 0, 0, 180));
-        nameText.setOutlineThickness(1.0f);
-        sf::FloatRect bounds = nameText.getLocalBounds();
-        nameText.setOrigin(bounds.left + bounds.width / 2.0f, bounds.top);
-        nameText.setPosition(screenPos.x, screenPos.y + pixelRadius + 6.0f);
-        target.draw(nameText);
+        auto rName = resolve("player_name", SCREEN_W, SCREEN_H);
+        if (rName.visible) {
+            sf::Text nameText;
+            nameText.setFont(m_font);
+            nameText.setString(p.displayName);
+            nameText.setCharacterSize(rName.fontSize);
+            nameText.setFillColor(sf::Color(255, 255, 255, 220));
+            nameText.setOutlineColor(sf::Color(0, 0, 0, 180));
+            nameText.setOutlineThickness(1.0f);
+            sf::FloatRect bounds = nameText.getLocalBounds();
+            nameText.setOrigin(bounds.left + bounds.width / 2.0f, bounds.top);
+            nameText.setPosition(screenPos.x, screenPos.y + pixelRadius + 6.0f);
+            target.draw(nameText);
 
-        // Score below name
-        sf::Text scoreText;
-        scoreText.setFont(m_font);
-        scoreText.setString(std::to_string(p.score));
-        scoreText.setCharacterSize(fs(9));
-        scoreText.setFillColor(sf::Color(200, 200, 100, 180));
-        scoreText.setOutlineColor(sf::Color(0, 0, 0, 150));
-        scoreText.setOutlineThickness(1.0f);
-        sf::FloatRect sBounds = scoreText.getLocalBounds();
-        scoreText.setOrigin(sBounds.left + sBounds.width / 2.0f, sBounds.top);
-        scoreText.setPosition(screenPos.x, screenPos.y + pixelRadius + 6.0f + fs(12));
-        target.draw(scoreText);
+            // Score below name
+            auto rScore = resolve("player_score", SCREEN_W, SCREEN_H);
+            if (rScore.visible) {
+                sf::Text scoreText;
+                scoreText.setFont(m_font);
+                scoreText.setString(std::to_string(p.score));
+                scoreText.setCharacterSize(rScore.fontSize);
+                scoreText.setFillColor(sf::Color(200, 200, 100, 180));
+                scoreText.setOutlineColor(sf::Color(0, 0, 0, 150));
+                scoreText.setOutlineThickness(1.0f);
+                sf::FloatRect sBounds = scoreText.getLocalBounds();
+                scoreText.setOrigin(sBounds.left + sBounds.width / 2.0f, sBounds.top);
+                scoreText.setPosition(screenPos.x, screenPos.y + pixelRadius + 6.0f + rName.fontSize + 2.0f);
+                target.draw(scoreText);
+            }
+        }
     }
 }
 
@@ -1461,94 +1498,42 @@ void GravityBrawl::renderParticles(sf::RenderTarget& target) {
 
 void GravityBrawl::renderKillFeed(sf::RenderTarget& target) {
     if (!m_fontLoaded || m_killFeed.empty()) return;
+    auto r = resolve("kill_feed", SCREEN_W, SCREEN_H);
+    if (!r.visible) return;
 
-    float y = 100.0f;
+    float y = r.py;
     for (const auto& entry : m_killFeed) {
         float alpha = std::min(1.0f, static_cast<float>(entry.timeRemaining / 1.0));
         sf::Uint8 a = static_cast<sf::Uint8>(alpha * 220);
 
-        std::string text = entry.killer + " ▸ " + entry.victim;
+        std::string text = entry.killer + " > " + entry.victim;
         if (entry.wasBounty) text += " [BOUNTY]";
 
         sf::Text feedText;
         feedText.setFont(m_font);
         feedText.setString(text);
-        feedText.setCharacterSize(fs(11));
+        feedText.setCharacterSize(r.fontSize);
         feedText.setFillColor(entry.wasBounty ? sf::Color(255, 215, 0, a) : sf::Color(255, 200, 200, a));
         feedText.setOutlineColor(sf::Color(0, 0, 0, a));
         feedText.setOutlineThickness(1.0f);
 
         sf::FloatRect bounds = feedText.getLocalBounds();
-        feedText.setPosition(SCREEN_W - bounds.width - 15.0f, y);
+        // Right-align from the configured x position
+        feedText.setPosition(r.px - bounds.width, y);
         target.draw(feedText);
 
-        y += fs(14);
+        y += static_cast<float>(r.fontSize) * 1.3f;
     }
 }
 
-// ── Leaderboard ──────────────────────────────────────────────────────────────
 
-void GravityBrawl::renderLeaderboard(sf::RenderTarget& target) {
-    if (!m_fontLoaded) return;
-
-    // Sort players by score (exclude bots from leaderboard)
-    std::vector<const Planet*> sorted;
-    for (const auto& [id, p] : m_planets) {
-        if (!p.displayName.empty()) { // Skip bots
-            sorted.push_back(&p);
-        }
-    }
-    std::sort(sorted.begin(), sorted.end(),
-              [](const Planet* a, const Planet* b) { return a->score > b->score; });
-
-    float x = 15.0f;
-    float y = 100.0f;
-
-    // Title
-    sf::Text title;
-    title.setFont(m_font);
-    title.setString("LEADERBOARD");
-    title.setCharacterSize(fs(12));
-    title.setFillColor(sf::Color(255, 215, 0, 200));
-    title.setOutlineColor(sf::Color(0, 0, 0, 180));
-    title.setOutlineThickness(1.0f);
-    title.setPosition(x, y);
-    target.draw(title);
-    y += fs(16);
-
-    int shown = 0;
-    for (const auto* p : sorted) {
-        if (shown >= 10) break;
-
-        std::string prefix = p->isKing ? "[K] " : "";
-        std::string status = p->alive ? "" : " [DEAD]";
-        std::string text = prefix + p->displayName + status +
-                          " - " + std::to_string(p->score) +
-                          " (" + std::to_string(p->kills) + "K)";
-
-        sf::Text entry;
-        entry.setFont(m_font);
-        entry.setString(text);
-        entry.setCharacterSize(fs(10));
-
-        sf::Color color = p->alive ? sf::Color(220, 220, 220, 200) : sf::Color(120, 120, 120, 150);
-        if (p->isKing) color = sf::Color(255, 215, 0, 220);
-
-        entry.setFillColor(color);
-        entry.setOutlineColor(sf::Color(0, 0, 0, 150));
-        entry.setOutlineThickness(1.0f);
-        entry.setPosition(x, y);
-        target.draw(entry);
-
-        y += fs(13);
-        shown++;
-    }
-}
 
 // ── Floating Texts ───────────────────────────────────────────────────────────
 
 void GravityBrawl::renderFloatingTexts(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
+    auto r = resolve("floating_text", SCREEN_W, SCREEN_H);
+    if (!r.visible) return;
 
     for (const auto& ft : m_floatingTexts) {
         float alpha = std::min(1.0f, ft.timer / (ft.maxTime * 0.3f));
@@ -1557,7 +1542,7 @@ void GravityBrawl::renderFloatingTexts(sf::RenderTarget& target) {
         sf::Text text;
         text.setFont(m_font);
         text.setString(ft.text);
-        text.setCharacterSize(fs(16));
+        text.setCharacterSize(r.fontSize);
         sf::Color c = ft.color;
         c.a = a;
         text.setFillColor(c);
@@ -1582,78 +1567,82 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
 
     // Game title
-    sf::Text titleText;
-    titleText.setFont(m_font);
-    titleText.setString("GRAVITY BRAWL");
-    titleText.setCharacterSize(fs(22));
-    titleText.setFillColor(sf::Color(200, 180, 255, 200));
-    titleText.setOutlineColor(sf::Color(0, 0, 0, 200));
-    titleText.setOutlineThickness(2.0f);
-    sf::FloatRect tb = titleText.getLocalBounds();
-    titleText.setOrigin(tb.left + tb.width / 2.0f, 0.0f);
-    titleText.setPosition(SCREEN_W / 2.0f, 15.0f);
-    target.draw(titleText);
+    {
+        auto r = resolve("title", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            sf::Text titleText;
+            titleText.setFont(m_font);
+            titleText.setString("GRAVITY BRAWL");
+            titleText.setFillColor(sf::Color(200, 180, 255, 200));
+            titleText.setOutlineColor(sf::Color(0, 0, 0, 200));
+            titleText.setOutlineThickness(2.0f);
+            applyTextLayout(titleText, r);
+            target.draw(titleText);
+        }
+    }
 
     // Player count and timer
-    int aliveCount = 0, totalCount = 0;
-    for (const auto& [_, p] : m_planets) {
-        totalCount++;
-        if (p.alive) aliveCount++;
-    }
+    {
+        auto r = resolve("info_text", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            int aliveCount = 0, totalCount = 0;
+            for (const auto& [_, p] : m_planets) {
+                totalCount++;
+                if (p.alive) aliveCount++;
+            }
 
-    std::string infoStr;
-    if (m_phase == GamePhase::Lobby) {
-        infoStr = "LOBBY - " + std::to_string(aliveCount) + " planets | Starting in " +
-                  std::to_string(static_cast<int>(m_lobbyTimer)) + "s";
-    } else if (m_phase == GamePhase::Playing) {
-        int remaining = static_cast<int>(m_gameDuration - m_gameTimer);
-        infoStr = std::to_string(aliveCount) + "/" + std::to_string(totalCount) +
-                  " alive | " + std::to_string(remaining) + "s left";
-    } else if (m_phase == GamePhase::GameOver) {
-        infoStr = "GAME OVER";
-    }
+            std::string infoStr;
+            if (m_phase == GamePhase::Lobby) {
+                infoStr = "LOBBY - " + std::to_string(aliveCount) + " planets | Starting in " +
+                          std::to_string(static_cast<int>(m_lobbyTimer)) + "s";
+            } else if (m_phase == GamePhase::Playing) {
+                int remaining = static_cast<int>(m_gameDuration - m_gameTimer);
+                infoStr = std::to_string(aliveCount) + "/" + std::to_string(totalCount) +
+                          " alive | " + std::to_string(remaining) + "s left";
+            } else if (m_phase == GamePhase::GameOver) {
+                infoStr = "GAME OVER";
+            }
 
-    sf::Text infoText;
-    infoText.setFont(m_font);
-    infoText.setString(infoStr);
-    infoText.setCharacterSize(fs(13));
-    infoText.setFillColor(sf::Color(180, 180, 200, 200));
-    infoText.setOutlineColor(sf::Color(0, 0, 0, 180));
-    infoText.setOutlineThickness(1.0f);
-    sf::FloatRect ib = infoText.getLocalBounds();
-    infoText.setOrigin(ib.left + ib.width / 2.0f, 0.0f);
-    infoText.setPosition(SCREEN_W / 2.0f, 45.0f);
-    target.draw(infoText);
+            sf::Text infoText;
+            infoText.setFont(m_font);
+            infoText.setString(infoStr);
+            infoText.setFillColor(sf::Color(180, 180, 200, 200));
+            infoText.setOutlineColor(sf::Color(0, 0, 0, 180));
+            infoText.setOutlineThickness(1.0f);
+            applyTextLayout(infoText, r);
+            target.draw(infoText);
+        }
+    }
 
     // Join hint
     if (m_phase == GamePhase::Lobby || m_phase == GamePhase::Playing) {
-        sf::Text joinHint;
-        joinHint.setFont(m_font);
-        joinHint.setString("Type !join to play | !s to smash");
-        joinHint.setCharacterSize(fs(11));
-        joinHint.setFillColor(sf::Color(150, 150, 180, 160));
-        joinHint.setOutlineColor(sf::Color(0, 0, 0, 120));
-        joinHint.setOutlineThickness(1.0f);
-        sf::FloatRect jb = joinHint.getLocalBounds();
-        joinHint.setOrigin(jb.left + jb.width / 2.0f, 0.0f);
-        joinHint.setPosition(SCREEN_W / 2.0f, SCREEN_H - 40.0f);
-        target.draw(joinHint);
+        auto r = resolve("join_hint", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            sf::Text joinHint;
+            joinHint.setFont(m_font);
+            joinHint.setString("Type !join to play | !s to smash");
+            joinHint.setFillColor(sf::Color(150, 150, 180, 160));
+            joinHint.setOutlineColor(sf::Color(0, 0, 0, 120));
+            joinHint.setOutlineThickness(1.0f);
+            applyTextLayout(joinHint, r);
+            target.draw(joinHint);
+        }
     }
 
     // Cosmic event warning bar
     if (m_cosmicEventActive <= 0.0 && m_cosmicEventTimer < 10.0 && m_phase == GamePhase::Playing) {
-        sf::Text warningText;
-        warningText.setFont(m_font);
-        warningText.setString("BLACK HOLE HUNGERS IN " +
-                              std::to_string(static_cast<int>(m_cosmicEventTimer)) + "s");
-        warningText.setCharacterSize(fs(12));
-        warningText.setFillColor(sf::Color(255, 100, 100, 200));
-        warningText.setOutlineColor(sf::Color(0, 0, 0, 200));
-        warningText.setOutlineThickness(1.0f);
-        sf::FloatRect wb = warningText.getLocalBounds();
-        warningText.setOrigin(wb.left + wb.width / 2.0f, 0.0f);
-        warningText.setPosition(SCREEN_W / 2.0f, 70.0f);
-        target.draw(warningText);
+        auto r = resolve("event_warning", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            sf::Text warningText;
+            warningText.setFont(m_font);
+            warningText.setString("BLACK HOLE HUNGERS IN " +
+                                  std::to_string(static_cast<int>(m_cosmicEventTimer)) + "s");
+            warningText.setFillColor(sf::Color(255, 100, 100, 200));
+            warningText.setOutlineColor(sf::Color(0, 0, 0, 200));
+            warningText.setOutlineThickness(1.0f);
+            applyTextLayout(warningText, r);
+            target.draw(warningText);
+        }
     }
 }
 
@@ -1671,43 +1660,55 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
     target.draw(overlay);
 
     // Warning text
-    sf::Text warning;
-    warning.setFont(m_font);
-    warning.setString("BLACK HOLE SURGE! SPAM !s TO ESCAPE!");
-    warning.setCharacterSize(fs(16));
-    warning.setFillColor(sf::Color(255, 50, 50, static_cast<sf::Uint8>(180 + pulse * 75)));
-    warning.setOutlineColor(sf::Color(0, 0, 0, 220));
-    warning.setOutlineThickness(2.0f);
-    sf::FloatRect wb = warning.getLocalBounds();
-    warning.setOrigin(wb.left + wb.width / 2.0f, wb.top + wb.height / 2.0f);
-    warning.setPosition(SCREEN_W / 2.0f, 75.0f);
+    {
+        auto r = resolve("cosmic_warning", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            sf::Text warning;
+            warning.setFont(m_font);
+            warning.setString("BLACK HOLE SURGE! SPAM !s TO ESCAPE!");
+            warning.setCharacterSize(r.fontSize);
+            warning.setFillColor(sf::Color(255, 50, 50, static_cast<sf::Uint8>(180 + pulse * 75)));
+            warning.setOutlineColor(sf::Color(0, 0, 0, 220));
+            warning.setOutlineThickness(2.0f);
+            sf::FloatRect wb = warning.getLocalBounds();
+            warning.setOrigin(wb.left + wb.width / 2.0f, wb.top + wb.height / 2.0f);
+            warning.setPosition(r.px, r.py);
 
-    float scale = 1.0f + pulse * 0.1f;
-    warning.setScale(scale, scale);
-    target.draw(warning);
+            float scale = 1.0f + pulse * 0.1f;
+            warning.setScale(scale, scale);
+            target.draw(warning);
+        }
+    }
 
-    // Timer
-    int remaining = static_cast<int>(m_cosmicEventActive);
-    sf::Text timerText;
-    timerText.setFont(m_font);
-    timerText.setString(std::to_string(remaining) + "s");
-    timerText.setCharacterSize(fs(24));
-    timerText.setFillColor(sf::Color(255, 80, 80, 220));
-    timerText.setOutlineColor(sf::Color(0, 0, 0, 220));
-    timerText.setOutlineThickness(2.0f);
-    sf::FloatRect tb = timerText.getLocalBounds();
-    timerText.setOrigin(tb.left + tb.width / 2.0f, tb.top + tb.height / 2.0f);
+    // Timer near black hole
+    {
+        auto r = resolve("cosmic_timer", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            int remaining = static_cast<int>(m_cosmicEventActive);
+            sf::Text timerText;
+            timerText.setFont(m_font);
+            timerText.setString(std::to_string(remaining) + "s");
+            timerText.setCharacterSize(r.fontSize);
+            timerText.setFillColor(sf::Color(255, 80, 80, 220));
+            timerText.setOutlineColor(sf::Color(0, 0, 0, 220));
+            timerText.setOutlineThickness(2.0f);
+            sf::FloatRect tb = timerText.getLocalBounds();
+            timerText.setOrigin(tb.left + tb.width / 2.0f, tb.top + tb.height / 2.0f);
 
-    // Position near black hole
-    sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
-    timerText.setPosition(center.x, center.y - BLACK_HOLE_RADIUS * PIXELS_PER_METER - 30.0f);
-    target.draw(timerText);
+            // Position near black hole
+            sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
+            timerText.setPosition(center.x, center.y - BLACK_HOLE_RADIUS * PIXELS_PER_METER - 30.0f);
+            target.draw(timerText);
+        }
+    }
 }
 
 // ── Countdown ────────────────────────────────────────────────────────────────
 
 void GravityBrawl::renderCountdown(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
+    auto r = resolve("countdown", SCREEN_W, SCREEN_H);
+    if (!r.visible) return;
 
     int count = static_cast<int>(std::ceil(m_countdownTimer));
     if (count <= 0) return;
@@ -1715,13 +1716,13 @@ void GravityBrawl::renderCountdown(sf::RenderTarget& target) {
     sf::Text text;
     text.setFont(m_font);
     text.setString(std::to_string(count));
-    text.setCharacterSize(fs(80));
+    text.setCharacterSize(r.fontSize);
     text.setFillColor(sf::Color(255, 255, 255, 230));
     text.setOutlineColor(sf::Color(100, 50, 200, 200));
     text.setOutlineThickness(4.0f);
     sf::FloatRect bounds = text.getLocalBounds();
     text.setOrigin(bounds.left + bounds.width / 2.0f, bounds.top + bounds.height / 2.0f);
-    text.setPosition(SCREEN_W / 2.0f, SCREEN_H * 0.3f);
+    text.setPosition(r.px, r.py);
 
     float frac = static_cast<float>(m_countdownTimer - static_cast<int>(m_countdownTimer));
     float scale = 1.0f + frac * 0.5f;

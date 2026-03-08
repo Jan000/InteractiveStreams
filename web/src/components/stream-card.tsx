@@ -119,10 +119,6 @@ export function StreamCard({
   const [gameInfoIntervals, setGameInfoIntervals] = useState<Record<string, number>>(
     stream.gameInfoIntervals ?? {}
   );
-  // Per-game font scales
-  const [gameFontScales, setGameFontScales] = useState<Record<string, number>>(
-    stream.gameFontScales ?? {}
-  );
   // Per-game player limits
   const [gamePlayerLimits, setGamePlayerLimits] = useState<Record<string, number>>(
     stream.gamePlayerLimits ?? {}
@@ -139,13 +135,9 @@ export function StreamCard({
   );
   // Scoreboard settings
   const [scoreboardTopN, setScoreboardTopN] = useState(stream.scoreboardTopN ?? 5);
-  const [scoreboardFontSize, setScoreboardFontSize] = useState(stream.scoreboardFontSize ?? 20);
   const [scoreboardAllTimeTitle, setScoreboardAllTimeTitle] = useState(stream.scoreboardAllTimeTitle ?? "ALL TIME");
   const [scoreboardRecentTitle, setScoreboardRecentTitle] = useState(stream.scoreboardRecentTitle ?? "LAST 24H");
   const [scoreboardRecentHours, setScoreboardRecentHours] = useState(stream.scoreboardRecentHours ?? 24);
-  // Vote overlay font scale
-  const [voteOverlayFontScale, setVoteOverlayFontScale] = useState(stream.voteOverlayFontScale ?? 1.0);
-
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -183,11 +175,11 @@ export function StreamCard({
       profile: encoderProfile, tune, keyframe_interval: keyframeInterval,
       threads, cbr, maxrate_factor: maxrateFactor, bufsize_factor: bufsizeFactor,
       audio_bitrate: audioBitrate, audio_sample_rate: audioSampleRate, audio_codec: audioCodec,
-      scoreboard_top_n: scoreboardTopN, scoreboard_font_size: scoreboardFontSize,
+      scoreboard_top_n: scoreboardTopN,
       scoreboard_alltime_title: scoreboardAllTimeTitle, scoreboard_recent_title: scoreboardRecentTitle,
-      scoreboard_recent_hours: scoreboardRecentHours, vote_overlay_font_scale: voteOverlayFontScale,
+      scoreboard_recent_hours: scoreboardRecentHours,
       game_descriptions: gameDescriptions, game_info_messages: gameInfoMessages,
-      game_info_intervals: gameInfoIntervals, game_font_scales: gameFontScales,
+      game_info_intervals: gameInfoIntervals,
       game_player_limits: gamePlayerLimits, game_twitch_categories: gameTwitchCategories,
       game_twitch_titles: gameTwitchTitles, game_youtube_titles: gameYoutubeTitles,
     };
@@ -273,17 +265,14 @@ export function StreamCard({
       setGameDescriptions(stream.gameDescriptions ?? {});
       setGameInfoMessages(stream.gameInfoMessages ?? {});
       setGameInfoIntervals(stream.gameInfoIntervals ?? {});
-      setGameFontScales(stream.gameFontScales ?? {});
       setGamePlayerLimits(stream.gamePlayerLimits ?? {});
       setGameTwitchCategories(stream.gameTwitchCategories ?? {});
       setGameTwitchTitles(stream.gameTwitchTitles ?? {});
       setGameYoutubeTitles(stream.gameYoutubeTitles ?? {});
       setScoreboardTopN(stream.scoreboardTopN ?? 5);
-      setScoreboardFontSize(stream.scoreboardFontSize ?? 20);
       setScoreboardAllTimeTitle(stream.scoreboardAllTimeTitle ?? "ALL TIME");
       setScoreboardRecentTitle(stream.scoreboardRecentTitle ?? "LAST 24H");
       setScoreboardRecentHours(stream.scoreboardRecentHours ?? 24);
-      setVoteOverlayFontScale(stream.voteOverlayFontScale ?? 1.0);
       setProfileId(stream.profileId ?? "");
     }
   }, [stream, dirty]);
@@ -326,17 +315,14 @@ export function StreamCard({
         game_descriptions: Object.keys(gameDescriptions).length > 0 ? gameDescriptions : undefined,
         game_info_messages: Object.keys(gameInfoMessages).length > 0 ? gameInfoMessages : undefined,
         game_info_intervals: Object.keys(gameInfoIntervals).length > 0 ? gameInfoIntervals : undefined,
-        game_font_scales: Object.keys(gameFontScales).length > 0 ? gameFontScales : undefined,
         game_player_limits: Object.keys(gamePlayerLimits).length > 0 ? gamePlayerLimits : undefined,
         game_twitch_categories: Object.keys(gameTwitchCategories).length > 0 ? gameTwitchCategories : undefined,
         game_twitch_titles: Object.keys(gameTwitchTitles).length > 0 ? gameTwitchTitles : undefined,
         game_youtube_titles: Object.keys(gameYoutubeTitles).length > 0 ? gameYoutubeTitles : undefined,
         scoreboard_top_n: scoreboardTopN,
-        scoreboard_font_size: scoreboardFontSize,
         scoreboard_alltime_title: scoreboardAllTimeTitle,
         scoreboard_recent_title: scoreboardRecentTitle,
         scoreboard_recent_hours: scoreboardRecentHours,
-        vote_overlay_font_scale: voteOverlayFontScale,
         profile_id: profileId || undefined,
       });
       toast.success("Stream updated");
@@ -802,25 +788,6 @@ export function StreamCard({
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5">
-                      <Label className="text-[10px] whitespace-nowrap">Font Scale</Label>
-                      <NumericInput
-                        className="h-7 w-20 text-xs"
-                        min={0.1}
-                        max={5}
-                        step={0.1}
-                        placeholder="1.0"
-                        value={gameFontScales[g.id] ?? 1.0}
-                        onChange={(v) => {
-                          setGameFontScales((prev) => {
-                            const next = { ...prev };
-                            if (v > 0 && v !== 1.0) next[g.id] = v; else delete next[g.id];
-                            return next;
-                          });
-                          setDirty(true);
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center gap-1.5">
                       <Label className="text-[10px] whitespace-nowrap">Max Players</Label>
                       <NumericInput
                         className="h-7 w-20 text-xs"
@@ -927,17 +894,6 @@ export function StreamCard({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">Font Size</Label>
-                  <NumericInput
-                    className="h-7 text-xs"
-                    integer
-                    min={8}
-                    max={48}
-                    value={scoreboardFontSize}
-                    onChange={set(setScoreboardFontSize)}
-                  />
-                </div>
-                <div className="space-y-1.5">
                   <Label className="text-[10px] text-muted-foreground">Recent Hours</Label>
                   <NumericInput
                     className="h-7 text-xs"
@@ -948,17 +904,6 @@ export function StreamCard({
                     onChange={set(setScoreboardRecentHours)}
                   />
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-[10px] whitespace-nowrap">Vote Overlay Font Scale</Label>
-                <NumericInput
-                  className="h-7 w-20 text-xs"
-                  min={0.1}
-                  max={5}
-                  step={0.1}
-                  value={voteOverlayFontScale}
-                  onChange={set(setVoteOverlayFontScale)}
-                />
               </div>
             </div>
 

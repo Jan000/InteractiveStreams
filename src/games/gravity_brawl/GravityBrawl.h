@@ -181,6 +181,7 @@ public:
     nlohmann::json getCommands() const override;
     std::vector<std::pair<std::string, int>> getLeaderboard() const override;
     void configure(const nlohmann::json& settings) override;
+    nlohmann::json getSettings() const override;
 
 private:
     // ── Commands ─────────────────────────────────────────────────────────
@@ -217,7 +218,6 @@ private:
     void renderOrbitTrails(sf::RenderTarget& target);
     void renderParticles(sf::RenderTarget& target);
     void renderKillFeed(sf::RenderTarget& target);
-    void renderLeaderboard(sf::RenderTarget& target);
     void renderUI(sf::RenderTarget& target);
     void renderCountdown(sf::RenderTarget& target);
     void renderCosmicEventWarning(sf::RenderTarget& target);

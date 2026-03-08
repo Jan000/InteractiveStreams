@@ -30,6 +30,27 @@ ColorConquest::ColorConquest() = default;
 void ColorConquest::initialize() {
     spdlog::info("[ColorConquest] Initializing...");
 
+    // Register configurable text elements
+    if (m_textElements.empty()) {
+        //                          id                    label                            x%      y%    fs   align
+        registerTextElement("title",            "Game Title",                      1.9f,   0.8f, 28, TextAlign::Left);
+        registerTextElement("phase",            "Phase / Round Info",             92.2f,   0.8f, 24, TextAlign::Right);
+        registerTextElement("timer",            "Round Timer",                    50.0f,   1.9f, 22, TextAlign::Center);
+        registerTextElement("team_name",        "Team Name (in panel)",           50.0f,  50.0f, 20, TextAlign::Center);
+        registerTextElement("team_players",     "Team Player Count",              50.0f,  50.0f, 18, TextAlign::Center);
+        registerTextElement("team_cells",       "Team Cell Count",                50.0f,  50.0f, 18, TextAlign::Center);
+        registerTextElement("team_votes",       "Team Vote Info",                 50.0f,  50.0f, 16, TextAlign::Center);
+        registerTextElement("total_players",    "Total Players",                  50.0f,  89.1f, 20, TextAlign::Center);
+        registerTextElement("vote_arrow",       "Vote Direction Labels",          50.0f,  50.0f, 22, TextAlign::Center);
+        registerTextElement("lobby_title",      "Lobby: Join Title",              50.0f,  37.5f, 32, TextAlign::Center);
+        registerTextElement("lobby_team",       "Lobby: Team Buttons",            50.0f,  40.1f, 24, TextAlign::Center);
+        registerTextElement("lobby_auto",       "Lobby: Auto-assign Hint",        50.0f,  43.8f, 20, TextAlign::Center);
+        registerTextElement("lobby_wait",       "Lobby: Waiting",                 50.0f,  45.8f, 22, TextAlign::Center);
+        registerTextElement("gameover_title",   "Game Over Title",                50.0f,  36.5f, 40, TextAlign::Center);
+        registerTextElement("gameover_rank",    "Game Over Rankings",             50.0f,  39.6f, 22, TextAlign::Center);
+        registerTextElement("event_feed",       "Event Feed (bottom)",             1.9f,  98.4f, 22, TextAlign::Left);
+    }
+
     m_grid.initialize(GRID_W, GRID_H);
     m_grid.placeStartingPositions();
 
@@ -425,19 +446,22 @@ void ColorConquest::render(sf::RenderTarget& target, double /*alpha*/) {
 
     // Event feed (bottom area)
     if (m_fontLoaded) {
-        float ey = 1920.0f - 30.0f;
-        for (int i = static_cast<int>(m_events.size()) - 1; i >= 0 && ey > 1700.0f; i--) {
-            auto& ev = m_events[i];
-            float alpha = std::min(1.0f, ev.timer / 1.0f);
-            sf::Text t;
-            t.setFont(m_font);
-            t.setString(ev.text);
-            t.setCharacterSize(fs(22));
-            t.setFillColor(sf::Color(ev.color.r, ev.color.g, ev.color.b,
-                                     static_cast<uint8_t>(alpha * 255)));
-            t.setPosition(20.0f, ey);
-            target.draw(t);
-            ey -= 28.0f;
+        auto rEv = resolve("event_feed", 1080.f, 1920.f);
+        if (rEv.visible) {
+            float ey = rEv.py;
+            for (int i = static_cast<int>(m_events.size()) - 1; i >= 0 && ey > 1700.0f; i--) {
+                auto& ev = m_events[i];
+                float alpha = std::min(1.0f, ev.timer / 1.0f);
+                sf::Text t;
+                t.setFont(m_font);
+                t.setString(ev.text);
+                t.setCharacterSize(rEv.fontSize);
+                t.setFillColor(sf::Color(ev.color.r, ev.color.g, ev.color.b,
+                                         static_cast<uint8_t>(alpha * 255)));
+                t.setPosition(rEv.px, ey);
+                target.draw(t);
+                ey -= 28.0f;
+            }
         }
     }
 }
@@ -501,7 +525,12 @@ void ColorConquest::renderCellConquestAnimation(sf::RenderTarget& target) {
 void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
 
-    // Team stats panels – 4 panels below the grid in a horizontal row (vertical layout)
+    auto rName    = resolve("team_name",    1080.f, 1920.f);
+    auto rPlayers = resolve("team_players", 1080.f, 1920.f);
+    auto rCells   = resolve("team_cells",   1080.f, 1920.f);
+    auto rVotes   = resolve("team_votes",   1080.f, 1920.f);
+    auto rTotal   = resolve("total_players",1080.f, 1920.f);
+
     float gridBottom = GRID_OFFSET_Y + GRID_H * CELL_PX;
     float panelAreaY = gridBottom + 12.0f;
     float gridPixelW = GRID_W * CELL_PX;
@@ -515,7 +544,6 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
         float px = GRID_OFFSET_X + i * (panelW + gap);
         float py = panelAreaY;
 
-        // Panel background
         sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
         panel.setPosition(px, py);
         panel.setFillColor(sf::Color(20, 20, 30, 200));
@@ -525,42 +553,46 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
                                          getTeamColor(team).b, 150));
         target.draw(panel);
 
-        // Team name (centered)
-        sf::Text nameTxt;
-        nameTxt.setFont(m_font);
-        nameTxt.setString(getTeamName(team));
-        nameTxt.setCharacterSize(fs(20));
-        nameTxt.setFillColor(getTeamColor(team));
-        nameTxt.setStyle(sf::Text::Bold);
-        auto nb = nameTxt.getLocalBounds();
-        nameTxt.setPosition(px + panelW / 2.0f - nb.width / 2.0f, py + 4.0f);
-        target.draw(nameTxt);
+        if (rName.visible) {
+            sf::Text nameTxt;
+            nameTxt.setFont(m_font);
+            nameTxt.setString(getTeamName(team));
+            nameTxt.setCharacterSize(rName.fontSize);
+            nameTxt.setFillColor(getTeamColor(team));
+            nameTxt.setStyle(sf::Text::Bold);
+            auto nb = nameTxt.getLocalBounds();
+            nameTxt.setPosition(px + panelW / 2.0f - nb.width / 2.0f, py + 4.0f);
+            target.draw(nameTxt);
+        }
 
-        // Player count
-        sf::Text playersTxt;
-        playersTxt.setFont(m_font);
-        playersTxt.setString(std::to_string(td.playerCount) + "P");
-        playersTxt.setCharacterSize(fs(18));
-        playersTxt.setFillColor(sf::Color(180, 180, 200));
-        auto ppb = playersTxt.getLocalBounds();
-        playersTxt.setPosition(px + panelW / 2.0f - ppb.width / 2.0f, py + 28.0f);
-        target.draw(playersTxt);
+        if (rPlayers.visible) {
+            sf::Text playersTxt;
+            playersTxt.setFont(m_font);
+            playersTxt.setString(std::to_string(td.playerCount) + "P");
+            playersTxt.setCharacterSize(rPlayers.fontSize);
+            playersTxt.setFillColor(sf::Color(180, 180, 200));
+            auto ppb = playersTxt.getLocalBounds();
+            playersTxt.setPosition(px + panelW / 2.0f - ppb.width / 2.0f, py + 28.0f);
+            target.draw(playersTxt);
+        }
 
-        // Cell count + percentage
-        float totalCells = static_cast<float>(m_grid.totalCells());
-        float pct = totalCells > 0 ? static_cast<float>(td.cellCount) / totalCells : 0.0f;
-
-        sf::Text cellsTxt;
-        cellsTxt.setFont(m_font);
-        cellsTxt.setString(std::to_string(td.cellCount) + " (" +
-                           std::to_string(static_cast<int>(pct * 100)) + "%)");
-        cellsTxt.setCharacterSize(fs(18));
-        cellsTxt.setFillColor(sf::Color(180, 180, 200));
-        auto cb = cellsTxt.getLocalBounds();
-        cellsTxt.setPosition(px + panelW / 2.0f - cb.width / 2.0f, py + 48.0f);
-        target.draw(cellsTxt);
+        if (rCells.visible) {
+            float totalCells = static_cast<float>(m_grid.totalCells());
+            float pct = totalCells > 0 ? static_cast<float>(td.cellCount) / totalCells : 0.0f;
+            sf::Text cellsTxt;
+            cellsTxt.setFont(m_font);
+            cellsTxt.setString(std::to_string(td.cellCount) + " (" +
+                               std::to_string(static_cast<int>(pct * 100)) + "%)");
+            cellsTxt.setCharacterSize(rCells.fontSize);
+            cellsTxt.setFillColor(sf::Color(180, 180, 200));
+            auto cb = cellsTxt.getLocalBounds();
+            cellsTxt.setPosition(px + panelW / 2.0f - cb.width / 2.0f, py + 48.0f);
+            target.draw(cellsTxt);
+        }
 
         // Cell bar
+        float totalCells = static_cast<float>(m_grid.totalCells());
+        float pct = totalCells > 0 ? static_cast<float>(td.cellCount) / totalCells : 0.0f;
         float barW = panelW - 12.0f;
         sf::RectangleShape barBg(sf::Vector2f(barW, 6.0f));
         barBg.setPosition(px + 6.0f, py + 72.0f);
@@ -572,8 +604,7 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
         barFill.setFillColor(getTeamColor(team));
         target.draw(barFill);
 
-        // Vote info (during playing)
-        if (m_phase == Phase::Playing) {
+        if (m_phase == Phase::Playing && rVotes.visible) {
             static const char* arrows[] = {"", "U", "D", "L", "R"};
             std::string voteStr;
             for (int d = 1; d <= 4; d++) {
@@ -586,7 +617,7 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
             sf::Text voteTxt;
             voteTxt.setFont(m_font);
             voteTxt.setString(voteStr);
-            voteTxt.setCharacterSize(fs(16));
+            voteTxt.setCharacterSize(rVotes.fontSize);
             voteTxt.setFillColor(sf::Color(140, 140, 160));
             auto vb = voteTxt.getLocalBounds();
             voteTxt.setPosition(px + panelW / 2.0f - vb.width / 2.0f, py + 86.0f);
@@ -594,32 +625,29 @@ void ColorConquest::renderTeamStats(sf::RenderTarget& target) {
         }
     }
 
-    // Total players (below team panels)
-    sf::Text totalTxt;
-    totalTxt.setFont(m_font);
-    totalTxt.setString("Total Players: " + std::to_string(m_playerTeam.size()));
-    totalTxt.setCharacterSize(fs(20));
-    totalTxt.setFillColor(sf::Color(120, 120, 140));
-    auto tb = totalTxt.getLocalBounds();
-    totalTxt.setPosition(GRID_OFFSET_X + gridPixelW / 2.0f - tb.width / 2.0f,
-                         panelAreaY + panelH + 8.0f);
-    target.draw(totalTxt);
+    if (rTotal.visible) {
+        sf::Text totalTxt;
+        totalTxt.setFont(m_font);
+        totalTxt.setString("Total Players: " + std::to_string(m_playerTeam.size()));
+        totalTxt.setCharacterSize(rTotal.fontSize);
+        totalTxt.setFillColor(sf::Color(120, 120, 140));
+        auto tb = totalTxt.getLocalBounds();
+        totalTxt.setPosition(GRID_OFFSET_X + gridPixelW / 2.0f - tb.width / 2.0f,
+                             panelAreaY + panelH + 8.0f);
+        target.draw(totalTxt);
+    }
 }
 
 void ColorConquest::renderVoteArrows(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
+    auto rArrow = resolve("vote_arrow", 1080.f, 1920.f);
+    if (!rArrow.visible) return;
 
-    // Show directional arrows around the grid
     float centerX = GRID_OFFSET_X + (GRID_W * CELL_PX) / 2.0f;
     float centerY = GRID_OFFSET_Y + (GRID_H * CELL_PX) / 2.0f;
-
     float pulse = 0.6f + 0.4f * std::sin(m_animTime * 3.0f);
 
-    struct ArrowInfo {
-        const char* text;
-        float x, y;
-    };
-
+    struct ArrowInfo { const char* text; float x, y; };
     ArrowInfo arrows[] = {
         {"!up",     centerX, GRID_OFFSET_Y - 28.0f},
         {"!down",   centerX, GRID_OFFSET_Y + GRID_H * CELL_PX + 8.0f},
@@ -631,7 +659,7 @@ void ColorConquest::renderVoteArrows(sf::RenderTarget& target) {
         sf::Text t;
         t.setFont(m_font);
         t.setString(a.text);
-        t.setCharacterSize(fs(22));
+        t.setCharacterSize(rArrow.fontSize);
         t.setFillColor(sf::Color(200, 200, 220,
                        static_cast<uint8_t>(pulse * 200)));
         auto bounds = t.getLocalBounds();
@@ -645,35 +673,41 @@ void ColorConquest::renderRoundInfo(sf::RenderTarget& target) {
     if (!m_fontLoaded) return;
 
     // Title
-    sf::Text title;
-    title.setFont(m_font);
-    title.setString("COLOR CONQUEST");
-    title.setCharacterSize(fs(28));
-    title.setFillColor(sf::Color(200, 200, 220));
-    title.setStyle(sf::Text::Bold);
-    title.setPosition(20.0f, 16.0f);
-    target.draw(title);
-
-    // Round / Phase info (top-right)
-    std::string phaseStr;
-    switch (m_phase) {
-        case Phase::Lobby:    phaseStr = "LOBBY"; break;
-        case Phase::Playing:  phaseStr = "ROUND " + std::to_string(m_currentRound) +
-                                         "/" + std::to_string(m_maxRounds); break;
-        case Phase::RoundEnd: phaseStr = "RESULTS"; break;
-        case Phase::GameOver: phaseStr = "GAME OVER"; break;
+    {
+        auto r = resolve("title", 1080.f, 1920.f);
+        if (r.visible) {
+            sf::Text title;
+            title.setFont(m_font);
+            title.setString("COLOR CONQUEST");
+            title.setFillColor(sf::Color(200, 200, 220));
+            title.setStyle(sf::Text::Bold);
+            applyTextLayout(title, r);
+            target.draw(title);
+        }
     }
 
-    sf::Text phaseTxt;
-    phaseTxt.setFont(m_font);
-    phaseTxt.setString(phaseStr);
-    phaseTxt.setCharacterSize(fs(24));
-    phaseTxt.setFillColor(sf::Color(180, 180, 200));
-    auto pb = phaseTxt.getLocalBounds();
-    phaseTxt.setPosition(GRID_OFFSET_X + GRID_W * CELL_PX - pb.width, 16.0f);
-    target.draw(phaseTxt);
+    // Phase info
+    {
+        auto r = resolve("phase", 1080.f, 1920.f);
+        if (r.visible) {
+            std::string phaseStr;
+            switch (m_phase) {
+                case Phase::Lobby:    phaseStr = "LOBBY"; break;
+                case Phase::Playing:  phaseStr = "ROUND " + std::to_string(m_currentRound) +
+                                                 "/" + std::to_string(m_maxRounds); break;
+                case Phase::RoundEnd: phaseStr = "RESULTS"; break;
+                case Phase::GameOver: phaseStr = "GAME OVER"; break;
+            }
+            sf::Text phaseTxt;
+            phaseTxt.setFont(m_font);
+            phaseTxt.setString(phaseStr);
+            phaseTxt.setFillColor(sf::Color(180, 180, 200));
+            applyTextLayout(phaseTxt, r);
+            target.draw(phaseTxt);
+        }
+    }
 
-    // Timer bar (below title area)
+    // Timer bar
     if (m_phase == Phase::Playing) {
         float pct = m_roundTimer / m_roundDuration;
         pct = std::max(0.0f, std::min(1.0f, pct));
@@ -690,16 +724,15 @@ void ColorConquest::renderRoundInfo(sf::RenderTarget& target) {
         timerFill.setFillColor(timerColor);
         target.draw(timerFill);
 
-        // Timer text
-        sf::Text timerTxt;
-        timerTxt.setFont(m_font);
-        timerTxt.setString(std::to_string(static_cast<int>(m_roundTimer + 0.5f)) + "s");
-        timerTxt.setCharacterSize(fs(22));
-        timerTxt.setFillColor(timerColor);
-        float tw = timerTxt.getLocalBounds().width;
-        timerTxt.setPosition(GRID_OFFSET_X + GRID_W * CELL_PX / 2.0f - tw / 2.0f,
-                            GRID_OFFSET_Y - 24.0f);
-        target.draw(timerTxt);
+        auto r = resolve("timer", 1080.f, 1920.f);
+        if (r.visible) {
+            sf::Text timerTxt;
+            timerTxt.setFont(m_font);
+            timerTxt.setString(std::to_string(static_cast<int>(m_roundTimer + 0.5f)) + "s");
+            timerTxt.setFillColor(timerColor);
+            applyTextLayout(timerTxt, r);
+            target.draw(timerTxt);
+        }
     }
 }
 
@@ -709,7 +742,6 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
     float centerX = GRID_OFFSET_X + (GRID_W * CELL_PX) / 2.0f;
     float centerY = GRID_OFFSET_Y + (GRID_H * CELL_PX) / 2.0f;
 
-    // Semi-transparent overlay (vertical layout)
     float overlayW = std::min(GRID_W * CELL_PX + 40.0f, 960.0f);
     sf::RectangleShape overlay(sf::Vector2f(overlayW, 240.0f));
     overlay.setFillColor(sf::Color(10, 10, 20, 220));
@@ -719,69 +751,78 @@ void ColorConquest::renderLobby(sf::RenderTarget& target) {
     overlay.setPosition(centerX, centerY);
     target.draw(overlay);
 
-    // "Join a team!" text
-    sf::Text joinTxt;
-    joinTxt.setFont(m_font);
-    joinTxt.setString("JOIN A TEAM!");
-    joinTxt.setCharacterSize(fs(32));
-    joinTxt.setFillColor(sf::Color::White);
-    joinTxt.setStyle(sf::Text::Bold);
-    auto jb = joinTxt.getLocalBounds();
-    joinTxt.setPosition(centerX - jb.width / 2.0f, centerY - 100.0f);
-    target.draw(joinTxt);
-
-    // Team join instructions (2x2 grid for vertical layout)
-    std::string teams[] = {"!join red", "!join blue", "!join green", "!join yellow"};
-    sf::Color teamColors[] = {getTeamColor(TeamId::Red), getTeamColor(TeamId::Blue),
-                              getTeamColor(TeamId::Green), getTeamColor(TeamId::Yellow)};
-
-    float colSpacing = 200.0f;
-    float rowSpacing = 32.0f;
-    for (int i = 0; i < 4; i++) {
-        int col = i % 2;
-        int row = i / 2;
-        sf::Text t;
-        t.setFont(m_font);
-        t.setString(teams[i]);
-        t.setCharacterSize(fs(24));
-        t.setFillColor(teamColors[i]);
-        auto tb = t.getLocalBounds();
-        float tx = centerX + (col == 0 ? -colSpacing / 2.0f - tb.width / 2.0f
-                                        :  colSpacing / 2.0f - tb.width / 2.0f);
-        t.setPosition(tx, centerY - 50.0f + row * rowSpacing);
-        target.draw(t);
+    {
+        auto r = resolve("lobby_title", 1080.f, 1920.f);
+        if (r.visible) {
+            sf::Text joinTxt;
+            joinTxt.setFont(m_font);
+            joinTxt.setString("JOIN A TEAM!");
+            joinTxt.setFillColor(sf::Color::White);
+            joinTxt.setStyle(sf::Text::Bold);
+            applyTextLayout(joinTxt, r);
+            target.draw(joinTxt);
+        }
     }
 
-    // "or !join for auto-assign"
-    sf::Text autoTxt;
-    autoTxt.setFont(m_font);
-    autoTxt.setString("or just !join for auto-assign");
-    autoTxt.setCharacterSize(fs(20));
-    autoTxt.setFillColor(sf::Color(140, 140, 160));
-    auto ab = autoTxt.getLocalBounds();
-    autoTxt.setPosition(centerX - ab.width / 2.0f, centerY + 20.0f);
-    target.draw(autoTxt);
-
-    // Player count + waiting message
-    int total = static_cast<int>(m_playerTeam.size());
-    std::string waitStr = std::to_string(total) + " / " +
-                          std::to_string(MIN_PLAYERS_TO_START) + " players";
-    if (total >= MIN_PLAYERS_TO_START) {
-        int remaining = static_cast<int>(m_lobbyDuration - m_lobbyTimer);
-        if (remaining < 0) remaining = 0;
-        waitStr += "  -  Starting in " + std::to_string(remaining) + "s";
-    } else {
-        waitStr += "  -  Waiting for players...";
+    // Team join instructions (2x2 grid)
+    {
+        auto r = resolve("lobby_team", 1080.f, 1920.f);
+        if (r.visible) {
+            std::string teams[] = {"!join red", "!join blue", "!join green", "!join yellow"};
+            sf::Color teamColors[] = {getTeamColor(TeamId::Red), getTeamColor(TeamId::Blue),
+                                      getTeamColor(TeamId::Green), getTeamColor(TeamId::Yellow)};
+            float colSpacing = 200.0f;
+            float rowSpacing = 32.0f;
+            for (int i = 0; i < 4; i++) {
+                int col = i % 2;
+                int row = i / 2;
+                sf::Text t;
+                t.setFont(m_font);
+                t.setString(teams[i]);
+                t.setCharacterSize(r.fontSize);
+                t.setFillColor(teamColors[i]);
+                auto tb = t.getLocalBounds();
+                float tx = centerX + (col == 0 ? -colSpacing / 2.0f - tb.width / 2.0f
+                                                :  colSpacing / 2.0f - tb.width / 2.0f);
+                t.setPosition(tx, centerY - 50.0f + row * rowSpacing);
+                target.draw(t);
+            }
+        }
     }
 
-    sf::Text waitTxt;
-    waitTxt.setFont(m_font);
-    waitTxt.setString(waitStr);
-    waitTxt.setCharacterSize(fs(22));
-    waitTxt.setFillColor(sf::Color(180, 180, 200));
-    auto wb = waitTxt.getLocalBounds();
-    waitTxt.setPosition(centerX - wb.width / 2.0f, centerY + 60.0f);
-    target.draw(waitTxt);
+    {
+        auto r = resolve("lobby_auto", 1080.f, 1920.f);
+        if (r.visible) {
+            sf::Text autoTxt;
+            autoTxt.setFont(m_font);
+            autoTxt.setString("or just !join for auto-assign");
+            autoTxt.setFillColor(sf::Color(140, 140, 160));
+            applyTextLayout(autoTxt, r);
+            target.draw(autoTxt);
+        }
+    }
+
+    {
+        auto r = resolve("lobby_wait", 1080.f, 1920.f);
+        if (r.visible) {
+            int total = static_cast<int>(m_playerTeam.size());
+            std::string waitStr = std::to_string(total) + " / " +
+                                  std::to_string(MIN_PLAYERS_TO_START) + " players";
+            if (total >= MIN_PLAYERS_TO_START) {
+                int remaining = static_cast<int>(m_lobbyDuration - m_lobbyTimer);
+                if (remaining < 0) remaining = 0;
+                waitStr += "  -  Starting in " + std::to_string(remaining) + "s";
+            } else {
+                waitStr += "  -  Waiting for players...";
+            }
+            sf::Text waitTxt;
+            waitTxt.setFont(m_font);
+            waitTxt.setString(waitStr);
+            waitTxt.setFillColor(sf::Color(180, 180, 200));
+            applyTextLayout(waitTxt, r);
+            target.draw(waitTxt);
+        }
+    }
 }
 
 void ColorConquest::renderGameOver(sf::RenderTarget& target) {
@@ -790,7 +831,6 @@ void ColorConquest::renderGameOver(sf::RenderTarget& target) {
     float centerX = GRID_OFFSET_X + (GRID_W * CELL_PX) / 2.0f;
     float centerY = GRID_OFFSET_Y + (GRID_H * CELL_PX) / 2.0f;
 
-    // Overlay (fits vertical 1080 width)
     float overlayW = std::min(560.0f, GRID_W * CELL_PX);
     sf::RectangleShape overlay(sf::Vector2f(overlayW, 300.0f));
     overlay.setFillColor(sf::Color(10, 10, 20, 230));
@@ -800,37 +840,45 @@ void ColorConquest::renderGameOver(sf::RenderTarget& target) {
     overlay.setPosition(centerX, centerY);
     target.draw(overlay);
 
-    sf::Text goTxt;
-    goTxt.setFont(m_font);
-    goTxt.setString("GAME OVER");
-    goTxt.setCharacterSize(fs(40));
-    goTxt.setFillColor(sf::Color(255, 215, 0));
-    goTxt.setStyle(sf::Text::Bold);
-    auto gb = goTxt.getLocalBounds();
-    goTxt.setPosition(centerX - gb.width / 2.0f, centerY - 120.0f);
-    target.draw(goTxt);
-
-    // Ranked results
-    struct Result { TeamId team; int cells; };
-    std::array<Result, 4> results;
-    for (int i = 0; i < 4; i++) {
-        results[i] = {static_cast<TeamId>(i + 1), m_teams[i].cellCount};
+    {
+        auto r = resolve("gameover_title", 1080.f, 1920.f);
+        if (r.visible) {
+            sf::Text goTxt;
+            goTxt.setFont(m_font);
+            goTxt.setString("GAME OVER");
+            goTxt.setFillColor(sf::Color(255, 215, 0));
+            goTxt.setStyle(sf::Text::Bold);
+            applyTextLayout(goTxt, r);
+            target.draw(goTxt);
+        }
     }
-    std::sort(results.begin(), results.end(),
-              [](const Result& a, const Result& b) { return a.cells > b.cells; });
 
-    static const char* medals[] = {"1st", "2nd", "3rd", "4th"};
-    for (int i = 0; i < 4; i++) {
-        sf::Text t;
-        t.setFont(m_font);
-        t.setString(std::string(medals[i]) + "  " +
-                    getTeamName(results[i].team) + "  " +
-                    std::to_string(results[i].cells) + " cells");
-        t.setCharacterSize(fs(22));
-        t.setFillColor(i == 0 ? sf::Color(255, 215, 0) : getTeamColor(results[i].team));
-        auto tb = t.getLocalBounds();
-        t.setPosition(centerX - tb.width / 2.0f, centerY - 60.0f + i * 36.0f);
-        target.draw(t);
+    {
+        auto rRank = resolve("gameover_rank", 1080.f, 1920.f);
+        if (rRank.visible) {
+            struct Result { TeamId team; int cells; };
+            std::array<Result, 4> results;
+            for (int i = 0; i < 4; i++) {
+                results[i] = {static_cast<TeamId>(i + 1), m_teams[i].cellCount};
+            }
+            std::sort(results.begin(), results.end(),
+                      [](const Result& a, const Result& b) { return a.cells > b.cells; });
+
+            static const char* medals[] = {"1st", "2nd", "3rd", "4th"};
+            for (int i = 0; i < 4; i++) {
+                sf::Text t;
+                t.setFont(m_font);
+                t.setString(std::string(medals[i]) + "  " +
+                            getTeamName(results[i].team) + "  " +
+                            std::to_string(results[i].cells) + " cells");
+                t.setCharacterSize(rRank.fontSize);
+                t.setFillColor(i == 0 ? sf::Color(255, 215, 0) : getTeamColor(results[i].team));
+                auto tb = t.getLocalBounds();
+                t.setOrigin(tb.left + tb.width / 2.0f, 0.f);
+                t.setPosition(centerX, centerY - 60.0f + i * 36.0f);
+                target.draw(t);
+            }
+        }
     }
 }
 
@@ -945,6 +993,18 @@ Direction ColorConquest::getWinningVote(TeamId team) const {
     int idx = static_cast<int>(team) - 1;
     if (idx < 0 || idx >= 4) return Direction::None;
     return m_teams[idx].topVote();
+}
+
+void ColorConquest::configure(const nlohmann::json& settings) {
+    if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
+        applyTextOverrides(settings["text_elements"]);
+    }
+}
+
+nlohmann::json ColorConquest::getSettings() const {
+    return {
+        {"text_elements", textElementsJson()}
+    };
 }
 
 } // namespace is::games::color_conquest
