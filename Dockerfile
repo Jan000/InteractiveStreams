@@ -112,8 +112,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libx11-6 libxrandr2 libxcursor1 libxi6 \
     libudev1 libgl1 libgl1-mesa-dri libfreetype6 libopenal1 libvorbis0a libvorbisenc2 libvorbisfile3 libflac12
 
-# Create non-root user
-RUN useradd -m -s /bin/bash streams
+# Create non-root user and writable app directory
+# The app dir must be owned by streams so the process can create runtime files
+# (ffmpeg_stderr.log, etc.) alongside the binary.
+RUN useradd -m -s /bin/bash streams \
+    && mkdir -p /home/streams/app \
+    && chown streams:streams /home/streams/app
 WORKDIR /home/streams/app
 
 # ── Copy runtime files, ordered by change frequency (least → most) ────────
@@ -138,8 +142,7 @@ COPY --from=cpp-builder --chown=streams:streams /app/build/InteractiveStreams ./
 # Runtime directories (data = SQLite via volume, logs = spdlog output)
 # Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
 RUN mkdir -p data logs /tmp/.X11-unix \
-    && chmod 1777 /tmp/.X11-unix \
-    && chown streams:streams data logs
+    && chmod 1777 /tmp/.X11-unix
 
 USER streams
 
