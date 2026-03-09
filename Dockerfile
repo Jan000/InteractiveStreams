@@ -141,7 +141,9 @@ COPY --from=cpp-builder --chown=streams:streams /app/build/InteractiveStreams ./
 
 # Runtime directories (data = SQLite via volume, logs = spdlog output)
 # Pre-create /tmp/.X11-unix with sticky bit so Xvfb can use it as non-root user
+# mkdir runs as root, so explicitly chown the app-level dirs to streams.
 RUN mkdir -p data logs /tmp/.X11-unix \
+    && chown streams:streams data logs \
     && chmod 1777 /tmp/.X11-unix
 
 USER streams
