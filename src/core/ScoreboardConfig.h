@@ -43,25 +43,28 @@ struct ScoreboardPanelConfig {
     }
 
     static ScoreboardPanelConfig fromJson(const nlohmann::json& j,
-                                           const ScoreboardPanelConfig& def = ScoreboardPanelConfig{}) {
-        ScoreboardPanelConfig c;
-        c.enabled      = j.value("enabled",       def.enabled);
-        c.title        = j.value("title",         def.title);
-        c.durationSecs = j.value("duration_secs", def.durationSecs);
-        c.topN         = j.value("top_n",         def.topN);
-        c.fontSize     = j.value("font_size",     def.fontSize);
-        c.boxWidthPct  = j.value("box_width_pct", def.boxWidthPct);
-        c.posXPct      = j.value("pos_x_pct",     def.posXPct);
-        c.posYPct      = j.value("pos_y_pct",     def.posYPct);
-        c.opacity       = j.value("opacity",       def.opacity);
-        c.bgColor      = j.value("bg_color",      def.bgColor);
-        c.borderColor  = j.value("border_color",  def.borderColor);
-        c.titleColor   = j.value("title_color",   def.titleColor);
-        c.nameColor    = j.value("name_color",     def.nameColor);
-        c.pointsColor  = j.value("points_color",  def.pointsColor);
-        return c;
-    }
+                                           const ScoreboardPanelConfig& def);
 };
+
+inline ScoreboardPanelConfig ScoreboardPanelConfig::fromJson(
+        const nlohmann::json& j, const ScoreboardPanelConfig& def) {
+    ScoreboardPanelConfig c;
+    c.enabled      = j.value("enabled",       def.enabled);
+    c.title        = j.value("title",         def.title);
+    c.durationSecs = j.value("duration_secs", def.durationSecs);
+    c.topN         = j.value("top_n",         def.topN);
+    c.fontSize     = j.value("font_size",     def.fontSize);
+    c.boxWidthPct  = j.value("box_width_pct", def.boxWidthPct);
+    c.posXPct      = j.value("pos_x_pct",     def.posXPct);
+    c.posYPct      = j.value("pos_y_pct",     def.posYPct);
+    c.opacity       = j.value("opacity",       def.opacity);
+    c.bgColor      = j.value("bg_color",      def.bgColor);
+    c.borderColor  = j.value("border_color",  def.borderColor);
+    c.titleColor   = j.value("title_color",   def.titleColor);
+    c.nameColor    = j.value("name_color",     def.nameColor);
+    c.pointsColor  = j.value("points_color",  def.pointsColor);
+    return c;
+}
 
 /// Global scoreboard configuration shared by all streams.
 struct GlobalScoreboardConfig {
