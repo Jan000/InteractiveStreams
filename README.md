@@ -206,7 +206,8 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 ### Features
 - **Gravity Shifts** – Kosmische Events ändern periodisch die Schwerkraftrichtung (normal, low gravity, reverse, sideways)
 - **Bot Fill System** – Lobby wird automatisch mit KI-Bots auf eine Mindestspielerzahl aufgefüllt
-- **Konfigurierbare Einstellungen** – Spieldauer, Lobby-Dauer, Mindestspielerzahl und Cosmic-Event-Cooldown über Web-API einstellbar
+- **Sound Effects** – 12 SFX-Events (Join, Smash, Supernova, Hit, Death, Kill, Bounty, Cosmic Event, etc.) mit Per-Game-Volume und Toggle
+- **Konfigurierbare Einstellungen** – Spieldauer, Lobby-Dauer, Mindestspielerzahl, Cosmic-Event-Cooldown, SFX-Volume über Web-API einstellbar
 - **Scoreboard-Integration** – Punkte für Kills und Rundengewinne, persistiert in der Spieler-Datenbank
 
 ### Spielablauf
@@ -228,6 +229,27 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 | `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
 | `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
 | `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+
+### Sound Effects
+
+Gravity Brawl lädt SFX-Dateien aus `assets/audio/sfx/gravity_brawl/`. Unterstützte Formate: `.wav`, `.ogg`, `.mp3` (erste gefundene Extension wird verwendet). Fehlende Dateien werden automatisch übersprungen.
+
+| Dateiname | Event |
+|-----------|-------|
+| `gb_join.*` | Spieler tritt bei |
+| `gb_smash.*` | Smash-Angriff |
+| `gb_supernova.*` | Supernova-Explosion |
+| `gb_hit.*` | Planeten-Kollision |
+| `gb_death.*` | Planet eliminiert |
+| `gb_kill.*` | Kill-Attribution |
+| `gb_bounty.*` | Bounty-Kill (King) |
+| `gb_cosmic_event.*` | Cosmic Event Start |
+| `gb_cosmic_end.*` | Cosmic Event Ende |
+| `gb_countdown.*` | Countdown startet |
+| `gb_battle_start.*` | Kampf beginnt |
+| `gb_game_over.*` | Spiel vorbei |
+
+Per-Game Settings: `sfx_enabled` (bool), `sfx_volume` (float 0–100) – konfigurierbar über `GET/PUT /api/games/gravity_brawl/settings`.
 
 ---
 
@@ -271,6 +293,10 @@ InteractiveStreams/
 │   └── default.json            # Standard-Konfiguration
 ├── assets/
 │   ├── fonts/                  # TrueType-Schriftarten
+│   ├── audio/                  # Musik & Sound-Effekte
+│   │   ├── *.mp3               # Hintergrundmusik-Tracks
+│   │   └── sfx/
+│   │       └── gravity_brawl/  # Gravity Brawl SFX (.wav/.ogg/.mp3)
 │   └── shaders/                # GLSL Fragment-Shader
 │       ├── bloom.frag          # Bloom-Effekt
 │       ├── chromatic_aberration.frag # Chromatische Aberration

@@ -1,12 +1,14 @@
 #include "games/gravity_brawl/GravityBrawl.h"
 #include "games/GameRegistry.h"
 #include "core/Application.h"
+#include "core/AudioManager.h"
 #include "core/PlayerDatabase.h"
 
 #include <spdlog/spdlog.h>
 #include <cmath>
 #include <algorithm>
 #include <numeric>
+#include <filesystem>
 
 namespace is::games::gravity_brawl {
 
@@ -119,6 +121,9 @@ void GravityBrawl::initialize() {
         spdlog::warn("[GravityBrawl] Font not found, text rendering disabled.");
     }
 
+    // Load sound effects (gracefully skips missing files)
+    loadSfx();
+
     m_phase = GamePhase::Lobby;
     m_lobbyTimer = m_lobbyDuration;
     m_gameTimer = 0.0;
@@ -148,6 +153,51 @@ void GravityBrawl::shutdown() {
     m_floatingTexts.clear();
     m_contactListener.reset();
     m_world.reset();
+}
+
+// ── Sound Effects ────────────────────────────────────────────────────────────
+
+void GravityBrawl::loadSfx() {
+    if (m_sfxLoaded) return;
+    m_sfxLoaded = true;
+
+    const std::string sfxDir = "assets/audio/sfx/gravity_brawl/";
+    const std::vector<std::string> names = {
+        "gb_join", "gb_smash", "gb_supernova", "gb_hit",
+        "gb_death", "gb_kill", "gb_cosmic_event", "gb_cosmic_end",
+        "gb_countdown", "gb_battle_start", "gb_game_over", "gb_bounty"
+    };
+    const std::vector<std::string> extensions = {".wav", ".ogg", ".mp3"};
+
+    int loaded = 0;
+    auto& audio = is::core::Application::instance().audioManager();
+
+    for (const auto& name : names) {
+        bool found = false;
+        for (const auto& ext : extensions) {
+            std::string path = sfxDir + name + ext;
+            if (std::filesystem::exists(path)) {
+                if (audio.loadSfx(name, path)) {
+                    loaded++;
+                    found = true;
+                }
+                break; // Only try one matching extension
+            }
+        }
+        if (!found) {
+            spdlog::debug("[GravityBrawl] SFX '{}' not found in {} (skipped)", name, sfxDir);
+        }
+    }
+
+    spdlog::info("[GravityBrawl] Loaded {}/{} sound effects from {}", loaded, names.size(), sfxDir);
+}
+
+void GravityBrawl::playSfx(const std::string& name, float volumeScale) {
+    if (!m_sfxEnabled) return;
+    try {
+        float vol = m_sfxVolume * volumeScale;
+        is::core::Application::instance().audioManager().playSfx(name, vol);
+    } catch (...) {}
 }
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -208,6 +258,13 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("event_gravity_multiplier") && settings["event_gravity_multiplier"].is_number()) {
         m_eventGravityMul = std::max(0.0f, settings["event_gravity_multiplier"].get<float>());
     }
+    // Sound effect settings
+    if (settings.contains("sfx_enabled") && settings["sfx_enabled"].is_boolean()) {
+        m_sfxEnabled = settings["sfx_enabled"].get<bool>();
+    }
+    if (settings.contains("sfx_volume") && settings["sfx_volume"].is_number()) {
+        m_sfxVolume = std::clamp(settings["sfx_volume"].get<float>(), 0.0f, 100.0f);
+    }
     // Camera zoom settings
     if (settings.contains("camera_zoom_enabled") && settings["camera_zoom_enabled"].is_boolean()) {
         m_cameraZoomEnabled = settings["camera_zoom_enabled"].get<bool>();
@@ -247,6 +304,8 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"black_hole_gravity_cap", m_blackHoleGravityCap},
         {"black_hole_kill_radius_multiplier", m_blackHoleKillRadiusMultiplier},
         {"event_gravity_multiplier", m_eventGravityMul},
+        {"sfx_enabled", m_sfxEnabled},
+        {"sfx_volume", m_sfxVolume},
         {"camera_zoom_enabled", m_cameraZoomEnabled},
         {"camera_zoom_speed", m_cameraZoomSpeed},
         {"camera_buffer_meters", m_cameraBufferMeters},
@@ -426,6 +485,7 @@ void GravityBrawl::cmdJoin(const std::string& userId, const std::string& display
     spawnPlanetBody(p);
 
     sendChatFeedback("☄️ " + displayName + " entered the orbit!");
+    playSfx("gb_join");
 
     // Score: participation
     try {
@@ -613,6 +673,8 @@ void GravityBrawl::triggerSmash(Planet& p) {
         }
     }
 
+    playSfx("gb_smash");
+
     // Trail effect
     b2Vec2 pos = p.body->GetPosition();
     sf::Vector2f screenPos = worldToScreen(pos);
@@ -649,6 +711,8 @@ void GravityBrawl::triggerSupernova(Planet& p) {
             other.lastHitTime = m_gameTimer;
         }
     }
+
+    playSfx("gb_supernova");
 
     // Massive particle effect
     sf::Vector2f screenPos = worldToScreen(pos);
@@ -697,6 +761,8 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
             db.recordResult(b.userId, b.displayName, "gravity_brawl", 2, false);
     } catch (...) {}
 
+    playSfx("gb_hit", 0.6f);
+
     // Floating text
     addFloatingText("+2", worldToScreen(a.body->GetPosition()), sf::Color(100, 255, 100), 0.8f);
     addFloatingText("+2", worldToScreen(b.body->GetPosition()), sf::Color(100, 255, 100), 0.8f);
@@ -710,6 +776,7 @@ void GravityBrawl::startCountdown() {
 
     m_phase = GamePhase::Countdown;
     m_countdownTimer = 3.0;
+    playSfx("gb_countdown");
     spdlog::info("[GravityBrawl] Countdown started.");
 }
 
@@ -720,6 +787,7 @@ void GravityBrawl::startPlaying() {
     m_cosmicEventActive = 0.0;
     m_blackHoleConsumedGravityBonus = 0.0f;
     m_survivalAccum = 0.0;
+    playSfx("gb_battle_start");
     spdlog::info("[GravityBrawl] Game started!");
 }
 
@@ -920,6 +988,7 @@ void GravityBrawl::update(double dt) {
 
         if (m_gameTimer >= m_gameDuration || (aliveCnt <= 1 && m_planets.size() > 1)) {
             m_phase = GamePhase::GameOver;
+            playSfx("gb_game_over");
             spdlog::info("[GravityBrawl] Game over!");
 
             // Award win to the last player standing or highest score
@@ -1061,6 +1130,7 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
     if (!p.alive) return;
     p.alive = false;
     p.deaths++;
+    playSfx("gb_death");
 
     bool victimIsBot = isBot(p.userId);
     std::string victimName = victimIsBot ? "a rogue planet" : p.displayName;
@@ -1093,6 +1163,7 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
             int killPoints = 50;
             killer.kills++;
             killer.score += killPoints;
+            playSfx("gb_kill");
 
             // Floating text
             sf::Vector2f killerScreen = worldToScreen(killer.body->GetPosition());
@@ -1103,6 +1174,7 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
                 int bountyBonus = 150;
                 killer.score += bountyBonus;
                 addFloatingText("+150 BOUNTY!", killerScreen, sf::Color(255, 50, 50), 2.0f);
+                playSfx("gb_bounty");
 
                 // Massive particle rain
                 emitExplosion(killerScreen, sf::Color(255, 215, 0), 150);
@@ -1208,6 +1280,7 @@ void GravityBrawl::triggerCosmicEvent() {
 
     spdlog::info("[GravityBrawl] COSMIC EVENT triggered (type {})", eventType);
     sendChatFeedback(message);
+    playSfx("gb_cosmic_event");
 }
 
 void GravityBrawl::updateCosmicEvent(float dt) {
@@ -1233,6 +1306,7 @@ void GravityBrawl::updateCosmicEvent(float dt) {
             }
             sendChatFeedback("✅ The black hole calms down. Survivors get +" +
                              std::to_string(survivorBonus) + " points!");
+            playSfx("gb_cosmic_end");
         }
     }
 }

@@ -13,6 +13,7 @@
 #include <sstream>
 
 #include "core/Application.h"
+#include "core/AudioManager.h"
 #include "core/PlayerDatabase.h"
 #include "games/gravity_brawl/GravityBrawl.h"
 #include "platform/ChatMessage.h"
@@ -33,6 +34,11 @@ Application& Application::instance() {
 PlayerDatabase& Application::playerDatabase() {
     alignas(PlayerDatabase) static unsigned char storage[sizeof(PlayerDatabase)] = {};
     return *reinterpret_cast<PlayerDatabase*>(storage);
+}
+
+AudioManager& Application::audioManager() {
+    static AudioManager mgr;
+    return mgr;
 }
 
 void PlayerDatabase::recordResult(const std::string&, const std::string&, const std::string&, int, bool) {}

@@ -327,10 +327,33 @@ Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic E
 - Bots wählen zufällige Aktionen (Bewegung, Angriff, Spezial)
 - Konfigurierbar per Game-Settings: `bot_fill` (bool), `min_players` (int)
 
+### Sound Effects (SFX)
+- SFX-Dateien werden beim `initialize()` aus `assets/audio/sfx/gravity_brawl/` geladen
+- Unterstützte Formate: `.wav`, `.ogg`, `.mp3` (erste gefundene Extension wird verwendet)
+- Falls eine Datei fehlt, wird der Effekt übersprungen (graceful degradation)
+- Geladen via `AudioManager::loadSfx()`, abgespielt via `AudioManager::playSfx()`
+- Per-Game Settings: `sfx_enabled` (bool, Default: true), `sfx_volume` (float 0–100, Default: 80)
+
+| SFX-Name | Event | Datei |
+|----------|-------|-------|
+| `gb_join` | Spieler tritt bei | `gb_join.wav` |
+| `gb_smash` | Smash-Angriff | `gb_smash.wav` |
+| `gb_supernova` | Supernova-Explosion | `gb_supernova.wav` |
+| `gb_hit` | Planeten-Kollision | `gb_hit.wav` |
+| `gb_death` | Planet eliminiert | `gb_death.wav` |
+| `gb_kill` | Kill-Attribution | `gb_kill.wav` |
+| `gb_bounty` | Bounty-Kill (King) | `gb_bounty.wav` |
+| `gb_cosmic_event` | Cosmic Event Start | `gb_cosmic_event.wav` |
+| `gb_cosmic_end` | Cosmic Event Ende | `gb_cosmic_end.wav` |
+| `gb_countdown` | Countdown startet | `gb_countdown.wav` |
+| `gb_battle_start` | Kampf beginnt | `gb_battle_start.wav` |
+| `gb_game_over` | Spiel vorbei | `gb_game_over.wav` |
+
 ### Per-Game Settings
 - Konfigurierbare Parameter über `configure()` / `getSettings()`
 - Gespeichert unter `game_settings.gravity_brawl` in Config
 - API: `GET/PUT /api/games/gravity_brawl/settings`
+- Enthält u.a. `sfx_enabled`, `sfx_volume` für Soundeffekte
 
 ### Chat-Befehl-Parsing
 Identische Befehle wie ChaosArena (`!join`, `!left`, `!right`, `!jump`, `!attack`, `!special`, `!dash`, `!block` etc.)

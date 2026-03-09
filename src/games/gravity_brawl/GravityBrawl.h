@@ -323,6 +323,13 @@ private:
     // King tracking
     std::string m_currentKingId;
 
+    // ── Sound Effects ───────────────────────────────────────────────────
+    bool  m_sfxEnabled     = true;   ///< Master toggle for game SFX
+    float m_sfxVolume      = 80.0f;  ///< Per-game volume (0–100)
+    void  loadSfx();                 ///< Load all SFX from assets/audio/sfx/gravity_brawl/
+    void  playSfx(const std::string& name, float volumeScale = 1.0f);
+    bool  m_sfxLoaded      = false;  ///< True after first loadSfx() call
+
     // RNG
     std::mt19937 m_rng;
 

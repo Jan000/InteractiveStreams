@@ -31,6 +31,7 @@ set(TEST_SOURCES
 set(TESTED_SOURCES
     ${CMAKE_SOURCE_DIR}/src/core/Config.cpp
     ${CMAKE_SOURCE_DIR}/src/core/Logger.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/AudioManager.cpp
     ${CMAKE_SOURCE_DIR}/src/games/GameRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/games/chaos_arena/PhysicsWorld.cpp
     ${CMAKE_SOURCE_DIR}/src/games/gravity_brawl/GravityBrawl.cpp
@@ -55,6 +56,7 @@ target_link_libraries(InteractiveStreams_Tests PRIVATE
     sfml-window
     sfml-system
     sfml-network
+    sfml-audio
     box2d
     nlohmann_json::nlohmann_json
     httplib::httplib
@@ -68,12 +70,25 @@ target_precompile_headers(InteractiveStreams_Tests PRIVATE
 
 # Copy DLLs for test executable (Windows)
 if(WIN32)
-    foreach(_target sfml-graphics sfml-window sfml-system sfml-network spdlog::spdlog box2d)
+    foreach(_target sfml-graphics sfml-window sfml-system sfml-network sfml-audio spdlog::spdlog box2d)
         add_custom_command(TARGET InteractiveStreams_Tests POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:${_target}> $<TARGET_FILE_DIR:InteractiveStreams_Tests>
         )
     endforeach()
+    # OpenAL DLL (required by SFML Audio)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_OPENAL_ARCH "x64")
+    else()
+        set(_OPENAL_ARCH "x86")
+    endif()
+    set(_OPENAL_DLL "${sfml_SOURCE_DIR}/extlibs/bin/${_OPENAL_ARCH}/openal32.dll")
+    if(EXISTS "${_OPENAL_DLL}")
+        add_custom_command(TARGET InteractiveStreams_Tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_OPENAL_DLL}" $<TARGET_FILE_DIR:InteractiveStreams_Tests>
+        )
+    endif()
 endif()
 
 # Register with CTest
