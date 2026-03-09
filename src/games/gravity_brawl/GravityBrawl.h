@@ -94,6 +94,9 @@ struct Planet {
     // Whether this player is the current king (bounty target)
     bool        isKing         = false;
 
+    /// Returns true if this planet is a bot (AI-controlled filler).
+    bool isBot() const { return userId.rfind("__bot_", 0) == 0; }
+
     void updateTimers(float dt) {
         smashCooldown  = std::max(0.0f, smashCooldown - dt);
         hitFlashTimer  = std::max(0.0f, hitFlashTimer - dt);
@@ -305,6 +308,17 @@ private:
     // Black hole visual
     float  m_blackHolePulse      = 0.0f;
     float  m_blackHoleRotation   = 0.0f;
+
+    // ── Dynamic Camera Zoom ─────────────────────────────────────────────
+    bool   m_cameraZoomEnabled    = true;   // feature toggle
+    float  m_cameraZoom           = 1.0f;   // current zoom (1.0 = default, <1 = zoomed out)
+    float  m_cameraTargetZoom     = 1.0f;   // smoothly interpolated toward this
+    float  m_cameraZoomSpeed      = 2.0f;   // lerp speed (higher = faster tracking)
+    float  m_cameraBufferMeters   = 3.0f;   // buffer beyond outermost player before zoom kicks in
+    float  m_cameraMinZoom        = 0.4f;   // minimum allowed zoom (max zoom-out)
+
+    /// Recompute m_cameraTargetZoom from current player positions.
+    void   updateCameraZoom(float dt);
 
     // King tracking
     std::string m_currentKingId;

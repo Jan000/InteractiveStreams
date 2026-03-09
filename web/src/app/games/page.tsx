@@ -19,11 +19,11 @@ const GAME_FIELDS: Record<string, Array<{
   key: string;
   label: string;
   description: string;
-  type: "int" | "float";
+  type: "int" | "float" | "bool";
   min?: number;
   max?: number;
   step?: number;
-  defaultValue: number;
+  defaultValue: number | boolean;
 }>> = {
   gravity_brawl: [
     { key: "bot_fill", label: "Bot Fill", description: "Fill lobby to N players with bots (0 = disabled)", type: "int", min: 0, defaultValue: 0 },
@@ -44,6 +44,10 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "black_hole_gravity_cap", label: "Black Hole Gravity Cap", description: "Maximum black hole pull applied in a single physics step", type: "float", min: 0, step: 0.5, defaultValue: 30.0 },
     { key: "black_hole_kill_radius_multiplier", label: "Black Hole Kill Radius", description: "Multiplier for the actual kill radius around the black hole", type: "float", min: 0.1, step: 0.05, defaultValue: 1.0 },
     { key: "event_gravity_multiplier", label: "Event Gravity Multiplier", description: "Multiplier applied to black hole pull during cosmic surge events", type: "float", min: 0, step: 0.1, defaultValue: 2.2 },
+    { key: "camera_zoom_enabled", label: "Dynamic Camera Zoom", description: "Smoothly zoom out when players reach the edges of the visible area", type: "bool", defaultValue: true },
+    { key: "camera_zoom_speed", label: "Camera Zoom Speed", description: "How quickly the camera adjusts zoom level (higher = faster)", type: "float", min: 0.1, max: 10, step: 0.1, defaultValue: 2.0 },
+    { key: "camera_buffer_meters", label: "Camera Buffer (m)", description: "Extra buffer space around outermost players before zooming starts", type: "float", min: 0, max: 15, step: 0.5, defaultValue: 3.0 },
+    { key: "camera_min_zoom", label: "Camera Min Zoom", description: "Minimum zoom level (lower = further out the camera can go)", type: "float", min: 0.1, max: 1.0, step: 0.05, defaultValue: 0.4 },
   ],
 };
 
@@ -77,7 +81,7 @@ export default function GamesPage() {
     fetchData();
   }, [fetchData]);
 
-  const updateField = (gameId: string, key: string, value: number) => {
+  const updateField = (gameId: string, key: string, value: number | boolean) => {
     setSettings(prev => ({
       ...prev,
       [gameId]: {
@@ -195,8 +199,24 @@ export default function GamesPage() {
                   <h3 className="text-sm font-medium mb-3">Gameplay</h3>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {fields.map((field) => {
+                      if (field.type === "bool") {
+                        const checked = typeof gameSettings[field.key] === "boolean" ? gameSettings[field.key] as boolean : field.defaultValue as boolean;
+                        return (
+                          <div key={field.key} className="flex items-center justify-between rounded-md border p-3">
+                            <div className="space-y-0.5">
+                              <Label htmlFor={`${game.id}-${field.key}`}>{field.label}</Label>
+                              <p className="text-xs text-muted-foreground">{field.description}</p>
+                            </div>
+                            <Switch
+                              id={`${game.id}-${field.key}`}
+                              checked={checked}
+                              onCheckedChange={(v) => updateField(game.id, field.key, v)}
+                            />
+                          </div>
+                        );
+                      }
                       const value = gameSettings[field.key];
-                      const numValue = typeof value === "number" ? value : field.defaultValue;
+                      const numValue = typeof value === "number" ? value : field.defaultValue as number;
                       return (
                         <div key={field.key} className="space-y-1.5">
                           <Label htmlFor={`${game.id}-${field.key}`}>{field.label}</Label>

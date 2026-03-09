@@ -67,9 +67,10 @@ GravityBrawl::~GravityBrawl() = default;
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 sf::Vector2f GravityBrawl::worldToScreen(float wx, float wy) const {
-    // Center of screen maps to WORLD_CENTER
-    float sx = SCREEN_W / 2.0f + (wx - WORLD_CENTER_X) * PIXELS_PER_METER;
-    float sy = SCREEN_H / 2.0f + (wy - WORLD_CENTER_Y) * PIXELS_PER_METER;
+    // Center of screen maps to WORLD_CENTER, scaled by dynamic camera zoom
+    float ppm = PIXELS_PER_METER * m_cameraZoom;
+    float sx = SCREEN_W / 2.0f + (wx - WORLD_CENTER_X) * ppm;
+    float sy = SCREEN_H / 2.0f + (wy - WORLD_CENTER_Y) * ppm;
     return {sx, sy};
 }
 
@@ -207,6 +208,19 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("event_gravity_multiplier") && settings["event_gravity_multiplier"].is_number()) {
         m_eventGravityMul = std::max(0.0f, settings["event_gravity_multiplier"].get<float>());
     }
+    // Camera zoom settings
+    if (settings.contains("camera_zoom_enabled") && settings["camera_zoom_enabled"].is_boolean()) {
+        m_cameraZoomEnabled = settings["camera_zoom_enabled"].get<bool>();
+    }
+    if (settings.contains("camera_zoom_speed") && settings["camera_zoom_speed"].is_number()) {
+        m_cameraZoomSpeed = std::max(0.1f, settings["camera_zoom_speed"].get<float>());
+    }
+    if (settings.contains("camera_buffer_meters") && settings["camera_buffer_meters"].is_number()) {
+        m_cameraBufferMeters = std::max(0.0f, settings["camera_buffer_meters"].get<float>());
+    }
+    if (settings.contains("camera_min_zoom") && settings["camera_min_zoom"].is_number()) {
+        m_cameraMinZoom = std::clamp(settings["camera_min_zoom"].get<float>(), 0.1f, 1.0f);
+    }
     // Text element overrides
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
@@ -233,6 +247,10 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"black_hole_gravity_cap", m_blackHoleGravityCap},
         {"black_hole_kill_radius_multiplier", m_blackHoleKillRadiusMultiplier},
         {"event_gravity_multiplier", m_eventGravityMul},
+        {"camera_zoom_enabled", m_cameraZoomEnabled},
+        {"camera_zoom_speed", m_cameraZoomSpeed},
+        {"camera_buffer_meters", m_cameraBufferMeters},
+        {"camera_min_zoom", m_cameraMinZoom},
         {"text_elements", textElementsJson()}
     };
 }
@@ -715,6 +733,7 @@ void GravityBrawl::update(double dt) {
     m_blackHolePulse += fdt * 1.5f;
     m_blackHoleRotation += fdt * 0.5f;
     updateParticles(fdt);
+    updateCameraZoom(fdt);
 
     // Update trail emission rate limiter
     m_trailEmitTimer -= fdt;
@@ -1321,6 +1340,45 @@ void GravityBrawl::addFloatingText(const std::string& text, sf::Vector2f pos,
     m_floatingTexts.push_back({text, pos, color, duration, duration});
 }
 
+// ── Dynamic Camera Zoom ──────────────────────────────────────────────────────
+
+void GravityBrawl::updateCameraZoom(float dt) {
+    if (!m_cameraZoomEnabled) {
+        m_cameraZoom = 1.0f;
+        m_cameraTargetZoom = 1.0f;
+        return;
+    }
+
+    // Find the maximum distance from WORLD_CENTER among alive players
+    float maxDist = 0.0f;
+    for (const auto& [_, p] : m_planets) {
+        if (!p.alive || !p.body) continue;
+        b2Vec2 pos = p.body->GetPosition();
+        float dx = pos.x - WORLD_CENTER_X;
+        float dy = pos.y - WORLD_CENTER_Y;
+        float dist = std::sqrt(dx * dx + dy * dy) + p.getVisualRadius();
+        maxDist = std::max(maxDist, dist);
+    }
+
+    // The default view fits SCREEN_H / 2 / PIXELS_PER_METER meters vertically
+    // from center (portrait 9:16).  Horizontal is narrower: SCREEN_W / 2 / PPM.
+    float defaultRadiusV = SCREEN_H / 2.0f / PIXELS_PER_METER;
+    float defaultRadiusH = SCREEN_W / 2.0f / PIXELS_PER_METER;
+    float defaultRadius  = std::min(defaultRadiusV, defaultRadiusH);
+
+    float neededRadius = maxDist + m_cameraBufferMeters;
+
+    if (neededRadius > defaultRadius) {
+        m_cameraTargetZoom = std::max(m_cameraMinZoom, defaultRadius / neededRadius);
+    } else {
+        m_cameraTargetZoom = 1.0f;
+    }
+
+    // Smooth interpolation toward target
+    float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);
+    m_cameraZoom += (m_cameraTargetZoom - m_cameraZoom) * t;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ██ RENDERING ████████████████████████████████████████████████████████████████
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1378,7 +1436,7 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
 
 void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
     sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
-    float baseRadius = BLACK_HOLE_RADIUS * PIXELS_PER_METER;
+    float baseRadius = BLACK_HOLE_RADIUS * PIXELS_PER_METER * m_cameraZoom;
 
     // Pulsing during cosmic event
     float pulseScale = 1.0f;
@@ -1456,7 +1514,7 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
 
 void GravityBrawl::renderOrbitTrails(sf::RenderTarget& target) {
     sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
-    float orbitR = ARENA_RADIUS * m_safeOrbitRadiusFactor * PIXELS_PER_METER;
+    float orbitR = ARENA_RADIUS * m_safeOrbitRadiusFactor * PIXELS_PER_METER * m_cameraZoom;
 
     // Faint orbit circle
     sf::CircleShape orbit(orbitR);
@@ -1501,7 +1559,7 @@ void GravityBrawl::renderPlanets(sf::RenderTarget& target, double alpha) {
 }
 
 void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::Vector2f screenPos) {
-    float pixelRadius = p.getVisualRadius() * PIXELS_PER_METER;
+    float pixelRadius = p.getVisualRadius() * PIXELS_PER_METER * m_cameraZoom;
     sf::Color baseColor = getTierColor(p.tier);
     sf::Color glowColor = getTierGlowColor(p.tier);
 
@@ -1513,14 +1571,14 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     // Supernova shockwave ring
     if (p.supernovaTimer > 0.0f) {
         float progress = 1.0f - p.supernovaTimer / 0.5f;
-        float ringR = pixelRadius + progress * 200.0f;
+        float ringR = pixelRadius + progress * 200.0f * m_cameraZoom;
         sf::CircleShape ring(ringR);
         ring.setOrigin(ringR, ringR);
         ring.setPosition(screenPos);
         sf::Uint8 ringA = static_cast<sf::Uint8>((1.0f - progress) * 200);
         ring.setFillColor(sf::Color::Transparent);
         ring.setOutlineColor(sf::Color(255, 255, 200, ringA));
-        ring.setOutlineThickness(3.0f + (1.0f - progress) * 5.0f);
+        ring.setOutlineThickness((3.0f + (1.0f - progress) * 5.0f) * m_cameraZoom);
         target.draw(ring);
     }
 
@@ -1547,7 +1605,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     body.setFillColor(baseColor);
 
     // Outline based on tier
-    float outlineThickness = 1.5f;
+    float outlineThickness = 1.5f * m_cameraZoom;
     sf::Color outlineColor = baseColor;
     outlineColor.r = std::min(255, outlineColor.r + 40);
     outlineColor.g = std::min(255, outlineColor.g + 40);
@@ -1555,7 +1613,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
 
     if (p.isKing) {
         outlineColor = sf::Color(255, 215, 0);
-        outlineThickness = 3.0f;
+        outlineThickness = 3.0f * m_cameraZoom;
     }
 
     body.setOutlineColor(outlineColor);
@@ -1569,8 +1627,8 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             float y = screenPos.y + i * pixelRadius * 0.3f;
             float halfW = std::sqrt(std::max(0.0f,
                 pixelRadius * pixelRadius - (i * pixelRadius * 0.3f) * (i * pixelRadius * 0.3f)));
-            sf::RectangleShape band(sf::Vector2f(halfW * 1.6f, 2.0f));
-            band.setOrigin(halfW * 0.8f, 1.0f);
+            sf::RectangleShape band(sf::Vector2f(halfW * 1.6f, 2.0f * m_cameraZoom));
+            band.setOrigin(halfW * 0.8f, 1.0f * m_cameraZoom);
             band.setPosition(screenPos.x, y);
             sf::Color bandColor = baseColor;
             bandColor.r = static_cast<sf::Uint8>(std::max(0, bandColor.r - 30));
@@ -1585,13 +1643,14 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         renderCrown(target, screenPos, pixelRadius);
     }
 
-    // Name label (skip for bots — they are nameless spheres)
-    if (m_fontLoaded && !p.displayName.empty()) {
+    // Name & score labels — skip bots so real players stand out
+    if (m_fontLoaded && !p.displayName.empty() && !p.isBot()) {
         auto rName = resolve("player_name", SCREEN_W, SCREEN_H);
         if (rName.visible) {
             sf::Text nameText;
             nameText.setFont(m_font);
             nameText.setString(p.displayName);
+            // Keep text size constant regardless of camera zoom
             nameText.setCharacterSize(rName.fontSize);
             nameText.setFillColor(sf::Color(255, 255, 255, 220));
             nameText.setOutlineColor(sf::Color(0, 0, 0, 180));
