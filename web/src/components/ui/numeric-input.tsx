@@ -62,11 +62,19 @@ export function NumericInput({
     if (integer) return String(Math.round(n));
     if (!Number.isFinite(n)) return "";
 
+    let s: string;
     if (stepDecimals !== undefined) {
-      return n.toFixed(stepDecimals).replace(/\.?0+$/, "");
+      s = n.toFixed(stepDecimals);
+    } else {
+      s = n.toFixed(10);
     }
 
-    return n.toFixed(10).replace(/\.?0+$/, "");
+    // Only strip trailing zeros after a decimal point — never from integers
+    // (the old regex /\.?0+$/ turned "500" → "5" and "0" → "")
+    if (s.includes(".")) {
+      s = s.replace(/0+$/, "").replace(/\.$/, "");
+    }
+    return s;
   }, [integer, stepDecimals]);
 
   const [text, setText] = React.useState(() => format(value));
