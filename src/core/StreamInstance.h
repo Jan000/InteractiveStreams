@@ -2,6 +2,7 @@
 
 #include "core/GameManager.h"
 #include "core/PlayerDatabase.h"
+#include "core/ScoreboardConfig.h"
 #include "core/ChannelStats.h"
 #include "platform/ChatMessage.h"
 
@@ -254,6 +255,9 @@ private:
     std::vector<std::pair<std::string, int>> m_scoreboardRoundCache;
     double m_scoreboardRefreshTimer = 0.0;
     static constexpr double SCOREBOARD_REFRESH_INTERVAL = 5.0; // seconds
+
+    // Cached global scoreboard config (copied from Application every refresh)
+    GlobalScoreboardConfig m_sbConfig;
 
     // Scoreboard panel cycling (animated fade)
     // Panel indices: built dynamically from enabled panels (duration > 0)

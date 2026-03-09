@@ -103,12 +103,51 @@ export interface TextElementData {
 }
 
 export interface ScoreEntry {
+  userId?: string;
   displayName: string;
   gameName: string;
   points: number;
   wins: number;
   gamesPlayed: number;
   timestamp: number;
+}
+
+export interface ScoreboardPanelConfig {
+  enabled: boolean;
+  title: string;
+  duration_secs: number;
+  top_n: number;
+  font_size: number;
+  box_width_pct: number;
+  pos_x_pct: number;
+  pos_y_pct: number;
+  opacity: number;
+  bg_color: string;
+  border_color: string;
+  title_color: string;
+  name_color: string;
+  points_color: string;
+}
+
+export interface ScoreboardConfig {
+  alltime: ScoreboardPanelConfig;
+  recent: ScoreboardPanelConfig;
+  round: ScoreboardPanelConfig;
+  recent_hours: number;
+  fade_secs: number;
+  chat_interval: number;
+  hidden_players: string[];
+}
+
+export interface PlayerEntry {
+  userId: string;
+  displayName: string;
+  totalPoints: number;
+  totalWins: number;
+  gamesPlayed: number;
+  firstSeen: string;
+  lastSeen: string;
+  hidden: boolean;
 }
 
 export interface PerfSample {
@@ -325,6 +364,16 @@ export const api = {
     get<{ leaderboard: ScoreEntry[] }>(`/api/scoreboard/alltime?limit=${limit}`),
   getPlayerStats: (userId: string) =>
     get<ScoreEntry>(`/api/scoreboard/player/${encodeURIComponent(userId)}`),
+  getScoreboardConfig: () =>
+    get<ScoreboardConfig>("/api/scoreboard/config"),
+  updateScoreboardConfig: (data: ScoreboardConfig) =>
+    put<{ success: boolean }>("/api/scoreboard/config", data),
+  getScoreboardPlayers: () =>
+    get<{ players: PlayerEntry[] }>("/api/scoreboard/players"),
+  updatePlayer: (userId: string, data: { total_points: number }) =>
+    put<{ success: boolean }>(`/api/scoreboard/players/${encodeURIComponent(userId)}`, data),
+  deletePlayer: (userId: string) =>
+    del<{ success: boolean }>(`/api/scoreboard/players/${encodeURIComponent(userId)}`),
 
   // Twitch OAuth
   getTwitchAuthUrl: (channelId: string) =>

@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { api, type ScoreEntry } from "@/lib/api";
+import {
+  api,
+  type ScoreEntry,
+  type ScoreboardConfig,
+  type ScoreboardPanelConfig,
+  type PlayerEntry,
+} from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -9,145 +15,689 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trophy, Medal, Clock, Crown, Star, Users } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { NumericInput } from "@/components/ui/numeric-input";
+import {
+  Trophy,
+  Medal,
+  Clock,
+  Crown,
+  Star,
+  Users,
+  Save,
+  Trash2,
+  EyeOff,
+  Eye,
+  Settings2,
+  Palette,
+  LayoutDashboard,
+  Pencil,
+} from "lucide-react";
+import { toast } from "sonner";
 
+// ── Default panel config (must match C++ defaults) ──────────────────────
+const defaultPanel = (title: string, dur = 10): ScoreboardPanelConfig => ({
+  enabled: true,
+  title,
+  duration_secs: dur,
+  top_n: 5,
+  font_size: 20,
+  box_width_pct: 30,
+  pos_x_pct: 70,
+  pos_y_pct: 1,
+  opacity: 0.7,
+  bg_color: "#0A0A14",
+  border_color: "#5082C8",
+  title_color: "#FFD700",
+  name_color: "#AAAABC",
+  points_color: "#58A6FF",
+});
+
+const defaultConfig: ScoreboardConfig = {
+  alltime: defaultPanel("ALL TIME"),
+  recent: defaultPanel("LAST 24H"),
+  round: defaultPanel("CURRENT ROUND", 8),
+  recent_hours: 24,
+  fade_secs: 1.0,
+  chat_interval: 120,
+  hidden_players: [],
+};
+
+// ── Component ───────────────────────────────────────────────────────────
 export default function ScoreboardPage() {
+  // Config state
+  const [config, setConfig] = useState<ScoreboardConfig>(defaultConfig);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Player management state
+  const [players, setPlayers] = useState<PlayerEntry[]>([]);
+  const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
+  const [editPoints, setEditPoints] = useState(0);
+
+  // Live leaderboard
   const [recent, setRecent] = useState<ScoreEntry[]>([]);
   const [allTime, setAllTime] = useState<ScoreEntry[]>([]);
-  const [recentLimit, setRecentLimit] = useState(10);
-  const [recentHours, setRecentHours] = useState(24);
-  const [allTimeLimit, setAllTimeLimit] = useState(5);
 
-  const fetchData = useCallback(async () => {
+  // ── Data fetching ───────────────────────────────────────────────────
+  const fetchConfig = useCallback(async () => {
+    try {
+      const c = await api.getScoreboardConfig();
+      setConfig(c);
+    } catch {
+      /* backend not running */
+    }
+  }, []);
+
+  const fetchPlayers = useCallback(async () => {
+    try {
+      const res = await api.getScoreboardPlayers();
+      setPlayers(res.players ?? []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const fetchLeaderboards = useCallback(async () => {
     try {
       const [r, a] = await Promise.all([
-        api.getScoreboardRecent(recentLimit, recentHours),
-        api.getScoreboardAllTime(allTimeLimit),
+        api.getScoreboardRecent(config.alltime.top_n, config.recent_hours),
+        api.getScoreboardAllTime(config.alltime.top_n),
       ]);
       setRecent(r.leaderboard ?? []);
       setAllTime(a.leaderboard ?? []);
     } catch {
-      /* backend may not be running */
+      /* ignore */
     }
-  }, [recentLimit, recentHours, allTimeLimit]);
+  }, [config.alltime.top_n, config.recent_hours]);
 
   useEffect(() => {
-    fetchData();
-    const iv = setInterval(fetchData, 5000);
-    return () => clearInterval(iv);
-  }, [fetchData]);
+    fetchConfig();
+    fetchPlayers();
+  }, [fetchConfig, fetchPlayers]);
 
+  useEffect(() => {
+    fetchLeaderboards();
+    const iv = setInterval(fetchLeaderboards, 5000);
+    return () => clearInterval(iv);
+  }, [fetchLeaderboards]);
+
+  // ── Config mutation helpers ─────────────────────────────────────────
+  const updatePanel = (
+    panel: "alltime" | "recent" | "round",
+    field: keyof ScoreboardPanelConfig,
+    value: unknown
+  ) => {
+    setConfig((prev) => ({
+      ...prev,
+      [panel]: { ...prev[panel], [field]: value },
+    }));
+    setDirty(true);
+  };
+
+  const updateGlobal = (field: string, value: unknown) => {
+    setConfig((prev) => ({ ...prev, [field]: value }));
+    setDirty(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.updateScoreboardConfig(config);
+      toast.success("Scoreboard config saved");
+      setDirty(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Player management ───────────────────────────────────────────────
+  const toggleHidden = (userId: string) => {
+    setConfig((prev) => {
+      const hidden = new Set(prev.hidden_players);
+      if (hidden.has(userId)) hidden.delete(userId);
+      else hidden.add(userId);
+      return { ...prev, hidden_players: [...hidden] };
+    });
+    setDirty(true);
+  };
+
+  const handleEditPoints = async (userId: string) => {
+    try {
+      await api.updatePlayer(userId, { total_points: editPoints });
+      toast.success("Points updated");
+      setEditingPlayer(null);
+      fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleDeletePlayer = async (userId: string) => {
+    try {
+      await api.deletePlayer(userId);
+      toast.success("Player deleted");
+      // Also remove from hidden list if present
+      setConfig((prev) => ({
+        ...prev,
+        hidden_players: prev.hidden_players.filter((id) => id !== userId),
+      }));
+      fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  // ── Panel settings sub-component ────────────────────────────────────
+  const PanelSettings = ({
+    panel,
+    label,
+    icon,
+  }: {
+    panel: "alltime" | "recent" | "round";
+    label: string;
+    icon: React.ReactNode;
+  }) => {
+    const p = config[panel];
+    return (
+      <div className="space-y-4">
+        {/* Enable + Title row */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {icon}
+            <span className="text-sm font-medium">{label}</span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <Label className="text-xs text-muted-foreground">Enabled</Label>
+            <Switch
+              size="sm"
+              checked={p.enabled}
+              onCheckedChange={(v) => updatePanel(panel, "enabled", v)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Title</Label>
+            <Input
+              className="h-8 text-sm"
+              value={p.title}
+              onChange={(e) => updatePanel(panel, "title", e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Duration (seconds)
+            </Label>
+            <NumericInput
+              className="h-8 text-sm"
+              min={1}
+              max={120}
+              value={p.duration_secs}
+              onChange={(v) => updatePanel(panel, "duration_secs", v)}
+            />
+          </div>
+        </div>
+
+        {/* Display settings */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Entries (Top N)
+            </Label>
+            <NumericInput
+              className="h-8 text-sm"
+              integer
+              min={1}
+              max={20}
+              value={p.top_n}
+              onChange={(v) => updatePanel(panel, "top_n", v)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Font Size</Label>
+            <NumericInput
+              className="h-8 text-sm"
+              integer
+              min={8}
+              max={48}
+              value={p.font_size}
+              onChange={(v) => updatePanel(panel, "font_size", v)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Box Width (%)
+            </Label>
+            <NumericInput
+              className="h-8 text-sm"
+              min={10}
+              max={80}
+              value={p.box_width_pct}
+              onChange={(v) => updatePanel(panel, "box_width_pct", v)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Position X (%)
+            </Label>
+            <NumericInput
+              className="h-8 text-sm"
+              min={0}
+              max={100}
+              value={p.pos_x_pct}
+              onChange={(v) => updatePanel(panel, "pos_x_pct", v)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Position Y (%)
+            </Label>
+            <NumericInput
+              className="h-8 text-sm"
+              min={0}
+              max={100}
+              value={p.pos_y_pct}
+              onChange={(v) => updatePanel(panel, "pos_y_pct", v)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Opacity</Label>
+            <NumericInput
+              className="h-8 text-sm"
+              min={0}
+              max={1}
+              step={0.05}
+              value={p.opacity}
+              onChange={(v) => updatePanel(panel, "opacity", v)}
+            />
+          </div>
+        </div>
+
+        {/* Colors */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Palette className="size-3.5 text-muted-foreground" />
+            <Label className="text-xs font-medium">Colors</Label>
+          </div>
+          <div className="grid grid-cols-5 gap-3">
+            {(
+              [
+                ["bg_color", "Background"],
+                ["border_color", "Border"],
+                ["title_color", "Title"],
+                ["name_color", "Name"],
+                ["points_color", "Points"],
+              ] as const
+            ).map(([field, label]) => (
+              <div key={field} className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">
+                  {label}
+                </Label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="color"
+                    value={p[field]}
+                    onChange={(e) =>
+                      updatePanel(panel, field, e.target.value)
+                    }
+                    className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                  />
+                  <Input
+                    className="h-7 text-[10px] font-mono flex-1"
+                    value={p[field]}
+                    onChange={(e) =>
+                      updatePanel(panel, field, e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Rank icon helper ────────────────────────────────────────────────
   const rankIcon = (i: number) => {
     if (i === 0) return <Crown className="size-4 text-yellow-400" />;
     if (i === 1) return <Medal className="size-4 text-gray-300" />;
     if (i === 2) return <Medal className="size-4 text-amber-600" />;
-    return <span className="text-xs text-muted-foreground w-4 text-center">{i + 1}</span>;
+    return (
+      <span className="text-xs text-muted-foreground w-4 text-center">
+        {i + 1}
+      </span>
+    );
   };
 
+  // ── Render ──────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center gap-3">
-        <Trophy className="size-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold">Scoreboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Player rankings across all games
-          </p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Trophy className="size-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold">Scoreboard</h1>
+            <p className="text-sm text-muted-foreground">
+              Overlay configuration &amp; player management
+            </p>
+          </div>
         </div>
+        <Button onClick={handleSave} disabled={!dirty || saving} size="sm">
+          <Save className="size-4 mr-1" />
+          {saving ? "Saving…" : "Save"}
+        </Button>
       </div>
 
-      {/* Settings row */}
+      {/* Global Settings */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">Display Settings</CardTitle>
+          <div className="flex items-center gap-2">
+            <Settings2 className="size-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Global Settings
+            </CardTitle>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1">
-              <Label className="text-xs">Recent: Top N</Label>
-              <Input
-                type="number"
-                min={1}
-                max={50}
-                value={recentLimit}
-                onChange={(e) => setRecentLimit(Number(e.target.value) || 10)}
-                className="w-20 h-8 text-sm"
+              <Label className="text-xs text-muted-foreground">
+                Crossfade Duration (s)
+              </Label>
+              <NumericInput
+                className="h-8 text-sm"
+                min={0}
+                max={10}
+                step={0.1}
+                value={config.fade_secs}
+                onChange={(v) => updateGlobal("fade_secs", v)}
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Recent: Hours</Label>
-              <Input
-                type="number"
-                min={1}
-                max={168}
-                value={recentHours}
-                onChange={(e) => setRecentHours(Number(e.target.value) || 24)}
-                className="w-20 h-8 text-sm"
+              <Label className="text-xs text-muted-foreground">
+                Chat Post Interval (s)
+              </Label>
+              <NumericInput
+                className="h-8 text-sm"
+                integer
+                min={0}
+                max={3600}
+                value={config.chat_interval}
+                onChange={(v) => updateGlobal("chat_interval", v)}
               />
+              <p className="text-[10px] text-muted-foreground">
+                0 = disabled
+              </p>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">All-Time: Top N</Label>
-              <Input
-                type="number"
+              <Label className="text-xs text-muted-foreground">
+                Recent Hours
+              </Label>
+              <NumericInput
+                className="h-8 text-sm"
+                integer
                 min={1}
-                max={50}
-                value={allTimeLimit}
-                onChange={(e) => setAllTimeLimit(Number(e.target.value) || 5)}
-                className="w-20 h-8 text-sm"
+                max={720}
+                value={config.recent_hours}
+                onChange={(v) => updateGlobal("recent_hours", v)}
               />
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* Panel Config Tabs */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <LayoutDashboard className="size-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Panel Configuration
+            </CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Configure each scoreboard panel type independently
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="alltime">
+            <TabsList className="mb-4">
+              <TabsTrigger value="alltime">
+                <Trophy className="size-3.5 mr-1" />
+                All-Time
+              </TabsTrigger>
+              <TabsTrigger value="recent">
+                <Clock className="size-3.5 mr-1" />
+                Recent
+              </TabsTrigger>
+              <TabsTrigger value="round">
+                <Star className="size-3.5 mr-1" />
+                Current Round
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="alltime">
+              <PanelSettings
+                panel="alltime"
+                label="All-Time Leaderboard"
+                icon={<Trophy className="size-4 text-yellow-400" />}
+              />
+            </TabsContent>
+            <TabsContent value="recent">
+              <PanelSettings
+                panel="recent"
+                label="Recent Leaderboard"
+                icon={<Clock className="size-4 text-blue-400" />}
+              />
+            </TabsContent>
+            <TabsContent value="round">
+              <PanelSettings
+                panel="round"
+                label="Current Round"
+                icon={<Star className="size-4 text-emerald-400" />}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Player Management */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Users className="size-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Player Management
+            </CardTitle>
+            <Badge variant="secondary" className="text-xs ml-auto">
+              {players.length} players
+            </Badge>
+          </div>
+          <CardDescription className="text-xs">
+            Hide, edit scores, or delete players. Hidden players are excluded
+            from all scoreboards.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {players.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+              <Users className="size-8" />
+              <p className="text-sm">No players yet</p>
+            </div>
+          ) : (
+            <div className="space-y-1 max-h-[400px] overflow-y-auto">
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_100px_80px_80px_100px] gap-2 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                <span>Player</span>
+                <span className="text-right">Points</span>
+                <span className="text-right">Wins</span>
+                <span className="text-right">Games</span>
+                <span className="text-right">Actions</span>
+              </div>
+              <Separator />
+              {players.map((player) => {
+                const isHidden = config.hidden_players.includes(player.userId);
+                const isEditing = editingPlayer === player.userId;
+                return (
+                  <div
+                    key={player.userId}
+                    className={`grid grid-cols-[1fr_100px_80px_80px_100px] gap-2 items-center px-3 py-1.5 rounded-md ${
+                      isHidden
+                        ? "bg-muted/30 opacity-60"
+                        : "bg-muted/50 hover:bg-muted/70"
+                    }`}
+                  >
+                    {/* Name */}
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium truncate block">
+                        {player.displayName}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground truncate block">
+                        {player.userId}
+                      </span>
+                    </div>
+
+                    {/* Points */}
+                    <div className="text-right">
+                      {isEditing ? (
+                        <div className="flex items-center gap-1 justify-end">
+                          <Input
+                            type="number"
+                            className="h-6 w-16 text-xs text-right"
+                            value={editPoints}
+                            onChange={(e) =>
+                              setEditPoints(Number(e.target.value))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter")
+                                handleEditPoints(player.userId);
+                              if (e.key === "Escape") setEditingPlayer(null);
+                            }}
+                            autoFocus
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-6"
+                            onClick={() => handleEditPoints(player.userId)}
+                          >
+                            <Save className="size-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span
+                          className="text-sm font-mono cursor-pointer hover:text-primary"
+                          onClick={() => {
+                            setEditingPlayer(player.userId);
+                            setEditPoints(player.totalPoints);
+                          }}
+                          title="Click to edit"
+                        >
+                          {player.totalPoints}
+                          <Pencil className="size-2.5 inline ml-1 opacity-40" />
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Wins */}
+                    <span className="text-sm text-right font-mono">
+                      {player.totalWins}
+                    </span>
+
+                    {/* Games */}
+                    <span className="text-sm text-right font-mono">
+                      {player.gamesPlayed}
+                    </span>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 justify-end">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7"
+                        onClick={() => toggleHidden(player.userId)}
+                        title={isHidden ? "Show player" : "Hide player"}
+                      >
+                        {isHidden ? (
+                          <Eye className="size-3.5" />
+                        ) : (
+                          <EyeOff className="size-3.5" />
+                        )}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-destructive hover:text-destructive"
+                        onClick={() => handleDeletePlayer(player.userId)}
+                        title="Delete player"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Live Leaderboards Preview */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Recent leaderboard */}
+        {/* Recent */}
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Clock className="size-4 text-blue-400" />
-              <CardTitle>Recent (Last {recentHours}h)</CardTitle>
+              <CardTitle className="text-sm">
+                {config.recent.title} (Last {config.recent_hours}h)
+              </CardTitle>
             </div>
-            <CardDescription>Top {recentLimit} players by points</CardDescription>
+            <CardDescription className="text-xs">
+              Live preview
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {recent.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                <Users className="size-8" />
-                <p className="text-sm">No players yet</p>
-              </div>
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No players yet
+              </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {recent.map((entry, i) => (
                   <div
                     key={`${entry.displayName}-${i}`}
-                    className="flex items-center gap-3 rounded-md bg-muted/50 px-3 py-2"
+                    className="flex items-center gap-3 rounded-md bg-muted/50 px-3 py-1.5"
                   >
                     <div className="flex items-center justify-center w-6">
                       {rankIcon(i)}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {entry.displayName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {entry.gameName} &middot; {entry.gamesPlayed} games
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {entry.wins > 0 && (
-                        <Badge variant="secondary" className="text-xs gap-1">
-                          <Star className="size-3" />
-                          {entry.wins}W
-                        </Badge>
-                      )}
-                      <Badge className="text-xs font-bold">
-                        {entry.points} pts
+                    <span className="text-sm flex-1 truncate">
+                      {entry.displayName}
+                    </span>
+                    {entry.wins > 0 && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        <Star className="size-3" />
+                        {entry.wins}W
                       </Badge>
-                    </div>
+                    )}
+                    <Badge className="text-xs font-bold">
+                      {entry.points} pts
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -155,39 +705,41 @@ export default function ScoreboardPage() {
           </CardContent>
         </Card>
 
-        {/* All-time leaderboard */}
+        {/* All-Time */}
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Trophy className="size-4 text-yellow-400" />
-              <CardTitle>All-Time</CardTitle>
+              <CardTitle className="text-sm">{config.alltime.title}</CardTitle>
             </div>
-            <CardDescription>Top {allTimeLimit} players overall</CardDescription>
+            <CardDescription className="text-xs">
+              Live preview
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {allTime.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                <Users className="size-8" />
-                <p className="text-sm">No players yet</p>
-              </div>
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No players yet
+              </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {allTime.map((entry, i) => (
                   <div
                     key={`${entry.displayName}-${i}`}
-                    className="flex items-center gap-3 rounded-md bg-muted/50 px-3 py-2"
+                    className="flex items-center gap-3 rounded-md bg-muted/50 px-3 py-1.5"
                   >
                     <div className="flex items-center justify-center w-6">
                       {rankIcon(i)}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {entry.displayName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {entry.gamesPlayed} games &middot; {entry.wins} wins
-                      </p>
-                    </div>
+                    <span className="text-sm flex-1 truncate">
+                      {entry.displayName}
+                    </span>
+                    {entry.wins > 0 && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        <Star className="size-3" />
+                        {entry.wins}W
+                      </Badge>
+                    )}
                     <Badge className="text-xs font-bold">
                       {entry.points} pts
                     </Badge>

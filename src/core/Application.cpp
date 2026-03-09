@@ -122,6 +122,15 @@ void Application::initialize() {
     m_impl->playerDatabase = std::make_unique<PlayerDatabase>();
     m_impl->playerDatabase->open("data/players.db");
 
+    // ── Global scoreboard config ─────────────────────────────────────────
+    {
+        auto sbJson = m_impl->settingsDb->load("scoreboard");
+        if (sbJson.is_object()) {
+            m_scoreboardConfig = GlobalScoreboardConfig::fromJson(sbJson);
+        }
+        // else: uses defaults set by constructor
+    }
+
     // ── Performance monitor ──────────────────────────────────────────────
     m_impl->perfMonitor = std::make_unique<PerfMonitor>();
 
@@ -420,6 +429,22 @@ void Application::persistStreams() {
 void Application::persistProfiles() {
     if (m_impl->settingsDb && m_impl->profileManager)
         m_impl->settingsDb->save("profiles", m_impl->profileManager->toJson());
+}
+
+const GlobalScoreboardConfig& Application::scoreboardConfig() const {
+    return m_scoreboardConfig;
+}
+
+void Application::setScoreboardConfig(const GlobalScoreboardConfig& cfg) {
+    std::lock_guard<std::mutex> lock(m_scoreboardMutex);
+    m_scoreboardConfig = cfg;
+}
+
+void Application::persistScoreboardConfig() {
+    if (m_impl->settingsDb) {
+        std::lock_guard<std::mutex> lock(m_scoreboardMutex);
+        m_impl->settingsDb->save("scoreboard", m_scoreboardConfig.toJson());
+    }
 }
 
 void Application::persistGlobalConfig() {

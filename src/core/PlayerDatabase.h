@@ -11,6 +11,7 @@ namespace is::core {
 
 /// A single scoreboard entry (used for API responses).
 struct ScoreEntry {
+    std::string userId;
     std::string displayName;
     std::string gameName;
     int points = 0;
@@ -60,6 +61,27 @@ public:
 
     /// Get full stats for a single player.
     nlohmann::json getPlayerStats(const std::string& userId) const;
+
+    // ── Leaderboard queries (with exclusion) ────────────────────────────
+
+    /// Get top N recent excluding certain user IDs.
+    std::vector<ScoreEntry> getTopRecentFiltered(int limit, int hours,
+        const std::vector<std::string>& excludeIds) const;
+
+    /// Get top N all-time excluding certain user IDs.
+    std::vector<ScoreEntry> getTopAllTimeFiltered(int limit,
+        const std::vector<std::string>& excludeIds) const;
+
+    // ── Player management ────────────────────────────────────────────────
+
+    /// Get all players (for admin management page).
+    nlohmann::json getAllPlayers() const;
+
+    /// Update a player's total points.
+    bool updatePlayerPoints(const std::string& userId, int newPoints);
+
+    /// Delete a player record entirely.
+    bool deletePlayer(const std::string& userId);
 
     // ── JSON serialisation ───────────────────────────────────────────────
 

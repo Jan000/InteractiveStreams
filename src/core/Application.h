@@ -1,7 +1,9 @@
 #pragma once
 
+#include "core/ScoreboardConfig.h"
 #include <string>
 #include <memory>
+#include <mutex>
 
 namespace is::core {
 
@@ -67,6 +69,11 @@ public:
     /// Persist global config to SQLite (call after settings change).
     void persistGlobalConfig();
 
+    /// Global scoreboard configuration (shared by all streams).
+    const GlobalScoreboardConfig& scoreboardConfig() const;
+    void setScoreboardConfig(const GlobalScoreboardConfig& cfg);
+    void persistScoreboardConfig();
+
     /// Tell shutdown() to skip persistStreams() because an import has already
     /// written new stream data to SQLite that is not yet in memory.
     void setSkipStreamPersistOnShutdown(bool skip);
@@ -80,6 +87,9 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+
+    GlobalScoreboardConfig m_scoreboardConfig;
+    mutable std::mutex     m_scoreboardMutex;
 
     static Application* s_instance;
 };

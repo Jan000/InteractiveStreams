@@ -145,7 +145,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopRecent(int limit, int hours) const
         std::chrono::system_clock::now().time_since_epoch()).count() - (hours * 3600.0);
 
     const char* sql = R"(
-        SELECT display_name,
+        SELECT user_id, display_name,
                SUM(points) as total_pts,
                SUM(is_win) as wins,
                COUNT(*) as games,
@@ -164,11 +164,12 @@ std::vector<ScoreEntry> PlayerDatabase::getTopRecent(int limit, int hours) const
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         ScoreEntry e;
-        e.displayName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        e.points = sqlite3_column_int(stmt, 1);
-        e.wins = sqlite3_column_int(stmt, 2);
-        e.gamesPlayed = sqlite3_column_int(stmt, 3);
-        e.timestamp = sqlite3_column_double(stmt, 4);
+        e.userId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.displayName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        e.points = sqlite3_column_int(stmt, 2);
+        e.wins = sqlite3_column_int(stmt, 3);
+        e.gamesPlayed = sqlite3_column_int(stmt, 4);
+        e.timestamp = sqlite3_column_double(stmt, 5);
         results.push_back(std::move(e));
     }
     sqlite3_finalize(stmt);
@@ -182,7 +183,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopAllTime(int limit) const {
     if (!m_db) return results;
 
     const char* sql = R"(
-        SELECT display_name, total_points, total_wins, games_played, updated_at
+        SELECT user_id, display_name, total_points, total_wins, games_played, updated_at
         FROM players
         ORDER BY total_points DESC, total_wins DESC
         LIMIT ?;
@@ -194,11 +195,12 @@ std::vector<ScoreEntry> PlayerDatabase::getTopAllTime(int limit) const {
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         ScoreEntry e;
-        e.displayName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        e.points = sqlite3_column_int(stmt, 1);
-        e.wins = sqlite3_column_int(stmt, 2);
-        e.gamesPlayed = sqlite3_column_int(stmt, 3);
-        e.timestamp = sqlite3_column_double(stmt, 4);
+        e.userId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.displayName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        e.points = sqlite3_column_int(stmt, 2);
+        e.wins = sqlite3_column_int(stmt, 3);
+        e.gamesPlayed = sqlite3_column_int(stmt, 4);
+        e.timestamp = sqlite3_column_double(stmt, 5);
         results.push_back(std::move(e));
     }
     sqlite3_finalize(stmt);
@@ -237,6 +239,7 @@ nlohmann::json PlayerDatabase::recentToJson(int limit, int hours) const {
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& e : entries) {
         arr.push_back({
+            {"userId", e.userId},
             {"displayName", e.displayName},
             {"points", e.points},
             {"wins", e.wins},
@@ -252,6 +255,7 @@ nlohmann::json PlayerDatabase::allTimeToJson(int limit) const {
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& e : entries) {
         arr.push_back({
+            {"userId", e.userId},
             {"displayName", e.displayName},
             {"points", e.points},
             {"wins", e.wins},
@@ -260,6 +264,152 @@ nlohmann::json PlayerDatabase::allTimeToJson(int limit) const {
         });
     }
     return arr;
+}
+
+// ── Filtered queries (exclude hidden players) ────────────────────────────────
+
+std::vector<ScoreEntry> PlayerDatabase::getTopRecentFiltered(
+        int limit, int hours,
+        const std::vector<std::string>& excludeIds) const {
+    if (excludeIds.empty()) return getTopRecent(limit, hours);
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<ScoreEntry> results;
+    if (!m_db) return results;
+
+    double cutoff = std::chrono::duration<double>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - (hours * 3600.0);
+
+    // Build SQL with placeholders for exclusions
+    std::string sql = "SELECT user_id, display_name, SUM(points) as total_pts, "
+                      "SUM(is_win) as wins, COUNT(*) as games, MAX(timestamp) as last_played "
+                      "FROM game_results WHERE timestamp >= ? AND user_id NOT IN (";
+    for (size_t i = 0; i < excludeIds.size(); ++i) {
+        sql += (i > 0) ? ",?" : "?";
+    }
+    sql += ") GROUP BY user_id ORDER BY total_pts DESC, wins DESC LIMIT ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
+    sqlite3_bind_double(stmt, 1, cutoff);
+    int idx = 2;
+    for (const auto& id : excludeIds)
+        sqlite3_bind_text(stmt, idx++, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, idx, limit);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        ScoreEntry e;
+        e.userId      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.displayName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        e.points      = sqlite3_column_int(stmt, 2);
+        e.wins        = sqlite3_column_int(stmt, 3);
+        e.gamesPlayed = sqlite3_column_int(stmt, 4);
+        e.timestamp   = sqlite3_column_double(stmt, 5);
+        results.push_back(std::move(e));
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+std::vector<ScoreEntry> PlayerDatabase::getTopAllTimeFiltered(
+        int limit,
+        const std::vector<std::string>& excludeIds) const {
+    if (excludeIds.empty()) return getTopAllTime(limit);
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<ScoreEntry> results;
+    if (!m_db) return results;
+
+    std::string sql = "SELECT user_id, display_name, total_points, total_wins, "
+                      "games_played, updated_at FROM players WHERE user_id NOT IN (";
+    for (size_t i = 0; i < excludeIds.size(); ++i) {
+        sql += (i > 0) ? ",?" : "?";
+    }
+    sql += ") ORDER BY total_points DESC, total_wins DESC LIMIT ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
+    int idx = 1;
+    for (const auto& id : excludeIds)
+        sqlite3_bind_text(stmt, idx++, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, idx, limit);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        ScoreEntry e;
+        e.userId      = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.displayName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        e.points      = sqlite3_column_int(stmt, 2);
+        e.wins        = sqlite3_column_int(stmt, 3);
+        e.gamesPlayed = sqlite3_column_int(stmt, 4);
+        e.timestamp   = sqlite3_column_double(stmt, 5);
+        results.push_back(std::move(e));
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+// ── Player management ────────────────────────────────────────────────────────
+
+nlohmann::json PlayerDatabase::getAllPlayers() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    nlohmann::json arr = nlohmann::json::array();
+    if (!m_db) return arr;
+
+    const char* sql = R"(
+        SELECT user_id, display_name, total_points, total_wins, games_played, updated_at
+        FROM players ORDER BY total_points DESC;
+    )";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        arr.push_back({
+            {"userId",      reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))},
+            {"displayName", reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))},
+            {"points",      sqlite3_column_int(stmt, 2)},
+            {"wins",        sqlite3_column_int(stmt, 3)},
+            {"gamesPlayed", sqlite3_column_int(stmt, 4)},
+            {"lastPlayed",  sqlite3_column_double(stmt, 5)}
+        });
+    }
+    sqlite3_finalize(stmt);
+    return arr;
+}
+
+bool PlayerDatabase::updatePlayerPoints(const std::string& userId, int newPoints) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return false;
+
+    const char* sql = "UPDATE players SET total_points = ? WHERE user_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, newPoints);
+    sqlite3_bind_text(stmt, 2, userId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    int changes = sqlite3_changes(m_db);
+    sqlite3_finalize(stmt);
+    return changes > 0;
+}
+
+bool PlayerDatabase::deletePlayer(const std::string& userId) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return false;
+
+    // Delete game results first (FK constraint)
+    const char* delResults = "DELETE FROM game_results WHERE user_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, delResults, -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, userId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    const char* delPlayer = "DELETE FROM players WHERE user_id = ?;";
+    sqlite3_prepare_v2(m_db, delPlayer, -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, userId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    int changes = sqlite3_changes(m_db);
+    sqlite3_finalize(stmt);
+    return changes > 0;
 }
 
 } // namespace is::core

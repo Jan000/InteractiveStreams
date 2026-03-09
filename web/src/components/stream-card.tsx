@@ -133,11 +133,7 @@ export function StreamCard({
   const [gameYoutubeTitles, setGameYoutubeTitles] = useState<Record<string, string>>(
     stream.gameYoutubeTitles ?? {}
   );
-  // Scoreboard settings
-  const [scoreboardTopN, setScoreboardTopN] = useState(stream.scoreboardTopN ?? 5);
-  const [scoreboardAllTimeTitle, setScoreboardAllTimeTitle] = useState(stream.scoreboardAllTimeTitle ?? "ALL TIME");
-  const [scoreboardRecentTitle, setScoreboardRecentTitle] = useState(stream.scoreboardRecentTitle ?? "LAST 24H");
-  const [scoreboardRecentHours, setScoreboardRecentHours] = useState(stream.scoreboardRecentHours ?? 24);
+
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -175,9 +171,7 @@ export function StreamCard({
       profile: encoderProfile, tune, keyframe_interval: keyframeInterval,
       threads, cbr, maxrate_factor: maxrateFactor, bufsize_factor: bufsizeFactor,
       audio_bitrate: audioBitrate, audio_sample_rate: audioSampleRate, audio_codec: audioCodec,
-      scoreboard_top_n: scoreboardTopN,
-      scoreboard_alltime_title: scoreboardAllTimeTitle, scoreboard_recent_title: scoreboardRecentTitle,
-      scoreboard_recent_hours: scoreboardRecentHours,
+
       game_descriptions: gameDescriptions, game_info_messages: gameInfoMessages,
       game_info_intervals: gameInfoIntervals,
       game_player_limits: gamePlayerLimits, game_twitch_categories: gameTwitchCategories,
@@ -269,10 +263,7 @@ export function StreamCard({
       setGameTwitchCategories(stream.gameTwitchCategories ?? {});
       setGameTwitchTitles(stream.gameTwitchTitles ?? {});
       setGameYoutubeTitles(stream.gameYoutubeTitles ?? {});
-      setScoreboardTopN(stream.scoreboardTopN ?? 5);
-      setScoreboardAllTimeTitle(stream.scoreboardAllTimeTitle ?? "ALL TIME");
-      setScoreboardRecentTitle(stream.scoreboardRecentTitle ?? "LAST 24H");
-      setScoreboardRecentHours(stream.scoreboardRecentHours ?? 24);
+
       setProfileId(stream.profileId ?? "");
     }
   }, [stream, dirty]);
@@ -319,10 +310,6 @@ export function StreamCard({
         game_twitch_categories: Object.keys(gameTwitchCategories).length > 0 ? gameTwitchCategories : undefined,
         game_twitch_titles: Object.keys(gameTwitchTitles).length > 0 ? gameTwitchTitles : undefined,
         game_youtube_titles: Object.keys(gameYoutubeTitles).length > 0 ? gameYoutubeTitles : undefined,
-        scoreboard_top_n: scoreboardTopN,
-        scoreboard_alltime_title: scoreboardAllTimeTitle,
-        scoreboard_recent_title: scoreboardRecentTitle,
-        scoreboard_recent_hours: scoreboardRecentHours,
         profile_id: profileId || undefined,
       });
       toast.success("Stream updated");
@@ -856,57 +843,6 @@ export function StreamCard({
                 </div>
               ))}
             </div>
-
-            {/* Scoreboard & Overlay Settings */}
-            <div className="space-y-2 rounded-md border p-3">
-              <Label className="text-xs font-semibold">Scoreboard &amp; Overlay <ProfileBadge field="scoreboard_top_n" /></Label>
-              <p className="text-[10px] text-muted-foreground">
-                Configure the dual scoreboard overlay and vote overlay font scale.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">All-Time Title</Label>
-                  <Input
-                    className="h-7 text-xs"
-                    value={scoreboardAllTimeTitle}
-                    onChange={(e) => set(setScoreboardAllTimeTitle)(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">Recent Title</Label>
-                  <Input
-                    className="h-7 text-xs"
-                    value={scoreboardRecentTitle}
-                    onChange={(e) => set(setScoreboardRecentTitle)(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">Entries per panel</Label>
-                  <NumericInput
-                    className="h-7 text-xs"
-                    integer
-                    min={1}
-                    max={20}
-                    value={scoreboardTopN}
-                    onChange={set(setScoreboardTopN)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] text-muted-foreground">Recent Hours</Label>
-                  <NumericInput
-                    className="h-7 text-xs"
-                    integer
-                    min={1}
-                    max={720}
-                    value={scoreboardRecentHours}
-                    onChange={set(setScoreboardRecentHours)}
-                  />
-                </div>
-              </div>
-            </div>
-
 
             {/* Encoding Settings */}
             <div className="space-y-3 rounded-md border p-3">

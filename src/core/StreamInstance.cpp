@@ -124,9 +124,9 @@ void StreamInstance::update(double dt) {
     }
 
     // Periodic scoreboard chat posting
-    if (m_config.scoreboardChatInterval > 0) {
+    if (m_sbConfig.chatInterval > 0) {
         m_scoreboardChatTimer += dt;
-        if (m_scoreboardChatTimer >= static_cast<double>(m_config.scoreboardChatInterval)) {
+        if (m_scoreboardChatTimer >= static_cast<double>(m_sbConfig.chatInterval)) {
             m_scoreboardChatTimer = 0.0;
             sendScoreboardToChat();
         }
@@ -542,19 +542,26 @@ void StreamInstance::renderVoteOverlay() {
 // ── Global scoreboard overlay ────────────────────────────────────────────────
 
 void StreamInstance::updateScoreboardCache() {
+    // Re-read global scoreboard config from Application
+    m_sbConfig = Application::instance().scoreboardConfig();
+
     auto& db = Application::instance().playerDatabase();
-    m_scoreboardCache       = db.getTopAllTime(m_config.scoreboardTopN);
-    m_scoreboardRecentCache = db.getTopRecent(m_config.scoreboardTopN,
-                                              m_config.scoreboardRecentHours);
+    const auto& hidden = m_sbConfig.hiddenPlayers;
+    m_scoreboardCache       = db.getTopAllTimeFiltered(m_sbConfig.alltime.topN, hidden);
+    m_scoreboardRecentCache = db.getTopRecentFiltered(m_sbConfig.recent.topN,
+                                                       m_sbConfig.recentHours, hidden);
 }
 
 void StreamInstance::rebuildScoreboardPanels() {
     m_scoreboardPanels.clear();
-    if (m_config.scoreboardAllTimeSecs > 0.0 && !m_scoreboardCache.empty())
+    if (m_sbConfig.alltime.enabled && m_sbConfig.alltime.durationSecs > 0.0
+        && !m_scoreboardCache.empty())
         m_scoreboardPanels.push_back(ScoreboardPanel::AllTime);
-    if (m_config.scoreboardRecentSecs > 0.0 && !m_scoreboardRecentCache.empty())
+    if (m_sbConfig.recent.enabled && m_sbConfig.recent.durationSecs > 0.0
+        && !m_scoreboardRecentCache.empty())
         m_scoreboardPanels.push_back(ScoreboardPanel::Recent);
-    if (m_config.scoreboardRoundSecs > 0.0 && !m_scoreboardRoundCache.empty())
+    if (m_sbConfig.round.enabled && m_sbConfig.round.durationSecs > 0.0
+        && !m_scoreboardRoundCache.empty())
         m_scoreboardPanels.push_back(ScoreboardPanel::Round);
 
     // Clamp panel index
@@ -566,15 +573,27 @@ void StreamInstance::rebuildScoreboardPanels() {
 }
 
 double StreamInstance::currentPanelDuration() const {
-    if (m_scoreboardPanels.empty()) return m_config.scoreboardCycleSecs;
+    if (m_scoreboardPanels.empty()) return m_sbConfig.alltime.durationSecs;
     auto panel = m_scoreboardPanels[static_cast<size_t>(
         m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
     switch (panel) {
-    case ScoreboardPanel::AllTime: return m_config.scoreboardAllTimeSecs;
-    case ScoreboardPanel::Recent:  return m_config.scoreboardRecentSecs;
-    case ScoreboardPanel::Round:   return m_config.scoreboardRoundSecs;
+    case ScoreboardPanel::AllTime: return m_sbConfig.alltime.durationSecs;
+    case ScoreboardPanel::Recent:  return m_sbConfig.recent.durationSecs;
+    case ScoreboardPanel::Round:   return m_sbConfig.round.durationSecs;
     }
-    return m_config.scoreboardCycleSecs;
+    return m_sbConfig.alltime.durationSecs;
+}
+
+// ── Hex color helper ─────────────────────────────────────────────────────────
+static sf::Color hexToColor(const std::string& hex, uint8_t alpha = 255) {
+    if (hex.size() >= 7 && hex[0] == '#') {
+        unsigned int r = std::stoul(hex.substr(1, 2), nullptr, 16);
+        unsigned int g = std::stoul(hex.substr(3, 2), nullptr, 16);
+        unsigned int b = std::stoul(hex.substr(5, 2), nullptr, 16);
+        return sf::Color(static_cast<uint8_t>(r), static_cast<uint8_t>(g),
+                         static_cast<uint8_t>(b), alpha);
+    }
+    return sf::Color(170, 170, 190, alpha); // fallback
 }
 
 void StreamInstance::renderGlobalScoreboard() {
@@ -582,44 +601,68 @@ void StreamInstance::renderGlobalScoreboard() {
     if (m_scoreboardPanels.empty()) return;
 
     float w = static_cast<float>(width());
+    float h = static_cast<float>(height());
 
-    int baseFontSize = m_config.scoreboardFontSize;
+    // Determine current panel type
+    ScoreboardPanel panelType = m_scoreboardPanels[static_cast<size_t>(
+        m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
+
+    // Select per-panel config
+    const ScoreboardPanelConfig* pc = &m_sbConfig.alltime;
+    if (panelType == ScoreboardPanel::Recent)  pc = &m_sbConfig.recent;
+    if (panelType == ScoreboardPanel::Round)   pc = &m_sbConfig.round;
+
+    int baseFontSize   = pc->fontSize;
     int headerFontSize = baseFontSize + 2;
     float lineH  = baseFontSize * 1.6f;
     float headerH = headerFontSize * 1.8f;
     float padX   = 12.0f;
     float padY   = 8.0f;
-    float panelW = w * 0.30f;
+    float panelW = w * (pc->boxWidthPct / 100.0f);
+    float panelX = w * (pc->posXPct / 100.0f);
+    float panelY = h * (pc->posYPct / 100.0f);
+
+    float baseAlpha = std::clamp(pc->opacity, 0.0f, 1.0f);
 
     // Compute crossfade alpha
-    uint8_t alpha = 255;
-    double fadeSecs  = m_config.scoreboardFadeSecs;
+    float fadeAlpha = 1.0f;
+    double fadeSecs  = m_sbConfig.fadeSecs;
     double cycleSecs = currentPanelDuration();
     if (fadeSecs > 0.0 && cycleSecs > 0.0) {
         double t = m_scoreboardCycleTimer;
         if (t < fadeSecs) {
-            alpha = static_cast<uint8_t>(255.0 * (t / fadeSecs));
+            fadeAlpha = static_cast<float>(t / fadeSecs);
         } else if (t > cycleSecs) {
-            alpha = static_cast<uint8_t>(255.0 * (1.0 - (t - cycleSecs) / fadeSecs));
+            fadeAlpha = static_cast<float>(1.0 - (t - cycleSecs) / fadeSecs);
         }
     }
+    uint8_t alpha = static_cast<uint8_t>(255.0f * baseAlpha * fadeAlpha);
 
-    // Determine current panel type
-    ScoreboardPanel panel = m_scoreboardPanels[static_cast<size_t>(
-        m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
+    // Parse panel colors with alpha
+    sf::Color bgColor     = hexToColor(pc->bgColor, static_cast<uint8_t>(180 * baseAlpha * fadeAlpha));
+    sf::Color borderColor = hexToColor(pc->borderColor, static_cast<uint8_t>(150 * baseAlpha * fadeAlpha));
+    sf::Color titleColor  = hexToColor(pc->titleColor, alpha);
+    sf::Color ptsColor    = hexToColor(pc->pointsColor, alpha);
+    sf::Color nameBaseCol = hexToColor(pc->nameColor, alpha);
 
-    // Helper lambda to draw a ScoreEntry panel
-    auto drawScorePanel = [&](float panelX, float panelY,
-                              const std::string& panelTitle,
-                              const std::vector<ScoreEntry>& panelEntries,
-                              uint8_t panelAlpha) {
-        int count = static_cast<int>(panelEntries.size());
+    // Rank-specific name colors (gold/silver/bronze for top 3)
+    auto nameColorForRank = [&](int rank) -> sf::Color {
+        if (rank == 1) return sf::Color(255, 215, 0, alpha);   // Gold
+        if (rank == 2) return sf::Color(200, 200, 200, alpha); // Silver
+        if (rank == 3) return sf::Color(205, 127, 50, alpha);  // Bronze
+        return nameBaseCol;
+    };
+
+    // Generic draw lambda for ScoreEntry panels (AllTime / Recent)
+    auto drawScorePanel = [&](const std::string& panelTitle,
+                              const std::vector<ScoreEntry>& entries) {
+        int count = std::min(static_cast<int>(entries.size()), pc->topN);
         float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
 
         sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
         bg.setPosition(panelX, panelY);
-        bg.setFillColor(sf::Color(10, 10, 20, static_cast<uint8_t>(180 * panelAlpha / 255)));
-        bg.setOutlineColor(sf::Color(80, 130, 200, static_cast<uint8_t>(150 * panelAlpha / 255)));
+        bg.setFillColor(bgColor);
+        bg.setOutlineColor(borderColor);
         bg.setOutlineThickness(1.5f);
         m_renderTexture.draw(bg);
 
@@ -627,7 +670,7 @@ void StreamInstance::renderGlobalScoreboard() {
         header.setFont(m_font);
         header.setString(panelTitle);
         header.setCharacterSize(static_cast<unsigned int>(headerFontSize));
-        header.setFillColor(sf::Color(255, 215, 0, panelAlpha));
+        header.setFillColor(titleColor);
         header.setStyle(sf::Text::Bold);
         auto hb = header.getLocalBounds();
         header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
@@ -635,18 +678,13 @@ void StreamInstance::renderGlobalScoreboard() {
 
         float y = panelY + padY + headerH;
         int rank = 1;
-        for (const auto& entry : panelEntries) {
-            std::string line = std::to_string(rank) + ". " + entry.displayName;
-
+        for (const auto& entry : entries) {
+            if (rank > pc->topN) break;
             sf::Text nameText;
             nameText.setFont(m_font);
-            nameText.setString(line);
+            nameText.setString(std::to_string(rank) + ". " + entry.displayName);
             nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
-            sf::Color nameColor = rank == 1 ? sf::Color(255, 215, 0, panelAlpha) :
-                                  rank == 2 ? sf::Color(200, 200, 200, panelAlpha) :
-                                  rank == 3 ? sf::Color(205, 127, 50, panelAlpha) :
-                                              sf::Color(170, 170, 190, panelAlpha);
-            nameText.setFillColor(nameColor);
+            nameText.setFillColor(nameColorForRank(rank));
             nameText.setPosition(panelX + padX, y);
             m_renderTexture.draw(nameText);
 
@@ -654,28 +692,25 @@ void StreamInstance::renderGlobalScoreboard() {
             ptsText.setFont(m_font);
             ptsText.setString(std::to_string(entry.points) + " pts");
             ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
-            ptsText.setFillColor(sf::Color(88, 166, 255, panelAlpha));
+            ptsText.setFillColor(ptsColor);
             auto pb = ptsText.getLocalBounds();
             ptsText.setPosition(panelX + panelW - pb.width - padX, y);
             m_renderTexture.draw(ptsText);
-
             y += lineH;
             rank++;
         }
     };
 
-    // Helper lambda to draw a pair-based round panel
-    auto drawRoundPanel = [&](float panelX, float panelY,
-                              const std::string& panelTitle,
-                              const std::vector<std::pair<std::string, int>>& panelEntries,
-                              uint8_t panelAlpha) {
-        int count = std::min(static_cast<int>(panelEntries.size()), m_config.scoreboardTopN);
+    // Draw pair-based round panel
+    auto drawRoundPanel = [&](const std::string& panelTitle,
+                              const std::vector<std::pair<std::string, int>>& entries) {
+        int count = std::min(static_cast<int>(entries.size()), pc->topN);
         float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
 
         sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
         bg.setPosition(panelX, panelY);
-        bg.setFillColor(sf::Color(10, 10, 20, static_cast<uint8_t>(180 * panelAlpha / 255)));
-        bg.setOutlineColor(sf::Color(80, 130, 200, static_cast<uint8_t>(150 * panelAlpha / 255)));
+        bg.setFillColor(bgColor);
+        bg.setOutlineColor(borderColor);
         bg.setOutlineThickness(1.5f);
         m_renderTexture.draw(bg);
 
@@ -683,7 +718,7 @@ void StreamInstance::renderGlobalScoreboard() {
         header.setFont(m_font);
         header.setString(panelTitle);
         header.setCharacterSize(static_cast<unsigned int>(headerFontSize));
-        header.setFillColor(sf::Color(255, 215, 0, panelAlpha));
+        header.setFillColor(titleColor);
         header.setStyle(sf::Text::Bold);
         auto hb = header.getLocalBounds();
         header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
@@ -691,19 +726,13 @@ void StreamInstance::renderGlobalScoreboard() {
 
         float y = panelY + padY + headerH;
         int rank = 1;
-        for (const auto& [name, score] : panelEntries) {
-            if (rank > m_config.scoreboardTopN) break;
-            std::string line = std::to_string(rank) + ". " + name;
-
+        for (const auto& [name, score] : entries) {
+            if (rank > pc->topN) break;
             sf::Text nameText;
             nameText.setFont(m_font);
-            nameText.setString(line);
+            nameText.setString(std::to_string(rank) + ". " + name);
             nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
-            sf::Color nameColor = rank == 1 ? sf::Color(255, 215, 0, panelAlpha) :
-                                  rank == 2 ? sf::Color(200, 200, 200, panelAlpha) :
-                                  rank == 3 ? sf::Color(205, 127, 50, panelAlpha) :
-                                              sf::Color(170, 170, 190, panelAlpha);
-            nameText.setFillColor(nameColor);
+            nameText.setFillColor(nameColorForRank(rank));
             nameText.setPosition(panelX + padX, y);
             m_renderTexture.draw(nameText);
 
@@ -711,34 +740,27 @@ void StreamInstance::renderGlobalScoreboard() {
             ptsText.setFont(m_font);
             ptsText.setString(std::to_string(score) + " pts");
             ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
-            ptsText.setFillColor(sf::Color(88, 166, 255, panelAlpha));
+            ptsText.setFillColor(ptsColor);
             auto pb = ptsText.getLocalBounds();
             ptsText.setPosition(panelX + panelW - pb.width - padX, y);
             m_renderTexture.draw(ptsText);
-
             y += lineH;
             rank++;
         }
     };
 
-    float panelX = w - panelW - 12.0f;
-    float panelY = 12.0f;
-
-    switch (panel) {
+    switch (panelType) {
     case ScoreboardPanel::AllTime:
         if (!m_scoreboardCache.empty())
-            drawScorePanel(panelX, panelY, m_config.scoreboardAllTimeTitle,
-                           m_scoreboardCache, alpha);
+            drawScorePanel(m_sbConfig.alltime.title, m_scoreboardCache);
         break;
     case ScoreboardPanel::Recent:
         if (!m_scoreboardRecentCache.empty())
-            drawScorePanel(panelX, panelY, m_config.scoreboardRecentTitle,
-                           m_scoreboardRecentCache, alpha);
+            drawScorePanel(m_sbConfig.recent.title, m_scoreboardRecentCache);
         break;
     case ScoreboardPanel::Round:
         if (!m_scoreboardRoundCache.empty())
-            drawRoundPanel(panelX, panelY, m_config.scoreboardRoundTitle,
-                           m_scoreboardRoundCache, alpha);
+            drawRoundPanel(m_sbConfig.round.title, m_scoreboardRoundCache);
         break;
     }
 }
@@ -784,12 +806,11 @@ void StreamInstance::sendScoreboardToChat() {
         auto panel = m_scoreboardPanels[static_cast<size_t>(
             m_scoreboardPanelIndex % static_cast<int>(m_scoreboardPanels.size()))];
         if (panel == ScoreboardPanel::AllTime && !m_scoreboardCache.empty()) {
-            msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
+            msg = formatEntries(m_sbConfig.alltime.title, m_scoreboardCache);
         } else if (panel == ScoreboardPanel::Recent && !m_scoreboardRecentCache.empty()) {
-            msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
+            msg = formatEntries(m_sbConfig.recent.title, m_scoreboardRecentCache);
         } else if (panel == ScoreboardPanel::Round && !m_scoreboardRoundCache.empty()) {
-            // Format round leaderboard from pair-based cache
-            std::string title = m_config.scoreboardRoundTitle;
+            std::string title = m_sbConfig.round.title;
             std::string roundMsg = "🏆 " + title + ": ";
             int rank = 1;
             for (const auto& [name, score] : m_scoreboardRoundCache) {
@@ -803,10 +824,10 @@ void StreamInstance::sendScoreboardToChat() {
     }
     // Fallback: post something if the current panel is empty
     if (msg.empty() && !m_scoreboardCache.empty()) {
-        msg = formatEntries(m_config.scoreboardAllTimeTitle, m_scoreboardCache);
+        msg = formatEntries(m_sbConfig.alltime.title, m_scoreboardCache);
     }
     if (msg.empty() && !m_scoreboardRecentCache.empty()) {
-        msg = formatEntries(m_config.scoreboardRecentTitle, m_scoreboardRecentCache);
+        msg = formatEntries(m_sbConfig.recent.title, m_scoreboardRecentCache);
     }
 
     if (msg.empty()) return;

@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <unordered_set>
 
 namespace is::web {
 
@@ -1264,6 +1265,62 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             return;
         }
         res.set_content(stats.dump(2), "application/json");
+    });
+
+    // ── Scoreboard overlay config (global) ───────────────────────────────
+
+    server.Get("/api/scoreboard/config", [&app](const httplib::Request&, httplib::Response& res) {
+        res.set_content(app.scoreboardConfig().toJson().dump(2), "application/json");
+    });
+
+    server.Put("/api/scoreboard/config", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto j = nlohmann::json::parse(req.body);
+            auto cfg = is::core::GlobalScoreboardConfig::fromJson(j);
+            app.setScoreboardConfig(cfg);
+            app.persistScoreboardConfig();
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // ── Player management ────────────────────────────────────────────────
+
+    server.Get("/api/scoreboard/players", [&app](const httplib::Request&, httplib::Response& res) {
+        auto players = app.playerDatabase().getAllPlayers();
+        // Include hidden status from scoreboard config
+        auto hidden = app.scoreboardConfig().hiddenPlayers;
+        std::unordered_set<std::string> hiddenSet(hidden.begin(), hidden.end());
+        for (auto& p : players) {
+            p["hidden"] = hiddenSet.count(p["userId"].get<std::string>()) > 0;
+        }
+        res.set_content(nlohmann::json({{"players", players}}).dump(2), "application/json");
+    });
+
+    server.Put(R"(/api/scoreboard/players/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto userId = pathParam(req);
+            auto j = nlohmann::json::parse(req.body);
+            if (j.contains("points") && j["points"].is_number_integer()) {
+                app.playerDatabase().updatePlayerPoints(userId, j["points"].get<int>());
+            }
+            res.set_content(R"({"success":true})", "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    server.Delete(R"(/api/scoreboard/players/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto userId = pathParam(req);
+        if (app.playerDatabase().deletePlayer(userId)) {
+            res.set_content(R"({"success":true})", "application/json");
+        } else {
+            res.status = 404;
+            res.set_content(R"({"error":"Player not found"})", "application/json");
+        }
     });
 
     // ══════════════════════════════════════════════════════════════════════
