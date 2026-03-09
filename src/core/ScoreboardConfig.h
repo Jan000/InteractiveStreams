@@ -43,7 +43,7 @@ struct ScoreboardPanelConfig {
     }
 
     static ScoreboardPanelConfig fromJson(const nlohmann::json& j,
-                                           const ScoreboardPanelConfig& def = {}) {
+                                           const ScoreboardPanelConfig& def = ScoreboardPanelConfig{}) {
         ScoreboardPanelConfig c;
         c.enabled      = j.value("enabled",       def.enabled);
         c.title        = j.value("title",         def.title);
