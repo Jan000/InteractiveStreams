@@ -324,8 +324,17 @@ Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic E
 
 ### Bot Fill System
 - Füllt die Lobby automatisch mit KI-Bots auf, um einen Mindest-Spielerstand zu erreichen
-- Bots wählen zufällige Aktionen (Bewegung, Angriff, Spezial)
-- Konfigurierbar per Game-Settings: `bot_fill` (bool), `min_players` (int)
+- Bots wählen zufällige Aktionen (Smash mit konfigurierbarer Wahrscheinlichkeit)
+- Konfigurierbar per Game-Settings: `bot_fill` (int), `min_players` (int)
+- **Kill Feed**: `bot_kill_feed` (bool, Default: false) – Bots erscheinen standardmäßig nicht im Kill-Feed
+- **Respawn**: `bot_respawn` (bool, Default: false) – tote Bots respawnen nach `bot_respawn_delay` Sekunden (Default: 5.0)
+- **Verhalten**: `bot_action_interval` (float, Default: 0.3s), `bot_smash_chance` (float, Default: 0.2), `bot_danger_smash_chance` (float, Default: 0.6), `bot_event_smash_chance` (float, Default: 0.7)
+
+### Dynamic Camera Zoom
+- Kamera zoomt dynamisch, um alle Spieler sichtbar zu halten
+- Zoomt rein wenn Spieler nah beieinander (`camera_max_zoom`, Default: 2.0), raus wenn weit verstreut (`camera_min_zoom`, Default: 0.4)
+- `camera_zoom_enabled` (bool, Default: true), `camera_zoom_speed` (float, Default: 2.0), `camera_buffer_meters` (float, Default: 3.0)
+- Alle Einstellungen im Web-Dashboard konfigurierbar
 
 ### Sound Effects (SFX)
 - SFX-Dateien werden beim `initialize()` aus `assets/audio/sfx/gravity_brawl/` geladen
@@ -353,7 +362,7 @@ Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic E
 - Konfigurierbare Parameter über `configure()` / `getSettings()`
 - Gespeichert unter `game_settings.gravity_brawl` in Config
 - API: `GET/PUT /api/games/gravity_brawl/settings`
-- Enthält u.a. `sfx_enabled`, `sfx_volume` für Soundeffekte
+- Enthält u.a. `sfx_enabled`, `sfx_volume`, Bot-Verhalten, Kamera-Zoom
 
 ### Chat-Befehl-Parsing
 Identische Befehle wie ChaosArena (`!join`, `!left`, `!right`, `!jump`, `!attack`, `!special`, `!dash`, `!block` etc.)
@@ -611,7 +620,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 14. **Config Export/Import**: `GET /api/config/export` liefert vollständigen JSON-Snapshot (config, channels, streams, profiles, audio, metadata mit `_export_version: 1`). `POST /api/config/import` stellt aus Snapshot wieder her (schreibt in SQLite, fordert Restart an).
 15. **Per-Game Settings**: Spiele implementieren `configure(const nlohmann::json&)` und `getSettings()`. Gespeichert unter `game_settings.<game_id>` in Config. API: `GET/PUT /api/games/:id/settings`. Angewendet beim Startup via `Application::initialize()` und bei API-Aufruf.
 16. **ProfileManager** (`src/core/ProfileManager.h/cpp`): Verwaltet Stream-Konfigurationsprofile (Presets). CRUD: `addProfile()`, `updateProfile()`, `removeProfile()`, `getProfile()`. Serialisierung via `loadFromJson()` / `toJson()`. Gespeichert in SettingsDatabase unter "profiles" Key. API: `GET/POST /api/profiles`, `GET/PUT/DELETE /api/profiles/:id`.
-17. **Bot Fill System**: Spiele können Bot-Spawning auslösen, um Mindest-Spielerzahlen zu erreichen. Bots haben KI-Verhalten mit zufälligen Aktions-Auswahlen. Konfigurierbar per Game-Settings: `bot_fill` (bool), `min_players` (int). Aktuell in Gravity Brawl implementiert.
+17. **Bot Fill System**: Spiele können Bot-Spawning auslösen, um Mindest-Spielerzahlen zu erreichen. Bots haben KI-Verhalten mit konfigurierbaren Smash-Wahrscheinlichkeiten und Aktionsintervallen. Bots erscheinen standardmäßig nicht im Kill-Feed (`bot_kill_feed`). Tote Bots können automatisch respawnen (`bot_respawn`, `bot_respawn_delay`). Konfigurierbar per Game-Settings. Aktuell in Gravity Brawl implementiert.
 18. **Scoreboard Overlay**: Streams zeigen ein rotierendes Scoreboard-Overlay (Recent/All-Time Panels) mit konfigurierbarer Zykluszeit und Crossfade. Optional: automatischer Chat-Post des Scoreboards in konfigurierbarem Intervall.
 
 ---

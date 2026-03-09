@@ -151,6 +151,7 @@ void GravityBrawl::shutdown() {
     m_particles.clear();
     m_killFeed.clear();
     m_floatingTexts.clear();
+    m_botRespawnTimers.clear();
     m_contactListener.reset();
     m_world.reset();
 }
@@ -278,6 +279,31 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("camera_min_zoom") && settings["camera_min_zoom"].is_number()) {
         m_cameraMinZoom = std::clamp(settings["camera_min_zoom"].get<float>(), 0.1f, 1.0f);
     }
+    if (settings.contains("camera_max_zoom") && settings["camera_max_zoom"].is_number()) {
+        m_cameraMaxZoom = std::clamp(settings["camera_max_zoom"].get<float>(), 1.0f, 5.0f);
+    }
+    // Bot behavior settings
+    if (settings.contains("bot_kill_feed") && settings["bot_kill_feed"].is_boolean()) {
+        m_botKillFeed = settings["bot_kill_feed"].get<bool>();
+    }
+    if (settings.contains("bot_respawn") && settings["bot_respawn"].is_boolean()) {
+        m_botRespawn = settings["bot_respawn"].get<bool>();
+    }
+    if (settings.contains("bot_respawn_delay") && settings["bot_respawn_delay"].is_number()) {
+        m_botRespawnDelay = std::max(0.0f, settings["bot_respawn_delay"].get<float>());
+    }
+    if (settings.contains("bot_action_interval") && settings["bot_action_interval"].is_number()) {
+        m_botActionInterval = std::max(0.05f, settings["bot_action_interval"].get<float>());
+    }
+    if (settings.contains("bot_smash_chance") && settings["bot_smash_chance"].is_number()) {
+        m_botSmashChance = std::clamp(settings["bot_smash_chance"].get<float>(), 0.0f, 1.0f);
+    }
+    if (settings.contains("bot_danger_smash_chance") && settings["bot_danger_smash_chance"].is_number()) {
+        m_botDangerSmashChance = std::clamp(settings["bot_danger_smash_chance"].get<float>(), 0.0f, 1.0f);
+    }
+    if (settings.contains("bot_event_smash_chance") && settings["bot_event_smash_chance"].is_number()) {
+        m_botEventSmashChance = std::clamp(settings["bot_event_smash_chance"].get<float>(), 0.0f, 1.0f);
+    }
     // Text element overrides
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
@@ -310,6 +336,14 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"camera_zoom_speed", m_cameraZoomSpeed},
         {"camera_buffer_meters", m_cameraBufferMeters},
         {"camera_min_zoom", m_cameraMinZoom},
+        {"camera_max_zoom", m_cameraMaxZoom},
+        {"bot_kill_feed", m_botKillFeed},
+        {"bot_respawn", m_botRespawn},
+        {"bot_respawn_delay", m_botRespawnDelay},
+        {"bot_action_interval", m_botActionInterval},
+        {"bot_smash_chance", m_botSmashChance},
+        {"bot_danger_smash_chance", m_botDangerSmashChance},
+        {"bot_event_smash_chance", m_botEventSmashChance},
         {"text_elements", textElementsJson()}
     };
 }
@@ -374,7 +408,7 @@ void GravityBrawl::updateBotAI(float dt) {
 
     m_botAITimer -= dt;
     if (m_botAITimer > 0.0f) return;
-    m_botAITimer = 0.3f; // Bot decisions every 300ms
+    m_botAITimer = m_botActionInterval;
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
 
@@ -390,7 +424,7 @@ void GravityBrawl::updateBotAI(float dt) {
 
         // Priority 1: During cosmic events, spam smash to escape (builds supernova too)
         if (m_cosmicEventActive > 0.0) {
-            if (chance(m_rng) < 0.7f) {
+            if (chance(m_rng) < m_botEventSmashChance) {
                 cmdSmash(id);
             }
             continue;
@@ -398,7 +432,7 @@ void GravityBrawl::updateBotAI(float dt) {
 
         // Priority 2: If dangerously close to black hole, smash to escape
         if (distToCenter < safeOrbit * 0.5f) {
-            if (chance(m_rng) < 0.6f) {
+            if (chance(m_rng) < m_botDangerSmashChance) {
                 cmdSmash(id);
             }
             continue;
@@ -410,11 +444,54 @@ void GravityBrawl::updateBotAI(float dt) {
             continue;
         }
 
-        // Normal behavior: smash with probability based on proximity to enemies
-        float smashChance = 0.2f;
-        if (distToCenter < safeOrbit * 0.7f) smashChance = 0.35f;
-        if (chance(m_rng) < smashChance) {
+        // Normal behavior: smash with probability based on proximity
+        float sc = m_botSmashChance;
+        if (distToCenter < safeOrbit * 0.7f) sc = std::min(1.0f, sc * 1.75f);
+        if (chance(m_rng) < sc) {
             cmdSmash(id);
+        }
+    }
+}
+
+void GravityBrawl::respawnDeadBots(float dt) {
+    if (!m_botRespawn || m_botFillTarget <= 0) return;
+    if (m_phase != GamePhase::Playing) return;
+
+    // Collect dead bots that need respawn tracking
+    for (auto& [id, p] : m_planets) {
+        if (!p.isBot() || p.alive) continue;
+        if (m_botRespawnTimers.find(id) == m_botRespawnTimers.end()) {
+            m_botRespawnTimers[id] = m_botRespawnDelay;
+        }
+    }
+
+    // Tick timers and respawn when ready
+    for (auto it = m_botRespawnTimers.begin(); it != m_botRespawnTimers.end();) {
+        it->second -= dt;
+        if (it->second <= 0.0f) {
+            auto pit = m_planets.find(it->first);
+            if (pit != m_planets.end() && !pit->second.alive) {
+                Planet& p = pit->second;
+                p.alive = true;
+                p.kills = 0;
+                p.hitCount = 0;
+                p.smashCooldown = 0.0f;
+                p.comboCount = 0;
+                p.comboWindowEnd = 0.0;
+                p.lastHitBy.clear();
+                p.lastHitTime = 0.0;
+                p.isKing = false;
+                p.hitFlashTimer = 0.0f;
+                p.trailTimer = 0.0f;
+                p.supernovaTimer = 0.0f;
+                p.tier = PlanetTier::Asteroid;
+                p.baseRadius = 0.5f;
+                p.radiusMeters = 0.5f;
+                spawnPlanetBody(p);
+            }
+            it = m_botRespawnTimers.erase(it);
+        } else {
+            ++it;
         }
     }
 }
@@ -968,6 +1045,7 @@ void GravityBrawl::update(double dt) {
 
         // Bot AI
         updateBotAI(fdt);
+        respawnDeadBots(fdt);
 
         // Survival points
         awardSurvivalPoints(dt);
@@ -1199,10 +1277,12 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
                 }
             }
 
-            // Kill feed (use display name or "Bot" for bots)
-            std::string killerName = killerIsBot ? "Bot" : killer.displayName;
-            m_killFeed.push_front({killerName, victimName, wasBounty, 6.0});
-            if (m_killFeed.size() > 8) m_killFeed.pop_back();
+            // Kill feed (skip if bots are involved unless configured)
+            if (m_botKillFeed || (!killerIsBot && !victimIsBot)) {
+                std::string killerName = killerIsBot ? "Bot" : killer.displayName;
+                m_killFeed.push_front({killerName, victimName, wasBounty, 6.0});
+                if (m_killFeed.size() > 8) m_killFeed.pop_back();
+            }
 
             if (!killerIsBot) {
                 sendChatFeedback("🕳️ " + killer.displayName + " smashed " +
@@ -1211,8 +1291,10 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
         }
     } else {
         // Died by gravity (no attribution)
-        m_killFeed.push_front({"The Void", victimName, wasBounty, 6.0});
-        if (m_killFeed.size() > 8) m_killFeed.pop_back();
+        if (m_botKillFeed || !victimIsBot) {
+            m_killFeed.push_front({"The Void", victimName, wasBounty, 6.0});
+            if (m_killFeed.size() > 8) m_killFeed.pop_back();
+        }
         if (!victimIsBot) {
             sendChatFeedback("🕳️ " + victimName + " was consumed by the void!");
         }
@@ -1444,6 +1526,9 @@ void GravityBrawl::updateCameraZoom(float dt) {
 
     if (neededRadius > defaultRadius) {
         m_cameraTargetZoom = std::max(m_cameraMinZoom, defaultRadius / neededRadius);
+    } else if (neededRadius > 0.01f) {
+        // Zoom in when all players are clustered near the center
+        m_cameraTargetZoom = std::min(m_cameraMaxZoom, defaultRadius / neededRadius);
     } else {
         m_cameraTargetZoom = 1.0f;
     }

@@ -198,9 +198,18 @@ private:
     // ── Bot Fill ─────────────────────────────────────────────────────────
     void spawnBots();
     void updateBotAI(float dt);
-    int m_botFillTarget = 0;  ///< Target player count to fill with bots (0 = disabled)
-    int m_botCounter = 0;     ///< Counter for generating unique bot IDs
-    float m_botAITimer = 0.0f; ///< Timer for bot decision-making
+    void respawnDeadBots(float dt);
+    int   m_botFillTarget          = 0;      ///< Target player count to fill with bots (0 = disabled)
+    int   m_botCounter              = 0;      ///< Counter for generating unique bot IDs
+    float m_botAITimer              = 0.0f;   ///< Timer for bot decision-making
+    bool  m_botKillFeed             = false;  ///< Show bots in the kill feed
+    bool  m_botRespawn              = false;  ///< Respawn dead bots during play
+    float m_botRespawnDelay         = 5.0f;   ///< Seconds before a dead bot respawns
+    float m_botActionInterval       = 0.3f;   ///< Seconds between bot AI decisions
+    float m_botSmashChance          = 0.2f;   ///< Base probability of smash per tick
+    float m_botDangerSmashChance    = 0.6f;   ///< Smash probability when near black hole
+    float m_botEventSmashChance     = 0.7f;   ///< Smash probability during cosmic events
+    std::unordered_map<std::string, float> m_botRespawnTimers; ///< Dead bot → remaining respawn delay
 
     // ── Game logic ──────────────────────────────────────────────────────
     void startCountdown();
@@ -316,6 +325,7 @@ private:
     float  m_cameraZoomSpeed      = 2.0f;   // lerp speed (higher = faster tracking)
     float  m_cameraBufferMeters   = 3.0f;   // buffer beyond outermost player before zoom kicks in
     float  m_cameraMinZoom        = 0.4f;   // minimum allowed zoom (max zoom-out)
+    float  m_cameraMaxZoom        = 2.0f;   // maximum allowed zoom (max zoom-in)
 
     /// Recompute m_cameraTargetZoom from current player positions.
     void   updateCameraZoom(float dt);

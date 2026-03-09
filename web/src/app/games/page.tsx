@@ -48,6 +48,14 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "camera_zoom_speed", label: "Camera Zoom Speed", description: "How quickly the camera adjusts zoom level (higher = faster)", type: "float", min: 0.1, max: 10, step: 0.1, defaultValue: 2.0 },
     { key: "camera_buffer_meters", label: "Camera Buffer (m)", description: "Extra buffer space around outermost players before zooming starts", type: "float", min: 0, max: 15, step: 0.5, defaultValue: 3.0 },
     { key: "camera_min_zoom", label: "Camera Min Zoom", description: "Minimum zoom level (lower = further out the camera can go)", type: "float", min: 0.1, max: 1.0, step: 0.05, defaultValue: 0.4 },
+    { key: "camera_max_zoom", label: "Camera Max Zoom", description: "Maximum zoom-in level when players are clustered together", type: "float", min: 1.0, max: 5.0, step: 0.1, defaultValue: 2.0 },
+    { key: "bot_kill_feed", label: "Bots in Kill Feed", description: "Show bot kills and deaths in the kill feed overlay", type: "bool", defaultValue: false },
+    { key: "bot_respawn", label: "Bot Respawn", description: "Respawn dead bots during the match after a delay", type: "bool", defaultValue: false },
+    { key: "bot_respawn_delay", label: "Bot Respawn Delay (s)", description: "Seconds before a dead bot re-enters the arena", type: "float", min: 0, max: 60, step: 0.5, defaultValue: 5.0 },
+    { key: "bot_action_interval", label: "Bot Action Interval (s)", description: "Seconds between bot AI decisions (lower = more active)", type: "float", min: 0.05, max: 5, step: 0.05, defaultValue: 0.3 },
+    { key: "bot_smash_chance", label: "Bot Smash Chance", description: "Base probability of a bot smashing each tick", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.2 },
+    { key: "bot_danger_smash_chance", label: "Bot Danger Smash Chance", description: "Smash probability when a bot is near the black hole", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.6 },
+    { key: "bot_event_smash_chance", label: "Bot Event Smash Chance", description: "Smash probability during cosmic events", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.7 },
   ],
 };
 
