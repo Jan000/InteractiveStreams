@@ -403,7 +403,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
               channel.details?.waitingForLivestream ? (
                 <>
                   <Radio className="mr-1 size-3 animate-pulse" />
-                  Waiting for livestream
+                  {channel.details?.waitingForStreamStart
+                    ? "Waiting for stream"
+                    : "Detecting broadcast"}
                 </>
               ) : (
                 <>
@@ -444,6 +446,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           const lastTs = (channel.details?.lastMessageTime as number) ?? 0;
           const chatId = channel.details?.liveChatId as string | undefined;
           const waiting = channel.details?.waitingForLivestream as boolean;
+          const waitingStream = channel.details?.waitingForStreamStart as boolean;
           const nowSec = Math.floor(Date.now() / 1000);
           const ago = lastTs > 0 ? nowSec - lastTs : -1;
           const isActive = ago >= 0 && ago < 30;
@@ -463,7 +466,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                   )}
                 />
                 {waiting
-                  ? "Waiting for livestream…"
+                  ? waitingStream
+                    ? "Waiting for stream to start…"
+                    : "Detecting broadcast…"
                   : isActive
                     ? "Chat active"
                     : lastTs > 0

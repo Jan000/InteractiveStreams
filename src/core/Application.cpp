@@ -116,7 +116,8 @@ void Application::initialize() {
     if (channelsJson.is_array()) {
         m_impl->channelManager->loadFromJson(channelsJson);
     }
-    m_impl->channelManager->connectAllEnabled();
+    // NOTE: connectAllEnabled() is called AFTER setStreamingChecker() below
+    // to ensure YouTube platforms have the checker before starting their poll loop.
 
     // ── Player database (SQLite) ─────────────────────────────────────────
     m_impl->playerDatabase = std::make_unique<PlayerDatabase>();
@@ -245,6 +246,10 @@ void Application::initialize() {
         }
         return false;
     });
+
+    // Connect channels AFTER the streaming checker is set, so that YouTube
+    // platforms can correctly gate on encoder activity in their poll loop.
+    m_impl->channelManager->connectAllEnabled();
 
     // ── Web dashboard ────────────────────────────────────────────────────
     int webPort = cfg.get<int>("web.port", 8080);

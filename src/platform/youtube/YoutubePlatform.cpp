@@ -211,22 +211,40 @@ void YoutubePlatform::setStreamingChecker(std::function<bool()> checker) {
 }
 
 bool YoutubePlatform::waitForStreaming() {
-    // Wait until at least one stream is actively encoding.
+    // Wait until at least one stream is actively encoding, or until a
+    // generous timeout expires.  The timeout ensures we eventually try
+    // the YouTube API even when no local encoder is running (e.g.
+    // the user streams via OBS but reads chat through InteractiveStreams).
+    constexpr int MAX_WAIT_MS = 300000; // 5 minutes
     spdlog::info("[YouTube] Waiting for a stream to start before auto-detecting liveChatId...");
+    int totalWaited = 0;
+    bool streamDetected = false;
     while (m_shouldRun) {
-        if (m_streamingChecker && m_streamingChecker()) break;
+        if (m_streamingChecker && m_streamingChecker()) {
+            streamDetected = true;
+            break;
+        }
+        if (totalWaited >= MAX_WAIT_MS) {
+            spdlog::info("[YouTube] Streaming wait timed out after {}s "
+                         "— proceeding with broadcast detection.",
+                         MAX_WAIT_MS / 1000);
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        totalWaited += 500;
     }
     if (!m_shouldRun) return false;
 
     // Stabilisation delay – give the encoder a moment so YouTube registers
-    // the ingest.  Since we now accept "ready" and "testing" broadcasts
-    // (which already have a liveChatId), this can be kept short.
-    constexpr int STABILISE_MS = 5000;
-    spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register the broadcast...",
-                 STABILISE_MS / 1000);
-    for (int waited = 0; waited < STABILISE_MS && m_shouldRun; waited += 500) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // the ingest.  Only needed when we actually detected a local stream;
+    // on timeout we skip this since we don't know if an ingest is happening.
+    if (streamDetected) {
+        constexpr int STABILISE_MS = 5000;
+        spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register the broadcast...",
+                     STABILISE_MS / 1000);
+        for (int waited = 0; waited < STABILISE_MS && m_shouldRun; waited += 500) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
     }
     return m_shouldRun;
 }
@@ -239,9 +257,21 @@ void YoutubePlatform::pollLoop() {
 
     // ── Auto-detect liveChatId if needed ─────────────────────────────────
     if (m_liveChatId.empty()) {
-        // Gate: wait until a stream is actually encoding before hitting the
-        // YouTube API, otherwise we waste quota when no broadcast exists.
-        if (!waitForStreaming()) return;
+        // Try once immediately — a "ready" or "testing" broadcast may
+        // already exist, so we can start reading chat without waiting
+        // for the local encoder.
+        refreshTokenIfNeeded();
+        spdlog::info("[YouTube] Attempting immediate broadcast detection...");
+        std::string earlyId = fetchLiveChatId();
+        if (!earlyId.empty()) {
+            m_liveChatId = earlyId;
+            m_autoDetectedChatId = true;
+            spdlog::info("[YouTube] Broadcast detected immediately! liveChatId: {}", m_liveChatId);
+        } else {
+            // No broadcast yet — wait for a local stream to start encoding
+            // (with a timeout so we eventually retry even without a local encoder).
+            if (!waitForStreaming()) return;
+        }
     }
     while (m_shouldRun && m_liveChatId.empty()) {
         refreshTokenIfNeeded();
