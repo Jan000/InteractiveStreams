@@ -30,6 +30,13 @@ public:
     /// Costs 1 quota unit (liveBroadcasts.list).
     static BroadcastInfo findActiveBroadcast(const std::string& oauthToken);
 
+    /// Fallback broadcast detection using API key + channel ID.
+    /// Searches for a live video on the given channel, then fetches its
+    /// liveStreamingDetails to extract the activeLiveChatId.
+    /// Costs 2 quota units (search.list + videos.list).
+    static BroadcastInfo findBroadcastByChannel(const std::string& apiKey,
+                                                const std::string& channelId);
+
     /// Find the active live broadcast ID for the authenticated user.
     /// Calls liveBroadcasts.list with broadcastStatus=active.
     /// Returns empty string on failure or if no active broadcast exists.

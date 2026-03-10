@@ -67,22 +67,42 @@ bool YoutubePlatform::connect() {
 }
 
 std::string YoutubePlatform::fetchLiveChatId() {
-    // Use liveBroadcasts.list (OAuth) to find the liveChatId and broadcastId.
-    // This requires an OAuth token — if we only have an API key, we can't auto-detect.
-    if (m_oauthToken.empty()) {
-        spdlog::warn("[YouTube] Cannot auto-detect liveChatId without OAuth token. "
-                     "Please log in with YouTube or set live_chat_id manually.");
-        return "";
+    // Strategy 1: OAuth-based detection (liveBroadcasts.list mine=true)
+    if (!m_oauthToken.empty()) {
+        spdlog::info("[YouTube] Trying OAuth-based broadcast detection...");
+        auto info = YouTubeApi::findActiveBroadcast(m_oauthToken);
+        if (!info.empty()) {
+            m_broadcastId = info.broadcastId;
+            m_detectionStatus = "Found via OAuth (" + info.lifeCycleStatus + ")";
+            spdlog::info("[YouTube] Cached broadcast ID: {} (status: {})",
+                         m_broadcastId, info.lifeCycleStatus);
+            return info.liveChatId;
+        }
+        spdlog::info("[YouTube] OAuth detection found no usable broadcast.");
+    } else {
+        spdlog::info("[YouTube] No OAuth token — skipping liveBroadcasts.list.");
     }
-    auto info = YouTubeApi::findActiveBroadcast(m_oauthToken);
-    if (!info.empty()) {
-        // Cache the broadcast ID so StreamInstance can reuse it without a
-        // separate API call to getActiveBroadcastId().
-        m_broadcastId = info.broadcastId;
-        spdlog::info("[YouTube] Cached broadcast ID: {} (status: {})",
-                     m_broadcastId, info.lifeCycleStatus);
+
+    // Strategy 2: API key + Channel ID fallback (search + videos.list)
+    if (!m_apiKey.empty() && !m_channelId.empty()) {
+        spdlog::info("[YouTube] Trying API key + channel ID fallback detection...");
+        auto info = YouTubeApi::findBroadcastByChannel(m_apiKey, m_channelId);
+        if (!info.empty()) {
+            m_broadcastId = info.broadcastId;
+            m_detectionStatus = "Found via API key (" + info.lifeCycleStatus + ")";
+            return info.liveChatId;
+        }
+        m_detectionStatus = "No live broadcast found (tried OAuth + API key)";
+        spdlog::info("[YouTube] API key fallback found no live broadcast.");
+    } else if (m_oauthToken.empty()) {
+        m_detectionStatus = "No OAuth token and no API key + channel ID";
+        spdlog::warn("[YouTube] Cannot auto-detect liveChatId: no OAuth token and "
+                     "no API key + channel ID configured.");
+    } else {
+        m_detectionStatus = "No live broadcast found (OAuth only, no API key fallback)";
     }
-    return info.liveChatId;
+
+    return "";
 }
 
 void YoutubePlatform::refreshTokenIfNeeded() {
@@ -168,9 +188,11 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"autoDetectedChatId", m_autoDetectedChatId},
         {"hasOauthToken", !m_oauthToken.empty()},
         {"hasRefreshToken", !m_oauthRefreshToken.empty()},
+        {"hasApiKey", !m_apiKey.empty()},
         {"oauthTokenExpiry", m_oauthTokenExpiry},
         {"waitingForLivestream", m_connected.load() && m_liveChatId.empty()},
         {"waitingForStreamStart", m_connected.load() && m_liveChatId.empty() && (!m_streamingChecker || !m_streamingChecker())},
+        {"detectionStatus", m_detectionStatus},
         {"messagesReceived", m_messagesReceived},
         {"messagesSent", m_messagesSent},
         {"lastMessageTime", m_lastMessageTime.load()}
@@ -252,8 +274,8 @@ bool YoutubePlatform::waitForStreaming() {
 void YoutubePlatform::pollLoop() {
     spdlog::info("[YouTube] Starting poll loop (interval: {}ms)...", m_pollIntervalMs);
 
-    // Retry auto-detection every 60s to conserve API quota
-    constexpr int RETRY_INTERVAL_MS = 60000;
+    // Retry auto-detection every 15s (uses 1–3 quota units per attempt)
+    constexpr int RETRY_INTERVAL_MS = 15000;
 
     // ── Auto-detect liveChatId if needed ─────────────────────────────────
     if (m_liveChatId.empty()) {
@@ -311,7 +333,7 @@ void YoutubePlatform::pollLoop() {
             if (!waitForStreaming()) return;
 
             refreshTokenIfNeeded();
-            spdlog::debug("[YouTube] No liveChatId yet — retrying auto-detection via liveBroadcasts.list...");
+            spdlog::info("[YouTube] No liveChatId yet — retrying auto-detection...");
             std::string chatId = fetchLiveChatId();
             if (!chatId.empty()) {
                 m_liveChatId = chatId;
@@ -329,7 +351,7 @@ void YoutubePlatform::pollLoop() {
         }
 
         // YouTube Data API v3: liveChatMessages.list via curl (HTTPS)
-        // Use OAuth Bearer token for authentication
+        // Prefer OAuth Bearer token, fall back to API key
         refreshTokenIfNeeded();
 
         std::string chatUrl = "https://www.googleapis.com/youtube/v3/liveChat/messages"
@@ -338,14 +360,20 @@ void YoutubePlatform::pollLoop() {
         if (!m_nextPageToken.empty()) {
             chatUrl += "&pageToken=" + YouTubeApi::urlEncode(m_nextPageToken);
         }
+        // Append API key to URL when using key-based auth
+        bool useOAuth = !m_oauthToken.empty();
+        if (!useOAuth && !m_apiKey.empty()) {
+            chatUrl += "&key=" + YouTubeApi::urlEncode(m_apiKey);
+        }
 
-        // Use curl with OAuth Bearer token
         std::string respBody;
         {
             std::ostringstream cmd;
-            cmd << "curl -sS -X GET"
-                << " -H \"Authorization: Bearer " << m_oauthToken << "\""
-                << " \"" << chatUrl << "\"";
+            cmd << "curl -sS -X GET";
+            if (useOAuth) {
+                cmd << " -H \"Authorization: Bearer " << m_oauthToken << "\"";
+            }
+            cmd << " \"" << chatUrl << "\"";
 #ifdef _WIN32
             cmd << " 2>nul";
 #else

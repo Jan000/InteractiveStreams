@@ -220,10 +220,113 @@ YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oau
                 statuses += item["snippet"].value("lifeCycleStatus", "?");
             }
         }
-        spdlog::debug("[YouTubeApi] No usable broadcast found ({} checked, statuses: {}).",
+        spdlog::info("[YouTubeApi] No usable broadcast found ({} checked, statuses: {}).",
                       j["items"].size(), statuses);
     } catch (const std::exception& e) {
         spdlog::warn("[YouTubeApi] Failed to parse liveBroadcasts.list response: {}", e.what());
+    }
+    return {};
+}
+
+YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
+    const std::string& apiKey,
+    const std::string& channelId)
+{
+    if (apiKey.empty() || channelId.empty()) return {};
+
+    // Step 1: Search for a live video on this channel
+    std::string searchUrl =
+        "https://www.googleapis.com/youtube/v3/search"
+        "?channelId=" + urlEncode(channelId) +
+        "&eventType=live"
+        "&type=video"
+        "&part=id"
+        "&maxResults=1"
+        "&key=" + urlEncode(apiKey);
+
+    std::string searchResp = curlRequest("GET", searchUrl, "" /*no auth header*/);
+    if (searchResp.empty()) {
+        spdlog::warn("[YouTubeApi] findBroadcastByChannel: empty response from search");
+        return {};
+    }
+
+    std::string videoId;
+    try {
+        auto j = nlohmann::json::parse(searchResp);
+
+        if (j.contains("error")) {
+            auto msg = j["error"].value("message", "unknown error");
+            int code = j["error"].value("code", 0);
+            spdlog::warn("[YouTubeApi] search.list error ({}): {}", code, msg);
+            return {};
+        }
+
+        if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
+            spdlog::info("[YouTubeApi] No live videos found for channel {}.", channelId);
+            return {};
+        }
+
+        videoId = j["items"][0]["id"].value("videoId", "");
+        if (videoId.empty()) {
+            spdlog::warn("[YouTubeApi] search.list returned item without videoId.");
+            return {};
+        }
+        spdlog::info("[YouTubeApi] Found live video: {}", videoId);
+    } catch (const std::exception& e) {
+        spdlog::warn("[YouTubeApi] Failed to parse search.list response: {}", e.what());
+        return {};
+    }
+
+    // Step 2: Get liveStreamingDetails for the video to extract activeLiveChatId
+    std::string videoUrl =
+        "https://www.googleapis.com/youtube/v3/videos"
+        "?id=" + urlEncode(videoId) +
+        "&part=liveStreamingDetails,snippet"
+        "&key=" + urlEncode(apiKey);
+
+    std::string videoResp = curlRequest("GET", videoUrl, "" /*no auth header*/);
+    if (videoResp.empty()) {
+        spdlog::warn("[YouTubeApi] findBroadcastByChannel: empty response from videos.list");
+        return {};
+    }
+
+    try {
+        auto j = nlohmann::json::parse(videoResp);
+
+        if (j.contains("error")) {
+            auto msg = j["error"].value("message", "unknown error");
+            int code = j["error"].value("code", 0);
+            spdlog::warn("[YouTubeApi] videos.list error ({}): {}", code, msg);
+            return {};
+        }
+
+        if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
+            spdlog::warn("[YouTubeApi] videos.list returned no items for video {}.", videoId);
+            return {};
+        }
+
+        auto& item = j["items"][0];
+        std::string chatId;
+        if (item.contains("liveStreamingDetails")) {
+            chatId = item["liveStreamingDetails"].value("activeLiveChatId", "");
+        }
+
+        if (chatId.empty()) {
+            spdlog::warn("[YouTubeApi] Video {} has no activeLiveChatId.", videoId);
+            return {};
+        }
+
+        BroadcastInfo info;
+        info.liveChatId      = chatId;
+        info.broadcastId     = videoId;
+        info.title           = item.contains("snippet") ? item["snippet"].value("title", "(unknown)") : "(unknown)";
+        info.lifeCycleStatus = "live";
+
+        spdlog::info("[YouTubeApi] Found broadcast '{}' via channel search with liveChatId: {}",
+                     info.title, info.liveChatId);
+        return info;
+    } catch (const std::exception& e) {
+        spdlog::warn("[YouTubeApi] Failed to parse videos.list response: {}", e.what());
     }
     return {};
 }

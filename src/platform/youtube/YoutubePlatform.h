@@ -42,10 +42,14 @@ private:
     void pollLoop();
 
     /// Auto-detect the activeLiveChatId for the current live broadcast.
-    /// Uses liveBroadcasts.list (requires OAuth token, mine=true).
+    /// Tries OAuth (liveBroadcasts.list mine=true) first, then falls back
+    /// to API key + channel ID (search + videos.list).
     /// Returns the chat ID or an empty string on failure.
     /// Also caches the broadcast ID for reuse by StreamInstance.
     std::string fetchLiveChatId();
+
+    /// Human-readable status of the last detection attempt (for dashboard).
+    std::string m_detectionStatus;
 
     /// Refresh the OAuth access token if it's expired or about to expire.
     void refreshTokenIfNeeded();

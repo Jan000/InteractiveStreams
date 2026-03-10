@@ -447,6 +447,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           const chatId = channel.details?.liveChatId as string | undefined;
           const waiting = channel.details?.waitingForLivestream as boolean;
           const waitingStream = channel.details?.waitingForStreamStart as boolean;
+          const detectionStatus = channel.details?.detectionStatus as string | undefined;
           const nowSec = Math.floor(Date.now() / 1000);
           const ago = lastTs > 0 ? nowSec - lastTs : -1;
           const isActive = ago >= 0 && ago < 30;
@@ -493,6 +494,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                   <span>
                     Chat ID: <code className="rounded bg-muted px-1 py-0.5">{chatId}</code>
                   </span>
+                )}
+                {waiting && detectionStatus && (
+                  <span className="basis-full text-amber-500/80">{detectionStatus}</span>
                 )}
               </div>
             </div>
