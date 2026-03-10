@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <numeric>
 #include <filesystem>
+#include <sstream>
 
 namespace is::games::gravity_brawl {
 
@@ -525,20 +526,19 @@ void GravityBrawl::respawnDeadBots(float dt) {
 // ── Chat Message Handling ────────────────────────────────────────────────────
 
 void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
-    std::string text = msg.text;
+    if (msg.text.empty() || msg.text[0] != '!') return;
+
+    // Extract first token (handles trailing whitespace, \r\n, extra text)
+    std::istringstream iss(msg.text);
+    std::string cmd;
+    iss >> cmd;
+
     // Lowercase for command matching
-    std::string lower;
-    lower.resize(text.size());
-    std::transform(text.begin(), text.end(), lower.begin(), ::tolower);
+    std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
-    // Trim leading whitespace
-    size_t start = lower.find_first_not_of(" \t");
-    if (start == std::string::npos) return;
-    lower = lower.substr(start);
-
-    if (lower == "!join" || lower == "!play") {
+    if (cmd == "!join" || cmd == "!play") {
         cmdJoin(msg.userId, msg.displayName);
-    } else if (lower == "!smash" || lower == "!s") {
+    } else if (cmd == "!smash" || cmd == "!s") {
         cmdSmash(msg.userId);
     }
 }
