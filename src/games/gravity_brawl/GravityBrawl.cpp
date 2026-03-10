@@ -291,6 +291,15 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("camera_max_zoom") && settings["camera_max_zoom"].is_number()) {
         m_cameraMaxZoom = std::clamp(settings["camera_max_zoom"].get<float>(), 1.0f, 5.0f);
     }
+    // Per-tier size/mass settings
+    if (settings.contains("tier_radius") && settings["tier_radius"].is_array() && settings["tier_radius"].size() == 4) {
+        for (int i = 0; i < 4; i++)
+            m_tierRadius[i] = std::max(0.1f, settings["tier_radius"][i].get<float>());
+    }
+    if (settings.contains("tier_mass") && settings["tier_mass"].is_array() && settings["tier_mass"].size() == 4) {
+        for (int i = 0; i < 4; i++)
+            m_tierMass[i] = std::max(0.1f, settings["tier_mass"][i].get<float>());
+    }
     // Bot behavior settings
     if (settings.contains("bot_kill_feed") && settings["bot_kill_feed"].is_boolean()) {
         m_botKillFeed = settings["bot_kill_feed"].get<bool>();
@@ -346,6 +355,8 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"camera_buffer_meters", m_cameraBufferMeters},
         {"camera_min_zoom", m_cameraMinZoom},
         {"camera_max_zoom", m_cameraMaxZoom},
+        {"tier_radius", {m_tierRadius[0], m_tierRadius[1], m_tierRadius[2], m_tierRadius[3]}},
+        {"tier_mass",   {m_tierMass[0],   m_tierMass[1],   m_tierMass[2],   m_tierMass[3]}},
         {"bot_kill_feed", m_botKillFeed},
         {"bot_respawn", m_botRespawn},
         {"bot_respawn_delay", m_botRespawnDelay},
@@ -390,8 +401,11 @@ void GravityBrawl::spawnBots() {
         p.score = 0;
         p.hitCount = 0;
         p.tier = PlanetTier::Asteroid;
-        p.baseRadius = 0.5f;
-        p.radiusMeters = 0.5f;
+        p.baseRadius = m_tierRadius[0];
+        p.radiusMeters = m_tierRadius[0];
+        p.radiusByTier = m_tierRadius[0];
+        p.massByTier = m_tierMass[0];
+        p.massScale = m_tierMass[0];
         p.smashCooldown = 0.0f;
         p.comboCount = 0;
         p.comboWindowEnd = 0.0;
@@ -494,8 +508,11 @@ void GravityBrawl::respawnDeadBots(float dt) {
                 p.trailTimer = 0.0f;
                 p.supernovaTimer = 0.0f;
                 p.tier = PlanetTier::Asteroid;
-                p.baseRadius = 0.5f;
-                p.radiusMeters = 0.5f;
+                p.baseRadius = m_tierRadius[0];
+                p.radiusMeters = m_tierRadius[0];
+                p.radiusByTier = m_tierRadius[0];
+                p.massByTier = m_tierMass[0];
+                p.massScale = m_tierMass[0];
                 spawnPlanetBody(p);
             }
             it = m_botRespawnTimers.erase(it);
@@ -547,8 +564,11 @@ void GravityBrawl::cmdJoin(const std::string& userId, const std::string& display
     p.score = 0;
     p.hitCount = 0;
     p.tier = PlanetTier::Asteroid;
-    p.baseRadius = 0.5f;
-    p.radiusMeters = 0.5f;
+    p.baseRadius = m_tierRadius[0];
+    p.radiusMeters = m_tierRadius[0];
+    p.radiusByTier = m_tierRadius[0];
+    p.massByTier = m_tierMass[0];
+    p.massScale = m_tierMass[0];
     p.smashCooldown = 0.0f;
     p.comboCount = 0;
     p.comboWindowEnd = 0.0;
@@ -709,6 +729,63 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
     b2Vec2 pos = p.body->GetPosition();
     p.prevPosition = {pos.x, pos.y};
     p.renderPosition = p.prevPosition;
+}
+
+// ── Tier Sync ────────────────────────────────────────────────────────────────
+
+void GravityBrawl::updatePlanetTier(Planet& p) {
+    PlanetTier newTier = tierFromKills(p.kills);
+    int idx = static_cast<int>(newTier);
+
+    float newRadius = m_tierRadius[idx];
+    float newMass   = m_tierMass[idx];
+
+    // Apply per-kill bonus on top of tier base
+    float killRadiusBonus = p.kills * 0.015f;  // +1.5% radius per kill
+    float killMassBonus   = p.kills * 0.03f;   // +3% mass per kill
+    p.radiusByTier = newRadius;
+    p.massByTier   = newMass;
+    p.radiusMeters = newRadius + killRadiusBonus;
+    p.massScale    = newMass + killMassBonus;
+    p.baseRadius   = p.radiusMeters;
+
+    bool tierChanged = (p.tier != newTier);
+    p.tier = newTier;
+
+    // Update Box2D fixture when radius changed
+    if (p.body) {
+        b2Fixture* fix = p.body->GetFixtureList();
+        if (fix) {
+            auto* shape = dynamic_cast<b2CircleShape*>(fix->GetShape());
+            if (shape && std::abs(shape->m_radius - p.radiusMeters) > 0.001f) {
+                // Destroy old fixture, create new one with updated radius
+                float oldDensity     = fix->GetDensity();
+                float oldFriction    = fix->GetFriction();
+                float oldRestitution = fix->GetRestitution();
+
+                p.body->DestroyFixture(fix);
+
+                b2CircleShape newShape;
+                newShape.m_radius = p.radiusMeters;
+
+                b2FixtureDef fixDef;
+                fixDef.shape       = &newShape;
+                fixDef.density     = oldDensity;
+                fixDef.friction    = oldFriction;
+                fixDef.restitution = oldRestitution;
+
+                p.body->CreateFixture(&fixDef);
+            }
+        }
+    }
+
+    // Tier-up particles
+    if (tierChanged && p.body && p.alive) {
+        sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
+        sf::Color tierColor = getTierColor(newTier);
+        emitExplosion(screenPos, tierColor, 40);
+        addFloatingText("TIER UP!", screenPos, tierColor, 2.0f);
+    }
 }
 
 // ── Game Logic: Smash & Supernova ────────────────────────────────────────────
@@ -1261,6 +1338,9 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
             killer.score += killPoints;
             playSfx("gb_kill");
 
+            // Update tier, radius, mass & Box2D fixture after kill
+            updatePlanetTier(killer);
+
             // Floating text
             sf::Vector2f killerScreen = worldToScreen(killer.body->GetPosition());
             addFloatingText("+50", killerScreen, sf::Color(255, 215, 0), 1.5f);
@@ -1525,13 +1605,23 @@ void GravityBrawl::updateCameraZoom(float dt) {
 
     // Find the maximum distance from WORLD_CENTER among alive players
     float maxDist = 0.0f;
+    int aliveCount = 0;
     for (const auto& [_, p] : m_planets) {
         if (!p.alive || !p.body) continue;
+        ++aliveCount;
         b2Vec2 pos = p.body->GetPosition();
         float dx = pos.x - WORLD_CENTER_X;
         float dy = pos.y - WORLD_CENTER_Y;
         float dist = std::sqrt(dx * dx + dy * dy) + p.getVisualRadius();
         maxDist = std::max(maxDist, dist);
+    }
+
+    // No alive players — reset to default zoom
+    if (aliveCount == 0) {
+        m_cameraTargetZoom = 1.0f;
+        float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);
+        m_cameraZoom += (m_cameraTargetZoom - m_cameraZoom) * t;
+        return;
     }
 
     // The default view fits SCREEN_H / 2 / PIXELS_PER_METER meters vertically
@@ -1762,9 +1852,9 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     // Outer glow (larger for higher tiers)
     float glowMul = 1.0f;
     switch (p.tier) {
-    case PlanetTier::IcePlanet: glowMul = 1.5f; break;
-    case PlanetTier::GasGiant:  glowMul = 2.0f; break;
-    case PlanetTier::Star:      glowMul = 2.5f + 0.3f * std::sin(p.glowPulse); break;
+    case PlanetTier::IcePlanet: glowMul = 1.6f; break;
+    case PlanetTier::GasGiant:  glowMul = 2.2f; break;
+    case PlanetTier::Star:      glowMul = 3.0f + 0.4f * std::sin(p.glowPulse); break;
     default: break;
     }
 

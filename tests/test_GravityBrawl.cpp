@@ -906,30 +906,31 @@ TEST_SUITE("GB Gameplay") {
         CHECK(tierFromKills(p.kills) == PlanetTier::Star);
     }
 
-    TEST_CASE("Visual radius grows with kills") {
+    TEST_CASE("Visual radius grows with tier") {
         Planet p;
-        p.baseRadius = 0.5f;
-        p.kills = 0;
+        p.radiusMeters = 0.5f;
         float r0 = p.getVisualRadius();
-        p.kills = 10;
-        float r10 = p.getVisualRadius();
-        p.kills = 50;
-        float r50 = p.getVisualRadius();
-        CHECK(r10 > r0);
-        CHECK(r50 > r10);
+        // Simulate tier-up: radius increases
+        p.radiusMeters = 0.7f;
+        float r1 = p.getVisualRadius();
+        p.radiusMeters = 1.25f;
+        float r2 = p.getVisualRadius();
+        CHECK(r1 > r0);
+        CHECK(r2 > r1);
     }
 
-    TEST_CASE("Mass scale increases with kills and king status") {
+    TEST_CASE("Mass scale increases with tier and king status") {
         Planet p;
-        p.kills = 0;
+        p.massScale = 1.0f;
         p.isKing = false;
         float m0 = p.getMassScale();
-        p.kills = 10;
-        float m10 = p.getMassScale();
-        CHECK(m10 > m0);
+        // Simulate tier-up: mass increases
+        p.massScale = 2.2f;
+        float m1 = p.getMassScale();
+        CHECK(m1 > m0);
         p.isKing = true;
         float mKing = p.getMassScale();
-        CHECK(mKing > m10);
+        CHECK(mKing > m1);
     }
 
     TEST_CASE("Leaderboard returns sorted results excluding bots") {

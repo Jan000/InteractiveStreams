@@ -109,18 +109,22 @@ struct Planet {
         tier = tierFromKills(kills);
     }
 
-    /// Get visual radius in meters (grows with kills)
+    /// Get visual radius in meters (grows with tier)
     float getVisualRadius() const {
-        float bonus = kills * 0.02f;  // +2% per kill
-        return baseRadius + bonus;
+        return radiusMeters;
     }
 
-    /// Get mass multiplier (king is heavier)
+    /// Get mass multiplier (grows with tier, king is heavier)
     float getMassScale() const {
-        float scale = 1.0f + kills * 0.05f;
+        float scale = massScale;
         if (isKing) scale *= 1.5f;
         return scale;
     }
+
+    // Per-tier values (set by game on tier change)
+    float radiusByTier = 0.5f;   // radius assigned by current tier
+    float massByTier   = 1.0f;   // mass multiplier assigned by current tier
+    float massScale    = 1.0f;   // effective mass scale (massByTier + per-kill bonus)
 
     // Combo constants
     static constexpr float  SMASH_COOLDOWN    = 0.8f;  // seconds between dashes
@@ -226,6 +230,7 @@ private:
     void eliminatePlanet(Planet& p);
     void spawnPlanetBody(Planet& p);
     float chooseSpawnAngle();
+    void updatePlanetTier(Planet& p);   ///< Sync tier, radius, mass & Box2D fixture
 
     // ── Rendering ───────────────────────────────────────────────────────
     void renderBlackHole(sf::RenderTarget& target);
@@ -323,13 +328,18 @@ private:
     bool   m_cameraZoomEnabled    = true;   // feature toggle
     float  m_cameraZoom           = 1.0f;   // current zoom (1.0 = default, <1 = zoomed out)
     float  m_cameraTargetZoom     = 1.0f;   // smoothly interpolated toward this
-    float  m_cameraZoomSpeed      = 2.0f;   // lerp speed (higher = faster tracking)
-    float  m_cameraBufferMeters   = 3.0f;   // buffer beyond outermost player before zoom kicks in
-    float  m_cameraMinZoom        = 0.4f;   // minimum allowed zoom (max zoom-out)
-    float  m_cameraMaxZoom        = 2.0f;   // maximum allowed zoom (max zoom-in)
+    float  m_cameraZoomSpeed      = 3.5f;   // lerp speed (higher = faster tracking)
+    float  m_cameraBufferMeters   = 1.5f;   // buffer beyond outermost player before zoom kicks in
+    float  m_cameraMinZoom        = 0.3f;   // minimum allowed zoom (max zoom-out)
+    float  m_cameraMaxZoom        = 2.5f;   // maximum allowed zoom (max zoom-in)
 
     /// Recompute m_cameraTargetZoom from current player positions.
     void   updateCameraZoom(float dt);
+
+    // ── Per-Tier Planet Settings ─────────────────────────────────────────
+    // Index: 0=Asteroid, 1=IcePlanet, 2=GasGiant, 3=Star
+    float  m_tierRadius[4] = {0.5f, 0.7f, 0.95f, 1.25f};   // collision+visual radius (meters)
+    float  m_tierMass[4]   = {1.0f, 1.5f, 2.2f,  3.5f};    // mass multiplier per tier
 
     // King tracking
     std::string m_currentKingId;

@@ -726,8 +726,8 @@ export function StreamCard({
               {games.map((g) => (
                 <div key={g.id} className="space-y-1 rounded border p-2">
                   <span className="text-xs font-medium">{g.name}</span>
-                  <Input
-                    className="h-7 text-xs"
+                  <Textarea
+                    className="min-h-[60px] text-xs"
                     placeholder="Stream description for this game…"
                     value={gameDescriptions[g.id] ?? ""}
                     onChange={(e) => {
