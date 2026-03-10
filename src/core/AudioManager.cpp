@@ -264,29 +264,25 @@ void AudioManager::update(double dt) {
     else if (m_fadeState == FadeState::Crossfading) {
         m_fadeTimer += fdt;
 
-        // Fade-out duration for the old track
-        float fadeOutDur = std::max(m_fadeOutSeconds, 0.01f);
-        // Fade-in duration for the new track
-        float fadeInDur  = std::max(m_fadeInSeconds, 0.01f);
-        // The crossfade takes as long as the longer fade
-        float totalDur   = std::max(fadeOutDur, fadeInDur);
+        // Use a single progress curve for both tracks so the combined
+        // volume never exceeds m_musicVolume (complementary crossfade).
+        float crossfadeDur = std::max({m_fadeOutSeconds, m_fadeInSeconds, 0.01f});
+        float progress = std::min(m_fadeTimer / crossfadeDur, 1.0f);
 
         // Fade out old track
         if (m_musicCurrent) {
-            float outProgress = std::min(m_fadeTimer / fadeOutDur, 1.0f);
-            float vol = m_muted ? 0.0f : (m_musicVolume * (1.0f - outProgress));
+            float vol = m_muted ? 0.0f : (m_musicVolume * (1.0f - progress));
             m_musicCurrent->setVolume(vol);
         }
 
         // Fade in new track
         if (m_musicNext) {
-            float inProgress = std::min(m_fadeTimer / fadeInDur, 1.0f);
-            float vol = m_muted ? 0.0f : (m_musicVolume * inProgress);
+            float vol = m_muted ? 0.0f : (m_musicVolume * progress);
             m_musicNext->setVolume(vol);
         }
 
         // Crossfade complete
-        if (m_fadeTimer >= totalDur) {
+        if (progress >= 1.0f) {
             finishCrossfade();
         }
     }
@@ -303,7 +299,11 @@ void AudioManager::update(double dt) {
             sf::Time offset   = m_musicCurrent->getPlayingOffset();
             float remaining   = duration.asSeconds() - offset.asSeconds();
 
-            if (remaining <= m_crossfadeOverlap && remaining > 0.0f) {
+            // Start crossfade early enough for the fade-out to complete
+            // before the track's audio data runs out.
+            float triggerTime = std::max(m_crossfadeOverlap,
+                                         std::max(m_fadeOutSeconds, m_fadeInSeconds));
+            if (remaining <= triggerTime && remaining > 0.0f) {
                 beginCrossfade();
             }
         }
