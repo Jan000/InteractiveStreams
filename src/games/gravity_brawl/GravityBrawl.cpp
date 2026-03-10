@@ -174,6 +174,15 @@ void GravityBrawl::loadSfx() {
     auto& audio = is::core::Application::instance().audioManager();
 
     for (const auto& name : names) {
+        // Check for a subdirectory with multiple variants first
+        std::string variantDir = sfxDir + name;
+        if (std::filesystem::is_directory(variantDir)) {
+            if (audio.loadSfxFromDirectory(name, variantDir)) {
+                loaded++;
+            }
+            continue;
+        }
+        // Fall back to single file
         bool found = false;
         for (const auto& ext : extensions) {
             std::string path = sfxDir + name + ext;

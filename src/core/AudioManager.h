@@ -73,8 +73,13 @@ public:
 
     // ── SFX ──────────────────────────────────────────────────────────────
 
-    /// Pre-load a sound effect from file.  Returns false if loading fails.
+    /// Pre-load a sound effect from a single file. Returns false if loading fails.
     bool loadSfx(const std::string& name, const std::string& filepath);
+
+    /// Pre-load all audio files from a directory as variants for one SFX name.
+    /// Each call to playSfx() will pick a random variant. Returns false if no
+    /// files were found or the directory does not exist.
+    bool loadSfxFromDirectory(const std::string& name, const std::string& dirpath);
 
     /// Play a previously loaded SFX (fire-and-forget).
     void playSfx(const std::string& name, float volume = 100.0f);
@@ -124,7 +129,7 @@ private:
 
     // SFX
     struct SfxEntry {
-        sf::SoundBuffer buffer;
+        std::vector<std::unique_ptr<sf::SoundBuffer>> buffers;
     };
     std::unordered_map<std::string, SfxEntry> m_sfxBuffers;
     std::vector<std::unique_ptr<sf::Sound>>   m_activeSounds; ///< playing sounds

@@ -396,23 +396,59 @@ void AudioManager::setCrossfadeOverlap(float seconds) {
 
 bool AudioManager::loadSfx(const std::string& name, const std::string& filepath) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    SfxEntry entry;
-    if (!entry.buffer.loadFromFile(filepath)) {
+    auto buf = std::make_unique<sf::SoundBuffer>();
+    if (!buf->loadFromFile(filepath)) {
         spdlog::error("[Audio] Failed to load SFX '{}' from '{}'", name, filepath);
         return false;
     }
-    m_sfxBuffers[name] = std::move(entry);
+    auto& entry = m_sfxBuffers[name];
+    entry.buffers.clear();
+    entry.buffers.push_back(std::move(buf));
     spdlog::info("[Audio] Loaded SFX: {}", name);
+    return true;
+}
+
+bool AudioManager::loadSfxFromDirectory(const std::string& name, const std::string& dirpath) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!fs::is_directory(dirpath)) {
+        spdlog::warn("[Audio] SFX directory not found: {}", dirpath);
+        return false;
+    }
+    static const std::vector<std::string> SFX_EXTENSIONS = {".wav", ".ogg", ".mp3"};
+    auto& entry = m_sfxBuffers[name];
+    entry.buffers.clear();
+    for (const auto& file : fs::directory_iterator(dirpath)) {
+        if (!file.is_regular_file()) continue;
+        std::string ext = file.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (std::find(SFX_EXTENSIONS.begin(), SFX_EXTENSIONS.end(), ext) == SFX_EXTENSIONS.end()) continue;
+        auto buf = std::make_unique<sf::SoundBuffer>();
+        if (buf->loadFromFile(file.path().string())) {
+            entry.buffers.push_back(std::move(buf));
+        }
+    }
+    if (entry.buffers.empty()) {
+        m_sfxBuffers.erase(name);
+        spdlog::warn("[Audio] No audio files found for SFX '{}' in '{}'", name, dirpath);
+        return false;
+    }
+    spdlog::info("[Audio] Loaded {} variant(s) for SFX '{}' from '{}'", entry.buffers.size(), name, dirpath);
     return true;
 }
 
 void AudioManager::playSfx(const std::string& name, float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_sfxBuffers.find(name);
-    if (it == m_sfxBuffers.end()) return;
+    if (it == m_sfxBuffers.end() || it->second.buffers.empty()) return;
+
+    int idx = 0;
+    if (it->second.buffers.size() > 1) {
+        std::uniform_int_distribution<int> dist(0, static_cast<int>(it->second.buffers.size()) - 1);
+        idx = dist(m_rng);
+    }
 
     auto sound = std::make_unique<sf::Sound>();
-    sound->setBuffer(it->second.buffer);
+    sound->setBuffer(*it->second.buffers[idx]);
     float effectiveVol = m_muted ? 0.0f : (volume * m_sfxVolume / 100.0f);
     sound->setVolume(effectiveVol);
     sound->play();
