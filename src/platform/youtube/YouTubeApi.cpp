@@ -149,7 +149,7 @@ YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oau
     std::string url = "https://www.googleapis.com/youtube/v3/liveBroadcasts"
                       "?mine=true"
                       "&broadcastType=all"
-                      "&part=id,snippet"
+                      "&part=id,snippet,status"
                       "&maxResults=50";
 
     std::string resp = curlRequest("GET", url, oauthToken);
@@ -188,7 +188,11 @@ YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oau
             if (!item.contains("snippet")) continue;
             auto& snippet = item["snippet"];
 
-            std::string status = snippet.value("lifeCycleStatus", "");
+            // lifeCycleStatus lives in the "status" resource, not "snippet"
+            std::string status;
+            if (item.contains("status") && item["status"].is_object()) {
+                status = item["status"].value("lifeCycleStatus", "");
+            }
             int prio = statusPriority(status);
             if (prio == 0) continue;  // Skip completed/revoked broadcasts
 
@@ -215,9 +219,11 @@ YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oau
         // Log all statuses for debugging
         std::string statuses;
         for (const auto& item : j["items"]) {
-            if (item.contains("snippet")) {
-                if (!statuses.empty()) statuses += ", ";
-                statuses += item["snippet"].value("lifeCycleStatus", "?");
+            if (!statuses.empty()) statuses += ", ";
+            if (item.contains("status") && item["status"].is_object()) {
+                statuses += item["status"].value("lifeCycleStatus", "?");
+            } else {
+                statuses += "(no status)";
             }
         }
         spdlog::info("[YouTubeApi] No usable broadcast found ({} checked, statuses: {}).",
