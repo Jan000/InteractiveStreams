@@ -91,6 +91,7 @@ private:
     // Stats
     size_t m_messagesReceived = 0;
     size_t m_messagesSent     = 0;
+    std::atomic<int64_t> m_lastMessageTime{0}; ///< epoch seconds of last received message
 
 #ifdef IS_YOUTUBE_GRPC_ENABLED
     /// The gRPC streaming client (created dynamically when gRPC mode is active).

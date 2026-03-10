@@ -438,6 +438,62 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           </span>
         </p>
 
+        {/* YouTube live status */}
+        {channel.platform === "youtube" && channel.connected && (() => {
+          const msgs = (channel.details?.messagesReceived as number) ?? 0;
+          const lastTs = (channel.details?.lastMessageTime as number) ?? 0;
+          const chatId = channel.details?.liveChatId as string | undefined;
+          const waiting = channel.details?.waitingForLivestream as boolean;
+          const nowSec = Math.floor(Date.now() / 1000);
+          const ago = lastTs > 0 ? nowSec - lastTs : -1;
+          const isActive = ago >= 0 && ago < 30;
+          return (
+            <div className="rounded-md border border-border p-2.5 space-y-1.5 text-xs">
+              <div className="flex items-center gap-2 font-medium">
+                <span
+                  className={cn(
+                    "inline-block size-2 rounded-full",
+                    waiting
+                      ? "bg-amber-500 animate-pulse"
+                      : isActive
+                        ? "bg-green-500 animate-pulse"
+                        : lastTs > 0
+                          ? "bg-yellow-500"
+                          : "bg-muted-foreground"
+                  )}
+                />
+                {waiting
+                  ? "Waiting for livestream…"
+                  : isActive
+                    ? "Chat active"
+                    : lastTs > 0
+                      ? "Chat idle"
+                      : "No messages yet"}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
+                <span>Messages: <strong className="text-foreground">{msgs}</strong></span>
+                {lastTs > 0 && (
+                  <span>
+                    Last:{" "}
+                    <strong className="text-foreground">
+                      {ago < 60
+                        ? `${ago}s ago`
+                        : ago < 3600
+                          ? `${Math.floor(ago / 60)}m ago`
+                          : `${Math.floor(ago / 3600)}h ago`}
+                    </strong>
+                  </span>
+                )}
+                {chatId && (
+                  <span>
+                    Chat ID: <code className="rounded bg-muted px-1 py-0.5">{chatId}</code>
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Settings toggle */}
         <button
           type="button"

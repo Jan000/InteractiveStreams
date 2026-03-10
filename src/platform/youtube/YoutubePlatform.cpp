@@ -172,7 +172,8 @@ nlohmann::json YoutubePlatform::getStatus() const {
         {"waitingForLivestream", m_connected.load() && m_liveChatId.empty()},
         {"waitingForStreamStart", m_connected.load() && m_liveChatId.empty() && (!m_streamingChecker || !m_streamingChecker())},
         {"messagesReceived", m_messagesReceived},
-        {"messagesSent", m_messagesSent}
+        {"messagesSent", m_messagesSent},
+        {"lastMessageTime", m_lastMessageTime.load()}
     };
 
 #ifdef IS_YOUTUBE_GRPC_ENABLED
@@ -372,6 +373,7 @@ void YoutubePlatform::pollLoop() {
 
                         if (!msg.text.empty()) {
                             m_messagesReceived++;
+                            m_lastMessageTime.store(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
                             std::lock_guard<std::mutex> lock(m_mutex);
                             m_messageQueue.push(std::move(msg));
                         }
@@ -417,6 +419,7 @@ bool YoutubePlatform::tryGrpcStream() {
         [this](ChatMessage msg) {
             // Callback from gRPC thread – push into shared queue
             m_messagesReceived++;
+            m_lastMessageTime.store(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
             std::lock_guard<std::mutex> lock(m_mutex);
             m_messageQueue.push(std::move(msg));
         }
