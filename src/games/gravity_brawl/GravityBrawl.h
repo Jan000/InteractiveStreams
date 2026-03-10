@@ -287,6 +287,7 @@ private:
 
     // Timing
     double m_countdownTimer    = 0.0;
+    int    m_lastCountdownBeep = 0;   // tracks last played countdown tick
     double m_gameTimer         = 0.0;  // total elapsed game time
     double m_lobbyTimer        = 0.0;
     double m_survivalAccum     = 0.0;  // fractional survival point accumulator

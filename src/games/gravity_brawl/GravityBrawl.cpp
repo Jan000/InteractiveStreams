@@ -862,7 +862,7 @@ void GravityBrawl::startCountdown() {
 
     m_phase = GamePhase::Countdown;
     m_countdownTimer = 3.0;
-    playSfx("gb_countdown");
+    m_lastCountdownBeep = 4; // triggers beep on first tick (3)
     spdlog::info("[GravityBrawl] Countdown started.");
 }
 
@@ -950,6 +950,15 @@ void GravityBrawl::update(double dt) {
 
     case GamePhase::Countdown: {
         m_countdownTimer -= dt;
+
+        // Play one beep per countdown tick (3, 2, 1)
+        {
+            int cur = static_cast<int>(std::ceil(m_countdownTimer));
+            if (cur >= 1 && cur < m_lastCountdownBeep) {
+                playSfx("gb_countdown");
+                m_lastCountdownBeep = cur;
+            }
+        }
 
         // Keep orbiting during countdown
         for (auto& [id, p] : m_planets) {
