@@ -287,7 +287,7 @@ private:
 
     // YouTube update rate limiting (min 2 min between updateBroadcast calls)
     std::chrono::steady_clock::time_point m_lastYoutubeUpdateTime;
-    static constexpr int YOUTUBE_UPDATE_MIN_INTERVAL_SEC = 120;
+    static constexpr int YOUTUBE_UPDATE_MIN_INTERVAL_SEC = 600; // 10 min — each update costs 51 quota units
 };
 
 } // namespace is::core
