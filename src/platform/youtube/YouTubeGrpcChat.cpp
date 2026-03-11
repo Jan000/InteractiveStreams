@@ -45,6 +45,7 @@ void YouTubeGrpcChat::start(const std::string& apiKey,
 
     m_running = true;
     m_chatEnded = false;
+    m_quotaExhausted = false;
     m_thread = std::thread(&YouTubeGrpcChat::streamLoop, this);
 
     spdlog::info("[YouTube gRPC] Started streaming for liveChatId '{}'.", liveChatId);
@@ -287,10 +288,11 @@ void YouTubeGrpcChat::streamLoop() {
             }
 
             // RESOURCE_EXHAUSTED – quota exceeded: stop immediately
+            // REST would hit the same server-side limit, so don't fall back.
             if (status.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED) {
-                spdlog::error("[YouTube gRPC] Quota exhausted – stopping gRPC stream. "
-                              "Will fall back to REST (which respects local quota budget).");
+                spdlog::error("[YouTube gRPC] Quota exhausted – stopping gRPC stream.");
                 YouTubeQuota::instance().consume(0, "gRPC RESOURCE_EXHAUSTED (quota hit)");
+                m_quotaExhausted = true;
                 break;
             }
 

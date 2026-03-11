@@ -72,6 +72,10 @@ public:
     /// for the next broadcast instead of falling back to REST.
     bool chatEnded() const { return m_chatEnded.load(); }
 
+    /// True if the stream exited due to RESOURCE_EXHAUSTED.
+    /// The caller should NOT fall back to REST (same quota applies).
+    bool quotaExhausted() const { return m_quotaExhausted.load(); }
+
     /// Update the OAuth token (thread-safe).  Called by the owning
     /// YoutubePlatform when it refreshes the access token.
     void updateToken(const std::string& newToken);
@@ -92,6 +96,7 @@ private:
     std::atomic<bool>   m_running{false};
     std::atomic<bool>   m_connected{false};
     std::atomic<bool>   m_chatEnded{false};
+    std::atomic<bool>   m_quotaExhausted{false};
     std::atomic<size_t> m_messagesReceived{0};
     std::thread         m_thread;
 

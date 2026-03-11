@@ -548,8 +548,10 @@ bool YoutubePlatform::tryGrpcStream() {
 
     // Clean up
     bool streamEnded = false;
+    bool quotaHit = false;
     if (m_grpcChat) {
         streamEnded = m_grpcChat->chatEnded();
+        quotaHit = m_grpcChat->quotaExhausted();
         m_grpcChat->stop();
         m_grpcChat.reset();
     }
@@ -564,6 +566,24 @@ bool YoutubePlatform::tryGrpcStream() {
         m_autoDetectedChatId = false;
         m_nextPageToken.clear();
         m_detectionStatus = "Stream ended. Waiting for next broadcast.";
+    }
+
+    // YouTube-side quota exhausted — REST would hit the same limit.
+    // Pause for 1 hour instead of burning quota on REST retries.
+    if (quotaHit) {
+        constexpr int QUOTA_PAUSE_SEC = 3600;
+        spdlog::warn("[YouTube] YouTube quota exhausted — pausing for {} min before retrying.",
+                     QUOTA_PAUSE_SEC / 60);
+        m_detectionStatus = "YouTube quota exhausted. Pausing for 1 hour.";
+        for (int i = 0; i < QUOTA_PAUSE_SEC && m_shouldRun; ++i) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        // After pause, cycle back to outer loop (will retry gRPC)
+        m_liveChatId.clear();
+        m_broadcastId.clear();
+        m_autoDetectedChatId = false;
+        m_nextPageToken.clear();
+        m_detectionStatus = "Quota pause ended. Waiting for next broadcast.";
     }
 
     return true; // We did run gRPC (success or failure)
