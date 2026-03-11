@@ -60,6 +60,11 @@ void YouTubeGrpcChat::stop() {
     spdlog::info("[YouTube gRPC] Stopped.");
 }
 
+void YouTubeGrpcChat::updateToken(const std::string& newToken) {
+    std::lock_guard<std::mutex> lock(m_tokenMutex);
+    m_oauthToken = newToken;
+}
+
 // ── Background Streaming Loop ────────────────────────────────────────────────
 
 void YouTubeGrpcChat::streamLoop() {
@@ -90,8 +95,14 @@ void YouTubeGrpcChat::streamLoop() {
         // ── Authentication metadata ──────────────────────────────────────
         grpc::ClientContext context;
 
-        if (!m_oauthToken.empty()) {
-            context.AddMetadata("authorization", "Bearer " + m_oauthToken);
+        std::string token;
+        {
+            std::lock_guard<std::mutex> lock(m_tokenMutex);
+            token = m_oauthToken;
+        }
+
+        if (!token.empty()) {
+            context.AddMetadata("authorization", "Bearer " + token);
         } else if (!m_apiKey.empty()) {
             context.AddMetadata("x-goog-api-key", m_apiKey);
         } else {
@@ -206,10 +217,11 @@ void YouTubeGrpcChat::streamLoop() {
             // UNAUTHENTICATED / PERMISSION_DENIED – likely token expired
             if (status.error_code() == grpc::StatusCode::UNAUTHENTICATED ||
                 status.error_code() == grpc::StatusCode::PERMISSION_DENIED) {
-                spdlog::error("[YouTube gRPC] Authentication failed. "
-                              "Check your API key / OAuth token.");
-                // Don't retry immediately – the token needs to be refreshed
-                for (int i = 0; i < 60 && m_running.load(); ++i) {
+                spdlog::error("[YouTube gRPC] Authentication failed – "
+                              "token likely expired, will reconnect with refreshed token.");
+                // Brief wait, then retry – the owning YoutubePlatform should
+                // have updated our token via updateToken() by now.
+                for (int i = 0; i < 5 && m_running.load(); ++i) {
                     std::this_thread::sleep_for(std::chrono::seconds(1));
                 }
                 continue;

@@ -483,8 +483,13 @@ bool YoutubePlatform::tryGrpcStream() {
         }
     );
 
-    // Wait while gRPC is running and we should keep going
+    // Wait while gRPC is running and we should keep going.
+    // Periodically refresh the OAuth token and propagate it to the gRPC client.
     while (m_shouldRun && m_grpcChat && m_grpcChat->isRunning()) {
+        refreshTokenIfNeeded();
+        if (m_grpcChat) {
+            m_grpcChat->updateToken(m_oauthToken);
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 

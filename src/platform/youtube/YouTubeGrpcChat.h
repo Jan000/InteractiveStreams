@@ -66,13 +66,18 @@ public:
     /// Total messages received since start().
     size_t messagesReceived() const { return m_messagesReceived.load(); }
 
+    /// Update the OAuth token (thread-safe).  Called by the owning
+    /// YoutubePlatform when it refreshes the access token.
+    void updateToken(const std::string& newToken);
+
 private:
     /// Background thread entry point.
     void streamLoop();
 
-    // Configuration (set once in start(), read-only from thread)
+    // Configuration (set once in start(), token may be updated via updateToken())
     std::string     m_apiKey;
     std::string     m_oauthToken;
+    mutable std::mutex m_tokenMutex;  ///< Guards m_oauthToken
     std::string     m_liveChatId;
     std::string     m_channelId;
     MessageCallback m_onMessage;
