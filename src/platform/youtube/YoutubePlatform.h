@@ -46,9 +46,8 @@ private:
     void pollLoop();
 
     /// Auto-detect the activeLiveChatId for the current live broadcast.
-    /// Tries OAuth (liveBroadcasts.list mine=true) first, then falls back
-    /// to API key + channel ID (search + videos.list).
-    /// Returns the chat ID or an empty string on failure.
+    /// Uses OAuth (liveBroadcasts.list mine=true).  Returns the chat ID
+    /// or an empty string on failure.
     /// Also caches the broadcast ID for reuse by StreamInstance.
     std::string fetchLiveChatId();
 

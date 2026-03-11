@@ -44,6 +44,7 @@ void YouTubeGrpcChat::start(const std::string& apiKey,
     m_messagesReceived = 0;
 
     m_running = true;
+    m_chatEnded = false;
     m_thread = std::thread(&YouTubeGrpcChat::streamLoop, this);
 
     spdlog::info("[YouTube gRPC] Started streaming for liveChatId '{}'.", liveChatId);
@@ -73,9 +74,9 @@ void YouTubeGrpcChat::streamLoop() {
     // Each iteration opens a new gRPC stream.
     // When the stream ends (offline, error, token expiry), we wait and retry.
 
-    constexpr int RECONNECT_WAIT_SEC      = 5;
-    constexpr int MAX_CONSECUTIVE_ERRORS  = 5;   // give up after N errors without messages
-    constexpr int MAX_NOT_FOUND_RETRIES   = 3;
+    constexpr int RECONNECT_WAIT_SEC      = 15;  // normal reconnect delay
+    constexpr int MAX_CONSECUTIVE_ERRORS  = 3;   // give up after N errors without messages
+    constexpr int MAX_NOT_FOUND_RETRIES   = 2;
 
     size_t reconnects        = 0;
     int    consecutiveErrors = 0;
@@ -148,6 +149,7 @@ void YouTubeGrpcChat::streamLoop() {
             // Check if the stream went offline
             if (response.has_offline_at() && !response.offline_at().empty()) {
                 spdlog::info("[YouTube gRPC] Stream went offline at {}.", response.offline_at());
+                m_chatEnded = true;
                 break;
             }
 
@@ -165,15 +167,15 @@ void YouTubeGrpcChat::streamLoop() {
                     // Short enum aliases (TOMBSTONE, etc.) live on the wrapper
                     // *message* class, not on the enum type itself.
                     using T = youtube::api::v3::LiveChatMessageSnippet_TypeWrapper;
+                    if (type == T::CHAT_ENDED_EVENT) {
+                        spdlog::info("[YouTube gRPC] Chat ended event received.");
+                        m_chatEnded = true;
+                        break; // break for-loop; m_chatEnded will break read-loop below
+                    }
                     if (type == T::TOMBSTONE ||
-                        type == T::CHAT_ENDED_EVENT ||
                         type == T::MESSAGE_DELETED_EVENT ||
                         type == T::MESSAGE_RETRACTED_EVENT ||
                         type == T::USER_BANNED_EVENT) {
-                        // These are silent / moderation events – skip
-                        if (type == T::CHAT_ENDED_EVENT) {
-                            spdlog::info("[YouTube gRPC] Chat ended event received.");
-                        }
                         continue;
                     }
                 }
@@ -222,10 +224,20 @@ void YouTubeGrpcChat::streamLoop() {
                     m_onMessage(std::move(msg));
                 }
             }
+
+            // CHAT_ENDED_EVENT was received — stop reading
+            if (m_chatEnded.load()) break;
         }
 
         // ── Stream ended ─────────────────────────────────────────────────
         m_connected = false;
+
+        // Chat ended cleanly (offline_at, CHAT_ENDED_EVENT, or NOT_FOUND) —
+        // do NOT reconnect; the caller should wait for the next broadcast.
+        if (m_chatEnded.load()) {
+            spdlog::info("[YouTube gRPC] Chat ended — exiting stream loop (no reconnect).");
+            break;
+        }
 
         // If we received messages this batch, reset the error counter
         if (batchMessages > 0) {
@@ -263,6 +275,7 @@ void YouTubeGrpcChat::streamLoop() {
                 if (notFoundRetries >= MAX_NOT_FOUND_RETRIES) {
                     spdlog::warn("[YouTube gRPC] Live chat not found after {} retries – "
                                  "stopping gRPC (stream likely ended).", notFoundRetries);
+                    m_chatEnded = true;
                     break;
                 }
                 spdlog::warn("[YouTube gRPC] Live chat not found (attempt {}/{}) – "

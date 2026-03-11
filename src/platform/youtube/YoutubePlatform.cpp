@@ -3,6 +3,7 @@
 #include "platform/youtube/YouTubeQuota.h"
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
@@ -68,7 +69,7 @@ bool YoutubePlatform::connect() {
 }
 
 std::string YoutubePlatform::fetchLiveChatId() {
-    // Strategy 1: OAuth-based detection (liveBroadcasts.list mine=true)
+    // OAuth-based detection (liveBroadcasts.list mine=true) — costs 1 quota unit
     if (!m_oauthToken.empty()) {
         spdlog::info("[YouTube] Trying OAuth-based broadcast detection...");
         auto info = YouTubeApi::findActiveBroadcast(m_oauthToken);
@@ -79,28 +80,11 @@ std::string YoutubePlatform::fetchLiveChatId() {
                          m_broadcastId, info.lifeCycleStatus);
             return info.liveChatId;
         }
+        m_detectionStatus = "No live broadcast found";
         spdlog::info("[YouTube] OAuth detection found no usable broadcast.");
     } else {
-        spdlog::info("[YouTube] No OAuth token — skipping liveBroadcasts.list.");
-    }
-
-    // Strategy 2: API key + Channel ID fallback (search + videos.list)
-    if (!m_apiKey.empty() && !m_channelId.empty()) {
-        spdlog::info("[YouTube] Trying API key + channel ID fallback detection...");
-        auto info = YouTubeApi::findBroadcastByChannel(m_apiKey, m_channelId);
-        if (!info.empty()) {
-            m_broadcastId = info.broadcastId;
-            m_detectionStatus = "Found via API key (" + info.lifeCycleStatus + ")";
-            return info.liveChatId;
-        }
-        m_detectionStatus = "No live broadcast found (tried OAuth + API key)";
-        spdlog::info("[YouTube] API key fallback found no live broadcast.");
-    } else if (m_oauthToken.empty()) {
-        m_detectionStatus = "No OAuth token and no API key + channel ID";
-        spdlog::warn("[YouTube] Cannot auto-detect liveChatId: no OAuth token and "
-                     "no API key + channel ID configured.");
-    } else {
-        m_detectionStatus = "No live broadcast found (OAuth only, no API key fallback)";
+        m_detectionStatus = "No OAuth token configured";
+        spdlog::warn("[YouTube] Cannot detect liveChatId: no OAuth token configured.");
     }
 
     return "";
@@ -281,6 +265,11 @@ bool YoutubePlatform::waitForStreaming() {
 void YoutubePlatform::pollLoop() {
     spdlog::info("[YouTube] Starting poll loop (interval: {}ms)...", m_pollIntervalMs);
 
+    // ── Outer loop: cycles through detect → chat → reset for 24/7 operation ──
+    // When a stream ends (gRPC chatEnded or REST 403/404), m_liveChatId is
+    // cleared and we loop back here to wait for the next broadcast.
+    while (m_shouldRun) {
+
     // ── Auto-detect liveChatId if needed ─────────────────────────────────
     // Strategy: wait for a local stream to start, then wait 10s for YouTube
     // to register the ingest, attempt detection twice (with 30s gap), then
@@ -303,6 +292,7 @@ void YoutubePlatform::pollLoop() {
         if (!m_shouldRun) return;
 
         // Try detection up to MAX_AUTO_ATTEMPTS times
+        // Auto-detection only uses cheap OAuth path (1 unit).
         for (int attempt = 0; attempt < MAX_AUTO_ATTEMPTS && m_shouldRun && m_liveChatId.empty(); ++attempt) {
             refreshTokenIfNeeded();
             spdlog::info("[YouTube] Auto-detection attempt {}/{} ...", attempt + 1, MAX_AUTO_ATTEMPTS);
@@ -360,8 +350,13 @@ void YoutubePlatform::pollLoop() {
 #ifdef IS_YOUTUBE_GRPC_ENABLED
     if (tryGrpcStream()) {
         // gRPC ran until m_shouldRun became false or the stream ended.
-        // If we should stop, return immediately.
         if (!m_shouldRun) return;
+
+        // If the live chat ended, cycle back to wait-for-stream mode
+        if (m_liveChatId.empty()) {
+            spdlog::info("[YouTube] Chat ended — returning to wait-for-stream mode.");
+            continue; // outer while(m_shouldRun) loop
+        }
 
         // Otherwise fall through to REST polling as fallback
         spdlog::warn("[YouTube] gRPC streaming ended — falling back to REST polling.");
@@ -445,13 +440,19 @@ void YoutubePlatform::pollLoop() {
                     auto msg = json["error"].value("message", "unknown");
                     int code = json["error"].value("code", 0);
                     spdlog::warn("[YouTube] Chat API error ({}): {}", code, msg);
-                    // If chat ended (403/404), clear so we can re-detect
+                    // If chat ended (403/404), clear and return to wait-for-stream
                     if (code == 403 || code == 404) {
+                        spdlog::info("[YouTube] Chat closed (HTTP {}) — resetting to wait for next broadcast.", code);
                         m_liveChatId.clear();
+                        m_broadcastId.clear();
                         m_autoDetectedChatId = false;
                         m_nextPageToken.clear();
+                        m_detectionStatus = "Stream ended. Waiting for next broadcast.";
                     }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(m_pollIntervalMs));
+                    // Back off on errors to avoid spin-looping
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                    // If chat ID was cleared, break REST loop to cycle outer loop
+                    if (m_liveChatId.empty()) break;
                     continue;
                 }
 
@@ -486,19 +487,23 @@ void YoutubePlatform::pollLoop() {
                     }
                 }
 
-                // Use pollingIntervalMillis from API response if available
+                // Use pollingIntervalMillis from API response if available,
+                // but enforce a minimum of 4000ms to limit quota burn.
                 if (json.contains("pollingIntervalMillis")) {
-                    int interval = json["pollingIntervalMillis"];
+                    int interval = std::max(4000, json["pollingIntervalMillis"].get<int>());
                     std::this_thread::sleep_for(std::chrono::milliseconds(interval));
                     continue;
                 }
             } catch (const std::exception& e) {
                 spdlog::warn("[YouTube] Failed to parse chat response: {}", e.what());
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(m_pollIntervalMs));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::max(4000, m_pollIntervalMs)));
     }
+
+    } // end outer while(m_shouldRun) — cycles back to wait-for-stream
 }
 
 // ── gRPC streaming ───────────────────────────────────────────────────────────
@@ -542,11 +547,24 @@ bool YoutubePlatform::tryGrpcStream() {
     }
 
     // Clean up
+    bool streamEnded = false;
     if (m_grpcChat) {
+        streamEnded = m_grpcChat->chatEnded();
         m_grpcChat->stop();
         m_grpcChat.reset();
     }
     m_grpcActive = false;
+
+    // If the live chat ended (offline / CHAT_ENDED_EVENT / NOT_FOUND),
+    // clear the chat ID so pollLoop returns to wait-for-stream mode.
+    if (streamEnded) {
+        spdlog::info("[YouTube] Live chat ended — resetting chat ID to wait for next broadcast.");
+        m_liveChatId.clear();
+        m_broadcastId.clear();
+        m_autoDetectedChatId = false;
+        m_nextPageToken.clear();
+        m_detectionStatus = "Stream ended. Waiting for next broadcast.";
+    }
 
     return true; // We did run gRPC (success or failure)
 }

@@ -66,6 +66,12 @@ public:
     /// Total messages received since start().
     size_t messagesReceived() const { return m_messagesReceived.load(); }
 
+    /// True if the stream ended because the live chat closed
+    /// (CHAT_ENDED_EVENT, offline_at, or NOT_FOUND after retries).
+    /// When true, the caller should clear its liveChatId and wait
+    /// for the next broadcast instead of falling back to REST.
+    bool chatEnded() const { return m_chatEnded.load(); }
+
     /// Update the OAuth token (thread-safe).  Called by the owning
     /// YoutubePlatform when it refreshes the access token.
     void updateToken(const std::string& newToken);
@@ -85,6 +91,7 @@ private:
     // State
     std::atomic<bool>   m_running{false};
     std::atomic<bool>   m_connected{false};
+    std::atomic<bool>   m_chatEnded{false};
     std::atomic<size_t> m_messagesReceived{0};
     std::thread         m_thread;
 
