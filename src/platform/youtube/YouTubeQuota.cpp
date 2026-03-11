@@ -2,6 +2,8 @@
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <ctime>
+#include <iomanip>
+#include <sstream>
 
 namespace is::platform {
 
@@ -25,6 +27,20 @@ int YouTubeQuota::pacificDayNumber() const {
     return static_cast<int>((secs - PACIFIC_OFFSET) / 86400);
 }
 
+std::string YouTubeQuota::nowIso8601() {
+    auto now = std::chrono::system_clock::now();
+    auto tt  = std::chrono::system_clock::to_time_t(now);
+    std::tm gmt{};
+#ifdef _WIN32
+    gmtime_s(&gmt, &tt);
+#else
+    gmtime_r(&tt, &gmt);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&gmt, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+}
+
 void YouTubeQuota::checkDayRollover() {
     // caller must hold m_mutex
     int today = pacificDayNumber();
@@ -32,20 +48,38 @@ void YouTubeQuota::checkDayRollover() {
         spdlog::info("[YouTube Quota] New day (Pacific) — resetting usage from {} to 0.", m_used);
         m_used = 0;
         m_dayNumber = today;
+        m_log.clear();
     }
 }
 
-bool YouTubeQuota::consume(int cost) {
+bool YouTubeQuota::consume(int cost, const std::string& method) {
     std::lock_guard<std::mutex> lock(m_mutex);
     checkDayRollover();
-    if (m_used + cost > m_budget) {
-        spdlog::warn("[YouTube Quota] Blocked: {} units requested, {}/{} used. Budget exhausted.",
-                     cost, m_used, m_budget);
-        return false;
+
+    bool blocked = (m_used + cost > m_budget);
+    if (!blocked) {
+        m_used += cost;
     }
-    m_used += cost;
-    spdlog::debug("[YouTube Quota] Consumed {} units ({}/{} used).", cost, m_used, m_budget);
-    return true;
+
+    // Log every call
+    LogEntry entry;
+    entry.timestamp  = nowIso8601();
+    entry.method     = method;
+    entry.cost       = cost;
+    entry.totalAfter = m_used;
+    entry.blocked    = blocked;
+    m_log.push_back(std::move(entry));
+    if (m_log.size() > MAX_LOG_ENTRIES) {
+        m_log.pop_front();
+    }
+
+    if (blocked) {
+        spdlog::warn("[YouTube Quota] Blocked {}: {} units requested, {}/{} used.",
+                     method, cost, m_used, m_budget);
+    } else {
+        spdlog::debug("[YouTube Quota] {} — {} units ({}/{} used).", method, cost, m_used, m_budget);
+    }
+    return !blocked;
 }
 
 int YouTubeQuota::used() const {
@@ -73,6 +107,7 @@ void YouTubeQuota::reset() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_used = 0;
     m_dayNumber = pacificDayNumber();
+    m_log.clear();
     spdlog::info("[YouTube Quota] Usage manually reset.");
 }
 
@@ -82,8 +117,26 @@ nlohmann::json YouTubeQuota::toJson() const {
         {"used", m_used},
         {"budget", m_budget},
         {"remaining", std::max(0, m_budget - m_used)},
-        {"max_daily", COST_MAX_DAILY}
+        {"max_daily", COST_MAX_DAILY},
+        {"log", logToJson()}
     };
+}
+
+nlohmann::json YouTubeQuota::logToJson() const {
+    // caller may or may not hold m_mutex — safe because toJson() already holds it
+    // and standalone callers should lock themselves.
+    nlohmann::json arr = nlohmann::json::array();
+    // Return newest first
+    for (auto it = m_log.rbegin(); it != m_log.rend(); ++it) {
+        arr.push_back({
+            {"timestamp", it->timestamp},
+            {"method", it->method},
+            {"cost", it->cost},
+            {"total_after", it->totalAfter},
+            {"blocked", it->blocked}
+        });
+    }
+    return arr;
 }
 
 } // namespace is::platform

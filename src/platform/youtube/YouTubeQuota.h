@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <nlohmann/json.hpp>
@@ -27,11 +28,24 @@ public:
     static constexpr int COST_UPDATE         = 50;   // liveBroadcasts.update
     static constexpr int COST_MAX_DAILY      = 10000;
 
+    /// Maximum number of log entries kept in memory.
+    static constexpr size_t MAX_LOG_ENTRIES   = 200;
+
+    /// A single logged API call.
+    struct LogEntry {
+        std::string timestamp;  // ISO-8601 UTC
+        std::string method;     // e.g. "liveBroadcasts.list"
+        int cost;
+        int totalAfter;         // cumulative usage after this call
+        bool blocked;           // true if the call was rejected
+    };
+
     static YouTubeQuota& instance();
 
     /// Try to consume `cost` units.  Returns true if the budget allows it,
     /// false if the request would exceed the remaining budget.
-    bool consume(int cost);
+    /// `method` is a human-readable label for the API call (logged).
+    bool consume(int cost, const std::string& method = "unknown");
 
     /// Current usage today.
     int used() const;
@@ -51,6 +65,9 @@ public:
     /// JSON representation for the API / dashboard.
     nlohmann::json toJson() const;
 
+    /// Recent API call log as JSON array (newest first).
+    nlohmann::json logToJson() const;
+
 private:
     YouTubeQuota();
 
@@ -60,10 +77,15 @@ private:
     /// Get the current day number in Pacific Time.
     int pacificDayNumber() const;
 
+    /// Format current time as ISO-8601 UTC string.
+    static std::string nowIso8601();
+
     mutable std::mutex m_mutex;
     int m_budget = COST_MAX_DAILY;
     int m_used   = 0;
     int m_dayNumber = 0; ///< Day number when usage was last reset
+
+    std::deque<LogEntry> m_log;
 };
 
 } // namespace is::platform

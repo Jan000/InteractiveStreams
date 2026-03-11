@@ -976,8 +976,14 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
     }
 
     // Update YouTube channels subscribed to this stream
-    // Rate-limit YouTube API calls to conserve quota (min 2 min between updates)
+    // Rate-limit YouTube API calls to conserve quota (min 10 min between updates)
     if (!youtubeTitle.empty() || !youtubeDescription.empty()) {
+        // Skip if title+description are identical to what we last sent
+        if (youtubeTitle == m_lastYoutubeTitle && youtubeDescription == m_lastYoutubeDescription) {
+            spdlog::debug("[Stream '{}'] Skipping YouTube broadcast update — "
+                          "title and description unchanged.",
+                          m_config.name);
+        } else {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             now - m_lastYoutubeUpdateTime).count();
@@ -988,6 +994,8 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
                           m_config.name, elapsed, YOUTUBE_UPDATE_MIN_INTERVAL_SEC);
         } else {
         m_lastYoutubeUpdateTime = now;
+        m_lastYoutubeTitle = youtubeTitle;
+        m_lastYoutubeDescription = youtubeDescription;
         for (const auto& chId : m_config.channelIds) {
             const auto* cfg = cm.getChannelConfig(chId);
             if (!cfg || cfg->platform != "youtube") continue;
@@ -1074,6 +1082,7 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
             }).detach();
         }
         } // else: rate-limited
+        } // else: unchanged
     }
 }
 

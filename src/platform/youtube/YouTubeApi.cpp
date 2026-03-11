@@ -139,7 +139,7 @@ YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oau
     if (oauthToken.empty()) return {};
 
     // Costs 1 quota unit (liveBroadcasts.list)
-    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "liveBroadcasts.list (findActiveBroadcast)")) {
         spdlog::warn("[YouTubeApi] findActiveBroadcast: quota budget exhausted.");
         return {};
     }
@@ -248,7 +248,7 @@ YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
     if (apiKey.empty() || channelId.empty()) return {};
 
     // Step 1 costs 100 quota units (search.list)
-    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_SEARCH)) {
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_SEARCH, "search.list (findBroadcastByChannel)")) {
         spdlog::warn("[YouTubeApi] findBroadcastByChannel: quota budget exhausted.");
         return {};
     }
@@ -298,7 +298,7 @@ YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
 
     // Step 2: Get liveStreamingDetails for the video to extract activeLiveChatId
     // Costs 1 quota unit (videos.list)
-    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "videos.list (findBroadcastByChannel)")) {
         spdlog::warn("[YouTubeApi] findBroadcastByChannel step 2: quota budget exhausted.");
         return {};
     }
@@ -357,7 +357,7 @@ YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
 
 std::string YouTubeApi::getActiveBroadcastId(const std::string& oauthToken) {
     // Costs 1 quota unit (liveBroadcasts.list)
-    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "liveBroadcasts.list (getActiveBroadcastId)")) {
         spdlog::warn("[YouTubeApi] getActiveBroadcastId: quota budget exhausted.");
         return "";
     }
@@ -413,7 +413,7 @@ bool YouTubeApi::updateBroadcast(const std::string& oauthToken,
     }
 
     // Costs: 1 (list to read current) + 50 (update) = 51 quota units
-    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST + YouTubeQuota::COST_UPDATE)) {
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST + YouTubeQuota::COST_UPDATE, "liveBroadcasts.list+update (updateBroadcast)")) {
         spdlog::warn("[YouTubeApi] updateBroadcast: quota budget exhausted.");
         return false;
     }

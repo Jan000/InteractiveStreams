@@ -88,6 +88,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quotaLogOpen, setQuotaLogOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [twitchAuthLoading, setTwitchAuthLoading] = useState(false);
@@ -448,7 +449,10 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           const waiting = channel.details?.waitingForLivestream as boolean;
           const waitingStream = channel.details?.waitingForStreamStart as boolean;
           const detectionStatus = channel.details?.detectionStatus as string | undefined;
-          const quota = channel.details?.quota as { used: number; budget: number; remaining: number } | undefined;
+          const quota = channel.details?.quota as {
+            used: number; budget: number; remaining: number;
+            log?: Array<{ timestamp: string; method: string; cost: number; total_after: number; blocked: boolean }>;
+          } | undefined;
           const nowSec = Math.floor(Date.now() / 1000);
           const ago = lastTs > 0 ? nowSec - lastTs : -1;
           const isActive = ago >= 0 && ago < 30;
@@ -540,6 +544,53 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                   </div>
                 )}
               </div>
+              {/* Collapsible API call log */}
+              {quota?.log && quota.log.length > 0 && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setQuotaLogOpen((v) => !v)}
+                  >
+                    {quotaLogOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                    API Call Log ({quota.log.length})
+                  </button>
+                  {quotaLogOpen && (
+                    <div className="mt-1 max-h-48 overflow-auto rounded border border-border">
+                      <table className="w-full text-[10px]">
+                        <thead className="sticky top-0 bg-muted">
+                          <tr className="text-left text-muted-foreground">
+                            <th className="px-1.5 py-0.5">Time (UTC)</th>
+                            <th className="px-1.5 py-0.5">Method</th>
+                            <th className="px-1.5 py-0.5 text-right">Cost</th>
+                            <th className="px-1.5 py-0.5 text-right">Total</th>
+                            <th className="px-1.5 py-0.5">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {quota.log.map((entry, i) => (
+                            <tr key={i} className={cn("border-t border-border", entry.blocked && "text-red-500")}>
+                              <td className="px-1.5 py-0.5 whitespace-nowrap font-mono">
+                                {entry.timestamp.replace("T", " ").replace("Z", "")}
+                              </td>
+                              <td className="px-1.5 py-0.5">{entry.method}</td>
+                              <td className="px-1.5 py-0.5 text-right">{entry.cost}</td>
+                              <td className="px-1.5 py-0.5 text-right">{entry.total_after}</td>
+                              <td className="px-1.5 py-0.5">
+                                {entry.blocked ? (
+                                  <span className="text-red-500 font-medium">Blocked</span>
+                                ) : (
+                                  <span className="text-green-500">OK</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()}

@@ -396,7 +396,7 @@ void YoutubePlatform::pollLoop() {
         refreshTokenIfNeeded();
 
         // liveChatMessages.list costs 1 quota unit
-        if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+        if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "liveChatMessages.list (pollChat)")) {
             spdlog::warn("[YouTube] Daily quota budget exhausted — pausing REST chat polling.");
             std::this_thread::sleep_for(std::chrono::seconds(60));
             continue;
