@@ -73,6 +73,7 @@ void YouTubeGrpcChat::streamLoop() {
     // When the stream ends (offline, error, token expiry), we wait and retry.
 
     constexpr int RECONNECT_WAIT_SEC = 5;
+    size_t reconnects = 0;
 
     while (m_running.load()) {
         // ── Create channel & stub ────────────────────────────────────────
@@ -112,14 +113,20 @@ void YouTubeGrpcChat::streamLoop() {
         }
 
         // ── Open server-streamed RPC ─────────────────────────────────────
-        spdlog::info("[YouTube gRPC] Opening stream (pageToken='{}') …",
-                     m_nextPageToken.empty() ? "(none)" : m_nextPageToken);
+        if (reconnects == 0) {
+            spdlog::info("[YouTube gRPC] Opening stream (pageToken='{}') …",
+                         m_nextPageToken.empty() ? "(none)" : m_nextPageToken);
+        } else {
+            spdlog::debug("[YouTube gRPC] Reopening stream #{} (pageToken='{}') …",
+                          reconnects, m_nextPageToken.empty() ? "(none)" : m_nextPageToken);
+        }
 
         auto reader = stub->StreamList(&context, request);
         m_connected = true;
 
         // ── Read responses ───────────────────────────────────────────────
         youtube::api::v3::LiveChatMessageListResponse response;
+        size_t batchMessages = 0;
 
         while (reader->Read(&response) && m_running.load()) {
             // Update page token for reconnection continuity
@@ -197,6 +204,7 @@ void YouTubeGrpcChat::streamLoop() {
                 }
 
                 m_messagesReceived++;
+                batchMessages++;
 
                 // Deliver via callback
                 if (m_onMessage) {
@@ -246,12 +254,14 @@ void YouTubeGrpcChat::streamLoop() {
                 continue;
             }
         } else {
-            spdlog::info("[YouTube gRPC] Stream ended normally (server closed connection).");
+            spdlog::debug("[YouTube gRPC] Stream batch ended normally ({} msgs).", batchMessages);
         }
+
+        reconnects++;
 
         // Brief wait before reconnecting
         if (m_running.load()) {
-            spdlog::info("[YouTube gRPC] Reconnecting in {} seconds…", RECONNECT_WAIT_SEC);
+            spdlog::debug("[YouTube gRPC] Reconnecting in {} seconds…", RECONNECT_WAIT_SEC);
             for (int i = 0; i < RECONNECT_WAIT_SEC && m_running.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }

@@ -88,6 +88,9 @@ public:
     void setSfxVolume(float volume);
     float sfxVolume() const { return m_sfxVolume; }
 
+    /// Set an AudioMixer to receive SFX for stream encoding.
+    void setAudioMixer(class AudioMixer* mixer);
+
     // ── Mute ─────────────────────────────────────────────────────────────
 
     void setMuted(bool muted);
@@ -136,6 +139,7 @@ private:
     float                                     m_sfxVolume = 80.0f;
 
     bool     m_muted = false;
+    class AudioMixer* m_audioMixer = nullptr;
     std::mt19937 m_rng;
     mutable std::mutex m_mutex;
 };

@@ -38,6 +38,10 @@ public:
     /// checker returns true (+ a short stabilisation delay).
     void setStreamingChecker(std::function<bool()> checker);
 
+    /// Manually trigger broadcast detection from the dashboard.
+    /// Thread-safe — can be called from the web API thread.
+    void requestDetection();
+
 private:
     void pollLoop();
 
@@ -86,6 +90,9 @@ private:
 
     // Streaming gate – defer auto-detection until a stream is live
     std::function<bool()> m_streamingChecker;
+
+    /// Atomic flag: web thread sets to true to request manual detection.
+    std::atomic<bool> m_detectionRequested{false};
 
     /// Block (in 500 ms increments) until m_streamingChecker returns true,
     /// then wait an additional stabilisation delay.  Returns false if

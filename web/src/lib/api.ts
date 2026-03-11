@@ -391,6 +391,15 @@ export const api = {
     post<{ success: boolean; expires_in?: number }>(
       `/api/auth/youtube/refresh/${encodeURIComponent(channelId)}`),
 
+  // YouTube Quota & Detection
+  detectYouTubeBroadcast: (channelId: string) =>
+    post<{ success: boolean; message: string }>(
+      `/api/youtube/detect/${encodeURIComponent(channelId)}`),
+  getYouTubeQuota: () =>
+    get<{ used: number; budget: number; remaining: number }>("/api/youtube/quota"),
+  updateYouTubeQuota: (data: { budget?: number; reset?: boolean }) =>
+    put<{ used: number; budget: number; remaining: number }>("/api/youtube/quota", data),
+
   // Performance
   getPerf: (seconds = 60) =>
     get<PerfData>(`/api/perf?seconds=${seconds}`),

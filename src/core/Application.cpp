@@ -166,6 +166,9 @@ void Application::initialize() {
     m_impl->audioMixer->play();
     spdlog::info("AudioMixer initialised for stream encoding.");
 
+    // Connect AudioManager -> AudioMixer so SFX are mixed into stream audio
+    m_impl->audioManager->setAudioMixer(m_impl->audioMixer.get());
+
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─
     // IS_HEADLESS env var (set in Docker) always wins over config/SQLite,

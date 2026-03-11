@@ -1,4 +1,5 @@
 #include "core/AudioManager.h"
+#include "core/AudioMixer.h"
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <algorithm>
@@ -454,10 +455,20 @@ void AudioManager::playSfx(const std::string& name, float volume) {
     sound->play();
     m_activeSounds.push_back(std::move(sound));
 
+    // Also route to AudioMixer for stream encoding
+    if (m_audioMixer) {
+        m_audioMixer->playSfx(*it->second.buffers[idx], effectiveVol);
+    }
+
     // Limit active sounds to prevent resource exhaustion
     while (m_activeSounds.size() > 32) {
         m_activeSounds.erase(m_activeSounds.begin());
     }
+}
+
+void AudioManager::setAudioMixer(AudioMixer* mixer) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_audioMixer = mixer;
 }
 
 void AudioManager::setSfxVolume(float volume) {

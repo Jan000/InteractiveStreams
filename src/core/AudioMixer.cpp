@@ -159,13 +159,14 @@ void AudioMixer::setMuted(bool muted) {
 
 // ── SFX ──────────────────────────────────────────────────────────────────────
 
-void AudioMixer::playSfx(const sf::SoundBuffer& buffer) {
+void AudioMixer::playSfx(const sf::SoundBuffer& buffer, float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     SfxInstance sfx;
     sfx.channels   = buffer.getChannelCount();
     sfx.sampleRate = buffer.getSampleRate();
     sfx.position   = 0;
+    sfx.volume     = std::clamp(volume, 0.0f, 100.0f);
 
     // Copy sample data from the buffer
     const sf::Int16* ptr = buffer.getSamples();
@@ -298,8 +299,9 @@ size_t AudioMixer::pullSamples(sf::Int16* output, size_t frameCount) {
                 // For simplicity, we assume SFX are at 44100Hz (most game SFX are).
                 // A proper resampler could be added later.
 
-                int l = output[i * 2]     + static_cast<int>(left  * sfxGain);
-                int r = output[i * 2 + 1] + static_cast<int>(right * sfxGain);
+                float gain = sfxGain * (sfx.volume / 100.0f);
+                int l = output[i * 2]     + static_cast<int>(left  * gain);
+                int r = output[i * 2 + 1] + static_cast<int>(right * gain);
                 output[i * 2]     = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
                 output[i * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
             }

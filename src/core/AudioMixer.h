@@ -55,7 +55,8 @@ public:
     // ── SFX ──────────────────────────────────────────────────────────────
 
     /// Queue a sound effect for mixing (by reference to an sf::SoundBuffer).
-    void playSfx(const sf::SoundBuffer& buffer);
+    /// @param volume  Per-sound volume multiplier (0–100), combined with global SFX volume.
+    void playSfx(const sf::SoundBuffer& buffer, float volume = 100.0f);
 
     // ── PCM output ───────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ private:
         unsigned int channels    = 0;
         unsigned int sampleRate  = 0;
         size_t       position    = 0;    ///< Current read position (in samples)
+        float        volume      = 100.0f; ///< Per-sound volume (0–100)
     };
     std::vector<SfxInstance>  m_activeSfx;
 

@@ -448,6 +448,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
           const waiting = channel.details?.waitingForLivestream as boolean;
           const waitingStream = channel.details?.waitingForStreamStart as boolean;
           const detectionStatus = channel.details?.detectionStatus as string | undefined;
+          const quota = channel.details?.quota as { used: number; budget: number; remaining: number } | undefined;
           const nowSec = Math.floor(Date.now() / 1000);
           const ago = lastTs > 0 ? nowSec - lastTs : -1;
           const isActive = ago >= 0 && ago < 30;
@@ -495,8 +496,48 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     Chat ID: <code className="rounded bg-muted px-1 py-0.5">{chatId}</code>
                   </span>
                 )}
-                {waiting && detectionStatus && (
+                {detectionStatus && (
                   <span className="basis-full text-amber-500/80">{detectionStatus}</span>
+                )}
+              </div>
+              {/* Manual detect button + quota bar */}
+              <div className="flex items-center gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 gap-1 text-[10px]"
+                  onClick={async () => {
+                    try {
+                      await api.detectYouTubeBroadcast(channel.id);
+                      toast.success("Detection requested");
+                      onRefresh?.();
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Detection failed");
+                    }
+                  }}
+                >
+                  <Radio className="size-3" />
+                  Detect Broadcast
+                </Button>
+                {quota && (
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                      Quota: {quota.used}/{quota.budget}
+                    </span>
+                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-all",
+                          quota.remaining < quota.budget * 0.1
+                            ? "bg-red-500"
+                            : quota.remaining < quota.budget * 0.3
+                              ? "bg-amber-500"
+                              : "bg-green-500"
+                        )}
+                        style={{ width: `${Math.min(100, (quota.used / Math.max(1, quota.budget)) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

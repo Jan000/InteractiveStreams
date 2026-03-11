@@ -15,6 +15,8 @@
 #include "games/GameRegistry.h"
 #include "platform/twitch/TwitchApi.h"
 #include "platform/youtube/YouTubeApi.h"
+#include "platform/youtube/YoutubePlatform.h"
+#include "platform/youtube/YouTubeQuota.h"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -1157,6 +1159,57 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             {"success", true},
             {"expires_in", tr.expiresIn}
         }).dump(), "application/json");
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  YouTube Broadcast Detection & Quota
+    // ══════════════════════════════════════════════════════════════════════
+
+    // Trigger manual broadcast detection for a YouTube channel
+    server.Post(R"(/api/youtube/detect/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string channelId = pathParam(req);
+        auto* plat = app.channelManager().getPlatform(channelId);
+        if (!plat) {
+            res.status = 404;
+            res.set_content(R"({"error":"Channel not found"})", "application/json");
+            return;
+        }
+        auto* yt = dynamic_cast<platform::YoutubePlatform*>(plat);
+        if (!yt) {
+            res.status = 400;
+            res.set_content(R"({"error":"Channel is not a YouTube channel"})", "application/json");
+            return;
+        }
+        yt->requestDetection();
+        res.set_content(R"({"success":true,"message":"Detection requested"})", "application/json");
+    });
+
+    // Get YouTube API quota status
+    server.Get("/api/youtube/quota", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(platform::YouTubeQuota::instance().toJson().dump(), "application/json");
+    });
+
+    // Update YouTube API quota budget or reset
+    server.Put("/api/youtube/quota", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            if (body.contains("budget")) {
+                int budget = body["budget"].get<int>();
+                if (budget < 0 || budget > platform::YouTubeQuota::COST_MAX_DAILY) {
+                    res.status = 400;
+                    res.set_content(R"({"error":"Budget must be 0-10000"})", "application/json");
+                    return;
+                }
+                platform::YouTubeQuota::instance().setBudget(budget);
+            }
+            if (body.value("reset", false)) {
+                platform::YouTubeQuota::instance().reset();
+            }
+            res.set_content(platform::YouTubeQuota::instance().toJson().dump(), "application/json");
+        } catch (...) {
+            res.status = 400;
+            res.set_content(R"({"error":"Invalid JSON"})", "application/json");
+        }
     });
 
     // ══════════════════════════════════════════════════════════════════════

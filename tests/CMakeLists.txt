@@ -32,6 +32,7 @@ set(TESTED_SOURCES
     ${CMAKE_SOURCE_DIR}/src/core/Config.cpp
     ${CMAKE_SOURCE_DIR}/src/core/Logger.cpp
     ${CMAKE_SOURCE_DIR}/src/core/AudioManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/AudioMixer.cpp
     ${CMAKE_SOURCE_DIR}/src/games/GameRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/games/chaos_arena/PhysicsWorld.cpp
     ${CMAKE_SOURCE_DIR}/src/games/gravity_brawl/GravityBrawl.cpp

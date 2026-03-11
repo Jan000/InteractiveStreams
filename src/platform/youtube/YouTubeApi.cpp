@@ -1,4 +1,5 @@
 #include "platform/youtube/YouTubeApi.h"
+#include "platform/youtube/YouTubeQuota.h"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -137,6 +138,12 @@ YouTubeApi::BroadcastInfo YouTubeApi::findActiveBroadcast(const std::string& oau
 {
     if (oauthToken.empty()) return {};
 
+    // Costs 1 quota unit (liveBroadcasts.list)
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+        spdlog::warn("[YouTubeApi] findActiveBroadcast: quota budget exhausted.");
+        return {};
+    }
+
     // Use liveBroadcasts.list with mine=true to find a broadcast.
     // NOTE: mine=true and broadcastStatus are MUTUALLY EXCLUSIVE filters in
     //       the YouTube API – using both returns HTTP 400.  We fetch all of
@@ -240,6 +247,12 @@ YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
 {
     if (apiKey.empty() || channelId.empty()) return {};
 
+    // Step 1 costs 100 quota units (search.list)
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_SEARCH)) {
+        spdlog::warn("[YouTubeApi] findBroadcastByChannel: quota budget exhausted.");
+        return {};
+    }
+
     // Step 1: Search for a live video on this channel
     std::string searchUrl =
         "https://www.googleapis.com/youtube/v3/search"
@@ -284,6 +297,11 @@ YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
     }
 
     // Step 2: Get liveStreamingDetails for the video to extract activeLiveChatId
+    // Costs 1 quota unit (videos.list)
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+        spdlog::warn("[YouTubeApi] findBroadcastByChannel step 2: quota budget exhausted.");
+        return {};
+    }
     std::string videoUrl =
         "https://www.googleapis.com/youtube/v3/videos"
         "?id=" + urlEncode(videoId) +
@@ -338,6 +356,12 @@ YouTubeApi::BroadcastInfo YouTubeApi::findBroadcastByChannel(
 }
 
 std::string YouTubeApi::getActiveBroadcastId(const std::string& oauthToken) {
+    // Costs 1 quota unit (liveBroadcasts.list)
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST)) {
+        spdlog::warn("[YouTubeApi] getActiveBroadcastId: quota budget exhausted.");
+        return "";
+    }
+
     // GET liveBroadcasts.list with broadcastStatus=active to find the
     // currently live broadcast.
     std::string url = "https://www.googleapis.com/youtube/v3/liveBroadcasts"
@@ -386,6 +410,12 @@ bool YouTubeApi::updateBroadcast(const std::string& oauthToken,
     if (title.empty() && description.empty() && categoryId.empty()) {
         spdlog::debug("[YouTubeApi] Nothing to update.");
         return true;
+    }
+
+    // Costs: 1 (list to read current) + 50 (update) = 51 quota units
+    if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST + YouTubeQuota::COST_UPDATE)) {
+        spdlog::warn("[YouTubeApi] updateBroadcast: quota budget exhausted.");
+        return false;
     }
 
     // Step 1: Fetch the current broadcast snippet so we can preserve fields
