@@ -1,6 +1,7 @@
 #ifdef IS_YOUTUBE_GRPC_ENABLED
 
 #include "platform/youtube/YouTubeGrpcChat.h"
+#include "platform/youtube/YouTubeQuota.h"
 
 // Generated proto headers (in build/proto-gen/)
 #include "youtube_chat.pb.h"
@@ -72,8 +73,13 @@ void YouTubeGrpcChat::streamLoop() {
     // Each iteration opens a new gRPC stream.
     // When the stream ends (offline, error, token expiry), we wait and retry.
 
-    constexpr int RECONNECT_WAIT_SEC = 5;
-    size_t reconnects = 0;
+    constexpr int RECONNECT_WAIT_SEC      = 5;
+    constexpr int MAX_CONSECUTIVE_ERRORS  = 5;   // give up after N errors without messages
+    constexpr int MAX_NOT_FOUND_RETRIES   = 3;
+
+    size_t reconnects        = 0;
+    int    consecutiveErrors = 0;
+    int    notFoundRetries   = 0;
 
     while (m_running.load()) {
         // ── Create channel & stub ────────────────────────────────────────
@@ -111,6 +117,11 @@ void YouTubeGrpcChat::streamLoop() {
             m_running = false;
             break;
         }
+
+        // ── Log gRPC connection in quota tracker ─────────────────────────
+        // gRPC StreamList costs quota on Google's side (equivalent to
+        // liveChatMessages.list).  We log it so the dashboard has visibility.
+        YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "gRPC StreamList (connect)");
 
         // ── Open server-streamed RPC ─────────────────────────────────────
         if (reconnects == 0) {
@@ -216,8 +227,16 @@ void YouTubeGrpcChat::streamLoop() {
         // ── Stream ended ─────────────────────────────────────────────────
         m_connected = false;
 
+        // If we received messages this batch, reset the error counter
+        if (batchMessages > 0) {
+            consecutiveErrors = 0;
+            notFoundRetries   = 0;
+        }
+
         grpc::Status status = reader->Finish();
         if (!status.ok()) {
+            consecutiveErrors++;
+
             spdlog::warn("[YouTube gRPC] Stream ended with error: {} (code {})",
                          status.error_message(),
                          static_cast<int>(status.error_code()));
@@ -227,31 +246,46 @@ void YouTubeGrpcChat::streamLoop() {
                 status.error_code() == grpc::StatusCode::PERMISSION_DENIED) {
                 spdlog::error("[YouTube gRPC] Authentication failed – "
                               "token likely expired, will reconnect with refreshed token.");
-                // Brief wait, then retry – the owning YoutubePlatform should
-                // have updated our token via updateToken() by now.
                 for (int i = 0; i < 5 && m_running.load(); ++i) {
                     std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    spdlog::error("[YouTube gRPC] Too many consecutive auth errors ({}) – "
+                                  "stopping gRPC, falling back to REST.", consecutiveErrors);
+                    break;
                 }
                 continue;
             }
 
             // NOT_FOUND – liveChatId is invalid or stream ended
             if (status.error_code() == grpc::StatusCode::NOT_FOUND) {
-                spdlog::warn("[YouTube gRPC] Live chat not found (stream may have ended). "
-                             "Retrying in 30 seconds…");
+                notFoundRetries++;
+                if (notFoundRetries >= MAX_NOT_FOUND_RETRIES) {
+                    spdlog::warn("[YouTube gRPC] Live chat not found after {} retries – "
+                                 "stopping gRPC (stream likely ended).", notFoundRetries);
+                    break;
+                }
+                spdlog::warn("[YouTube gRPC] Live chat not found (attempt {}/{}) – "
+                             "retrying in 30s…", notFoundRetries, MAX_NOT_FOUND_RETRIES);
                 for (int i = 0; i < 30 && m_running.load(); ++i) {
                     std::this_thread::sleep_for(std::chrono::seconds(1));
                 }
                 continue;
             }
 
-            // RESOURCE_EXHAUSTED – quota exceeded
+            // RESOURCE_EXHAUSTED – quota exceeded: stop immediately
             if (status.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED) {
-                spdlog::warn("[YouTube gRPC] Quota exceeded. Waiting 60 seconds…");
-                for (int i = 0; i < 60 && m_running.load(); ++i) {
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                }
-                continue;
+                spdlog::error("[YouTube gRPC] Quota exhausted – stopping gRPC stream. "
+                              "Will fall back to REST (which respects local quota budget).");
+                YouTubeQuota::instance().consume(0, "gRPC RESOURCE_EXHAUSTED (quota hit)");
+                break;
+            }
+
+            // Any other error
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                spdlog::error("[YouTube gRPC] Too many consecutive errors ({}) – "
+                              "stopping gRPC, falling back to REST.", consecutiveErrors);
+                break;
             }
         } else {
             spdlog::debug("[YouTube gRPC] Stream batch ended normally ({} msgs).", batchMessages);
