@@ -86,6 +86,8 @@ struct Planet {
     float       animTimer      = 0.0f;
     float       glowPulse      = 0.0f;  // for star-tier pulsing
     float       supernovaTimer = 0.0f;  // visual shockwave effect
+    float       smashVisTimer  = 0.0f;  // countdown for slash-arc visual
+    sf::Vector2f smashDir      = {1.f, 0.f}; // dash direction for slash arc
 
     // Interpolation
     sf::Vector2f prevPosition;
@@ -102,6 +104,7 @@ struct Planet {
         hitFlashTimer  = std::max(0.0f, hitFlashTimer - dt);
         trailTimer     = std::max(0.0f, trailTimer    - dt);
         supernovaTimer = std::max(0.0f, supernovaTimer - dt);
+        smashVisTimer  = std::max(0.0f, smashVisTimer  - dt);
         animTimer     += dt;
         glowPulse     += dt * 2.0f;
 

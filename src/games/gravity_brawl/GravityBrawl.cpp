@@ -223,6 +223,10 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     }
     if (settings.contains("lobby_duration") && settings["lobby_duration"].is_number()) {
         m_lobbyDuration = settings["lobby_duration"].get<double>();
+        // Apply immediately if we are still in the lobby (fixes "always 30s" issue)
+        if (m_phase == GamePhase::Lobby) {
+            m_lobbyTimer = m_lobbyDuration;
+        }
     }
     if (settings.contains("min_players") && settings["min_players"].is_number_integer()) {
         m_minPlayers = settings["min_players"].get<int>();
@@ -814,11 +818,12 @@ void GravityBrawl::triggerSmash(Planet& p) {
     }
 
     float impulse = 12.0f + p.getMassScale() * 2.0f;
+    b2Vec2 dashDir(1.0f, 0.0f);  // captured for slash visualisation
 
     if (foundTarget) {
-        // Dash toward the nearest enemy
+        dashDir = bestDir;
         p.body->ApplyLinearImpulseToCenter(
-            b2Vec2(bestDir.x * impulse, bestDir.y * impulse), true);
+            b2Vec2(dashDir.x * impulse, dashDir.y * impulse), true);
     } else {
         // No target: boost in current velocity direction or away from center
         b2Vec2 vel = p.body->GetLinearVelocity();
@@ -826,23 +831,30 @@ void GravityBrawl::triggerSmash(Planet& p) {
         if (speed < 0.1f) {
             b2Vec2 dir(myPos.x - WORLD_CENTER_X, myPos.y - WORLD_CENTER_Y);
             float len = dir.Length();
-            if (len > 0.01f) dir = b2Vec2(dir.x / len, dir.y / len);
+            if (len > 0.01f) { dir.x /= len; dir.y /= len; }
+            dashDir = dir;
             p.body->ApplyLinearImpulseToCenter(
-                b2Vec2(dir.x * 15.0f, dir.y * 15.0f), true);
+                b2Vec2(dashDir.x * 15.0f, dashDir.y * 15.0f), true);
         } else {
-            b2Vec2 dir(vel.x / speed, vel.y / speed);
+            dashDir = b2Vec2(vel.x / speed, vel.y / speed);
             p.body->ApplyLinearImpulseToCenter(
-                b2Vec2(dir.x * impulse, dir.y * impulse), true);
+                b2Vec2(dashDir.x * impulse, dashDir.y * impulse), true);
         }
     }
 
+    // Slash visual
+    p.smashDir      = {dashDir.x, dashDir.y};
+    p.smashVisTimer = 0.4f;
+
     playSfx("gb_smash");
 
-    // Trail effect
+    // Directed particle burst – a tight spray in the dash direction
     b2Vec2 pos = p.body->GetPosition();
     sf::Vector2f screenPos = worldToScreen(pos);
-    sf::Color trailColor = getTierColor(p.tier);
-    emitTrail(screenPos, trailColor);
+    sf::Color tierColor = getTierColor(p.tier);
+    emitParticles(screenPos, tierColor, 12, 240.f, 50.f, 0.35f);
+    emitParticles(screenPos, sf::Color(255, 240, 100, 200), 6, 300.f, 28.f, 0.25f);
+    emitTrail(screenPos, tierColor);
     p.trailTimer = 0.3f;
 }
 
@@ -1233,9 +1245,16 @@ void GravityBrawl::applyOrbitalForces(float dt) {
             // In safe band → gentle inward pull
             pullStrength *= m_orbitalSafeZonePullMultiplier;
         } else {
-            // Inside safe orbit → push OUTWARD (negative = reverse direction)
-            float penetration = (targetDist * 0.8f - dist) / (targetDist * 0.8f);
-            pullStrength *= -(0.8f + 1.5f * penetration);
+            // Inside safe orbit: gentle velocity-dependent outward nudge.
+            // When a planet is nearly stationary the push is small (fixes the
+            // "black hole feels repulsive" / "nearly-still planets fly away" bug).
+            float penetration = std::min(1.0f,
+                (targetDist * 0.8f - dist) / (targetDist * 0.4f));
+            b2Vec2 vel = p.body->GetLinearVelocity();
+            // radialInwardVel > 0  ↔  planet is falling toward the center
+            float radialInwardVel = vel.x * dir.x + vel.y * dir.y;
+            float velFactor = std::clamp(radialInwardVel / 5.0f + 0.2f, 0.2f, 1.0f);
+            pullStrength *= -(0.45f + 0.85f * penetration) * velFactor;
         }
 
         // Tangential force for orbit (perpendicular to radial direction)
@@ -1829,13 +1848,13 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     float pixelRadius = p.getVisualRadius() * PIXELS_PER_METER * m_cameraZoom;
     sf::Color baseColor = getTierColor(p.tier);
     sf::Color glowColor = getTierGlowColor(p.tier);
+    float anim = p.animTimer;
 
     // Hit flash
-    if (p.hitFlashTimer > 0.0f) {
+    if (p.hitFlashTimer > 0.0f)
         baseColor = sf::Color::White;
-    }
 
-    // Supernova shockwave ring
+    // ── Supernova shockwave ring ──────────────────────────────────────────
     if (p.supernovaTimer > 0.0f) {
         float progress = 1.0f - p.supernovaTimer / 0.5f;
         float ringR = pixelRadius + progress * 200.0f * m_cameraZoom;
@@ -1849,15 +1868,33 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         target.draw(ring);
     }
 
-    // Outer glow (larger for higher tiers)
-    float glowMul = 1.0f;
-    switch (p.tier) {
-    case PlanetTier::IcePlanet: glowMul = 1.6f; break;
-    case PlanetTier::GasGiant:  glowMul = 2.2f; break;
-    case PlanetTier::Star:      glowMul = 3.0f + 0.4f * std::sin(p.glowPulse); break;
-    default: break;
+    // ── Star corona rays (behind the glow) ──────────────────────────────
+    if (p.tier == PlanetTier::Star) {
+        const int RAY_COUNT = 8;
+        for (int i = 0; i < RAY_COUNT; ++i) {
+            float baseAngDeg = i * (360.0f / RAY_COUNT) + anim * 18.0f;
+            float rayLen = pixelRadius * (1.6f + 0.5f * std::sin(anim * 2.5f + i * 1.1f));
+            float hw = 3.0f * m_cameraZoom;
+            sf::ConvexShape ray(3);
+            ray.setPoint(0, sf::Vector2f(-hw, 0.f));
+            ray.setPoint(1, sf::Vector2f( hw, 0.f));
+            ray.setPoint(2, sf::Vector2f(0.f, -rayLen));
+            ray.setPosition(screenPos);
+            ray.setRotation(baseAngDeg);
+            sf::Uint8 ra = static_cast<sf::Uint8>(160 + 60 * std::sin(anim * 3.0f + i * 0.8f));
+            ray.setFillColor(sf::Color(255, 230, 80, ra));
+            target.draw(ray);
+        }
     }
 
+    // ── Outer glow ────────────────────────────────────────────────────────
+    float glowMul = 1.0f;
+    switch (p.tier) {
+    case PlanetTier::IcePlanet: glowMul = 1.5f; break;
+    case PlanetTier::GasGiant:  glowMul = 2.0f; break;
+    case PlanetTier::Star:      glowMul = 3.2f + 0.5f * std::sin(p.glowPulse); break;
+    default: break;
+    }
     float glowR = pixelRadius * glowMul;
     sf::CircleShape glow(glowR);
     glow.setOrigin(glowR, glowR);
@@ -1865,59 +1902,179 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     glow.setFillColor(glowColor);
     target.draw(glow);
 
-    // Main planet body
-    sf::CircleShape body(pixelRadius);
-    body.setOrigin(pixelRadius, pixelRadius);
-    body.setPosition(screenPos);
-    body.setFillColor(baseColor);
+    // ── Main body ─────────────────────────────────────────────────────────
+    if (p.tier == PlanetTier::Asteroid) {
+        // Bumpy polygon that slowly tumbles (~12 deg/s)
+        const int SIDES = 11;
+        sf::ConvexShape rocky(SIDES);
+        float rotRad = anim * 12.0f * (3.14159f / 180.0f);
+        for (int i = 0; i < SIDES; ++i) {
+            float a    = rotRad + i * (2.0f * 3.14159f / SIDES);
+            float bump = 0.80f + 0.20f * std::sin(i * 2.7f + 1.4f);
+            rocky.setPoint(i, sf::Vector2f(
+                std::cos(a) * pixelRadius * bump,
+                std::sin(a) * pixelRadius * bump));
+        }
+        rocky.setPosition(screenPos);
+        rocky.setFillColor(baseColor);
+        sf::Color rockOutline = p.isKing ? sf::Color(255, 215, 0) : sf::Color(120, 115, 130);
+        rocky.setOutlineColor(rockOutline);
+        rocky.setOutlineThickness(p.isKing ? 3.0f * m_cameraZoom : 1.5f * m_cameraZoom);
+        target.draw(rocky);
 
-    // Outline based on tier
-    float outlineThickness = 1.5f * m_cameraZoom;
-    sf::Color outlineColor = baseColor;
-    outlineColor.r = std::min(255, outlineColor.r + 40);
-    outlineColor.g = std::min(255, outlineColor.g + 40);
-    outlineColor.b = std::min(255, outlineColor.b + 40);
+        // Impact craters (3 dark spots, fixed relative offsets)
+        static constexpr float CRATERS[3][2] = {
+            { 0.33f,  0.18f},
+            {-0.28f, -0.32f},
+            { 0.08f, -0.38f}
+        };
+        for (const auto& c : CRATERS) {
+            float cr = pixelRadius * 0.16f;
+            sf::CircleShape crater(cr);
+            crater.setOrigin(cr, cr);
+            crater.setFillColor(sf::Color(75, 70, 80, 160));
+            crater.setPosition(
+                screenPos.x + c[0] * pixelRadius,
+                screenPos.y + c[1] * pixelRadius);
+            target.draw(crater);
+        }
+    } else {
+        // Smooth circle for IcePlanet, GasGiant, Star
+        sf::CircleShape body(pixelRadius);
+        body.setOrigin(pixelRadius, pixelRadius);
+        body.setPosition(screenPos);
+        body.setFillColor(baseColor);
 
-    if (p.isKing) {
-        outlineColor = sf::Color(255, 215, 0);
-        outlineThickness = 3.0f * m_cameraZoom;
-    }
+        float outlineThickness = 1.5f * m_cameraZoom;
+        sf::Color outlineColor = baseColor;
+        outlineColor.r = std::min(255, outlineColor.r + 40);
+        outlineColor.g = std::min(255, outlineColor.g + 40);
+        outlineColor.b = std::min(255, outlineColor.b + 40);
+        if (p.isKing) {
+            outlineColor     = sf::Color(255, 215, 0);
+            outlineThickness = 3.0f * m_cameraZoom;
+        }
+        body.setOutlineColor(outlineColor);
+        body.setOutlineThickness(outlineThickness);
+        target.draw(body);
 
-    body.setOutlineColor(outlineColor);
-    body.setOutlineThickness(outlineThickness);
-    target.draw(body);
+        // IcePlanet: rotating ice crystal spikes + inner shimmer
+        if (p.tier == PlanetTier::IcePlanet) {
+            for (int i = 0; i < 6; ++i) {
+                float ang      = (i * 60.0f + anim * 10.0f) * (3.14159f / 180.0f);
+                float spikeLen = pixelRadius * (0.28f + 0.08f * std::sin(anim * 1.8f + i));
+                float hw       = 2.5f * m_cameraZoom;
+                sf::ConvexShape spike(3);
+                spike.setPoint(0, sf::Vector2f(-hw, 0.f));
+                spike.setPoint(1, sf::Vector2f( hw, 0.f));
+                spike.setPoint(2, sf::Vector2f(0.f, -spikeLen));
+                // +90° so the tip points radially outward
+                spike.setRotation(ang * (180.0f / 3.14159f) + 90.0f);
+                spike.setPosition(
+                    screenPos.x + std::cos(ang) * pixelRadius,
+                    screenPos.y + std::sin(ang) * pixelRadius);
+                spike.setFillColor(sf::Color(180, 230, 255, 170));
+                target.draw(spike);
+            }
+            float shimR = pixelRadius * 0.38f;
+            sf::CircleShape shimmer(shimR);
+            shimmer.setOrigin(shimR, shimR);
+            shimmer.setPosition(
+                screenPos.x - pixelRadius * 0.18f,
+                screenPos.y - pixelRadius * 0.18f);
+            shimmer.setFillColor(sf::Color(210, 245, 255, 55));
+            target.draw(shimmer);
+        }
 
-    // Surface details based on tier
-    if (p.tier == PlanetTier::GasGiant || p.tier == PlanetTier::Star) {
-        // Bands (horizontal stripes)
-        for (int i = -2; i <= 2; ++i) {
-            float y = screenPos.y + i * pixelRadius * 0.3f;
-            float halfW = std::sqrt(std::max(0.0f,
-                pixelRadius * pixelRadius - (i * pixelRadius * 0.3f) * (i * pixelRadius * 0.3f)));
-            sf::RectangleShape band(sf::Vector2f(halfW * 1.6f, 2.0f * m_cameraZoom));
-            band.setOrigin(halfW * 0.8f, 1.0f * m_cameraZoom);
-            band.setPosition(screenPos.x, y);
-            sf::Color bandColor = baseColor;
-            bandColor.r = static_cast<sf::Uint8>(std::max(0, bandColor.r - 30));
-            bandColor.a = 80;
-            band.setFillColor(bandColor);
-            target.draw(band);
+        // GasGiant: animated shifting bands + rotating storm spot
+        if (p.tier == PlanetTier::GasGiant) {
+            for (int i = -2; i <= 2; ++i) {
+                float shift = std::sin(anim * 0.7f + i * 1.3f) * 3.5f * m_cameraZoom;
+                float y     = screenPos.y + i * pixelRadius * 0.3f;
+                float halfW = std::sqrt(std::max(0.0f,
+                    pixelRadius * pixelRadius
+                    - (i * pixelRadius * 0.3f) * (i * pixelRadius * 0.3f)));
+                sf::RectangleShape band(sf::Vector2f(halfW * 1.6f, 2.5f * m_cameraZoom));
+                band.setOrigin(halfW * 0.8f, 1.25f * m_cameraZoom);
+                band.setPosition(screenPos.x + shift, y);
+                sf::Color bc = baseColor;
+                bc.r = static_cast<sf::Uint8>(std::max(0, bc.r - 30));
+                bc.a = 90;
+                band.setFillColor(bc);
+                target.draw(band);
+            }
+            float stormAng = anim * 22.0f * (3.14159f / 180.0f);
+            float orbitR   = pixelRadius * 0.58f;
+            float stormR   = pixelRadius * 0.17f;
+            sf::CircleShape storm(stormR, 16);
+            storm.setOrigin(stormR, stormR);
+            storm.setPosition(
+                screenPos.x + std::cos(stormAng) * orbitR,
+                screenPos.y + std::sin(stormAng) * orbitR * 0.45f);
+            storm.setFillColor(sf::Color(160, 45, 25, 150));
+            target.draw(storm);
+        }
+
+        // Star: bright pulsing inner core
+        if (p.tier == PlanetTier::Star) {
+            float coreR = pixelRadius * 0.42f;
+            sf::CircleShape core(coreR);
+            core.setOrigin(coreR, coreR);
+            core.setPosition(screenPos);
+            sf::Uint8 cA = static_cast<sf::Uint8>(200 + 50 * std::sin(anim * 3.5f));
+            core.setFillColor(sf::Color(255, 255, 230, cA));
+            target.draw(core);
         }
     }
 
-    // King crown
+    // ── Specular highlight (all tiers) ───────────────────────────────────
+    {
+        float specR = pixelRadius * 0.22f;
+        sf::CircleShape spec(specR);
+        spec.setOrigin(specR, specR);
+        spec.setPosition(
+            screenPos.x - pixelRadius * 0.28f,
+            screenPos.y - pixelRadius * 0.28f);
+        spec.setFillColor(sf::Color(255, 255, 255, 45));
+        target.draw(spec);
+    }
+
+    // ── Smash slash arc ───────────────────────────────────────────────────
+    if (p.smashVisTimer > 0.0f) {
+        float prog    = p.smashVisTimer / 0.4f;           // 1=fresh  →  0=faded
+        float arcR    = pixelRadius * (1.6f + 1.8f * (1.0f - prog));  // expands outward
+        float spread  = 0.60f;                            // half-width ~34°
+        float dashAng = std::atan2(p.smashDir.y, p.smashDir.x);
+        sf::Uint8 arcA = static_cast<sf::Uint8>(prog * 200);
+        sf::Color arcInner(255, 240,  80, arcA);
+        sf::Color arcOuter(255, 150,  30, static_cast<sf::Uint8>(arcA / 2));
+
+        const int SLICES = 10;
+        sf::VertexArray arc(sf::TriangleFan, SLICES + 2);
+        arc[0].position = screenPos;
+        arc[0].color    = arcInner;
+        for (int i = 0; i <= SLICES; ++i) {
+            float a = dashAng - spread + i * (2.0f * spread / SLICES);
+            arc[i + 1].position = {
+                screenPos.x + std::cos(a) * arcR,
+                screenPos.y + std::sin(a) * arcR};
+            arc[i + 1].color = arcOuter;
+        }
+        target.draw(arc);
+    }
+
+    // ── King crown ────────────────────────────────────────────────────────
     if (p.isKing) {
         renderCrown(target, screenPos, pixelRadius);
     }
 
-    // Name & score labels — skip bots so real players stand out
+    // ── Name & score labels (real players only) ───────────────────────────
     if (m_fontLoaded && !p.displayName.empty() && !p.isBot()) {
         auto rName = resolve("player_name", SCREEN_W, SCREEN_H);
         if (rName.visible) {
             sf::Text nameText;
             nameText.setFont(m_font);
             nameText.setString(p.displayName);
-            // Keep text size constant regardless of camera zoom
             nameText.setCharacterSize(rName.fontSize);
             nameText.setFillColor(sf::Color(255, 255, 255, 220));
             nameText.setOutlineColor(sf::Color(0, 0, 0, 180));
@@ -1927,7 +2084,6 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             nameText.setPosition(screenPos.x, screenPos.y + pixelRadius + 6.0f);
             target.draw(nameText);
 
-            // Score below name
             auto rScore = resolve("player_score", SCREEN_W, SCREEN_H);
             if (rScore.visible) {
                 sf::Text scoreText;
@@ -1939,7 +2095,8 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
                 scoreText.setOutlineThickness(1.0f);
                 sf::FloatRect sBounds = scoreText.getLocalBounds();
                 scoreText.setOrigin(sBounds.left + sBounds.width / 2.0f, sBounds.top);
-                scoreText.setPosition(screenPos.x, screenPos.y + pixelRadius + 6.0f + rName.fontSize + 2.0f);
+                scoreText.setPosition(screenPos.x,
+                    screenPos.y + pixelRadius + 6.0f + rName.fontSize + 2.0f);
                 target.draw(scoreText);
             }
         }
@@ -2165,15 +2322,15 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
 // ── Cosmic Event Warning ─────────────────────────────────────────────────────
 
 void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
-    if (!m_fontLoaded) return;
-
-    // Flashing red overlay at screen edges
+    // Flashing red overlay — drawn even without font so tests can detect the event
     float pulse = std::abs(std::sin(m_blackHolePulse * 3.0f));
-    sf::Uint8 a = static_cast<sf::Uint8>(pulse * 40);
+    sf::Uint8 a = static_cast<sf::Uint8>(pulse * 40 + 8);  // min alpha=8 so it's always visible
 
     sf::RectangleShape overlay(sf::Vector2f(SCREEN_W, SCREEN_H));
     overlay.setFillColor(sf::Color(255, 0, 0, a));
     target.draw(overlay);
+
+    if (!m_fontLoaded) return;
 
     // Warning text
     {
