@@ -5,6 +5,7 @@
 #include <vector>
 #include <mutex>
 #include <random>
+#include <memory>
 
 namespace is::core {
 
@@ -24,24 +25,26 @@ public:
 
     // ── Music ────────────────────────────────────────────────────────────
 
-    /// Scan a directory for music files and build a shuffled playlist.
-    void scanMusicDirectory(const std::string& directory);
+    /// Play one explicit track as the current stream-audio source.
+    bool playTrack(const std::string& filepath);
 
-    /// Re-scan the music directory.
-    void rescan();
+    /// Crossfade from current track to explicit next track.
+    bool crossfadeToTrack(const std::string& filepath);
 
-    /// Start playing the playlist (shuffled).
-    void play();
+    /// Stop mixer music playback.
+    void stop();
 
     /// Pause / resume playback.
     void pause();
     void resume();
 
-    /// Skip to the next track.
-    void nextTrack();
-
     /// Set music volume (0–100).
     void setMusicVolume(float volume);
+
+    /// Fade settings propagated from AudioManager.
+    void setFadeInDuration(float seconds);
+    void setFadeOutDuration(float seconds);
+    void setCrossfadeOverlap(float seconds);
 
     /// Set SFX volume (0–100).
     void setSfxVolume(float volume);
@@ -71,28 +74,26 @@ public:
     static constexpr unsigned int CHANNELS    = 2;
 
 private:
-    void shufflePlaylist();
-    bool openNextTrack();
-
     // Music state
-    std::string              m_musicDirectory;
-    std::vector<std::string> m_allFiles;
-    std::vector<std::string> m_playlist;
-    int                      m_currentIndex = -1;
-    sf::InputSoundFile       m_musicFile;
-    bool                     m_musicFileOpen    = false;
-    unsigned int             m_musicChannels    = 0;
-    unsigned int             m_musicSampleRate  = 0;
-    sf::Uint64               m_musicTotalSamples = 0;
-    bool                     m_playing = false;
-    bool                     m_paused  = false;
+    std::unique_ptr<sf::InputSoundFile> m_musicFile;
+    std::unique_ptr<sf::InputSoundFile> m_musicNext;
+    unsigned int             m_musicChannels     = 0;
+    unsigned int             m_musicSampleRate   = 0;
+    unsigned int             m_musicNextChannels = 0;
+    unsigned int             m_musicNextSampleRate = 0;
+    bool                     m_playing           = false;
+    bool                     m_paused            = false;
+    bool                     m_isCrossfading     = false;
+    float                    m_crossfadeTimer    = 0.0f;
 
     // Temporary read buffer for music decoding
     std::vector<sf::Int16>   m_musicReadBuf;
+    std::vector<sf::Int16>   m_musicNextReadBuf;
 
     // Active SFX instances (mixed in pullSamples)
     struct SfxInstance {
-        std::vector<sf::Int16> samples;  ///< Copy of buffer data
+        const sf::Int16* samples = nullptr;
+        size_t       totalSamples = 0;
         unsigned int channels    = 0;
         unsigned int sampleRate  = 0;
         size_t       position    = 0;    ///< Current read position (in samples)
@@ -104,6 +105,9 @@ private:
     float m_musicVolume = 50.0f;  // 0–100
     float m_sfxVolume   = 80.0f;  // 0–100
     bool  m_muted       = false;
+    float m_fadeInSeconds = 2.0f;
+    float m_fadeOutSeconds = 2.0f;
+    float m_crossfadeOverlap = 1.5f;
 
     std::mt19937       m_rng;
     mutable std::mutex m_mutex;

@@ -1,129 +1,170 @@
 #include "core/AudioMixer.h"
-#include <spdlog/spdlog.h>
-#include <filesystem>
-#include <algorithm>
-#include <cstring>
-#include <cmath>
 
-namespace fs = std::filesystem;
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 
 namespace is::core {
 
-// Supported music file extensions (same as AudioManager)
-static const std::vector<std::string> MIXER_MUSIC_EXT = {
-    ".mp3", ".ogg", ".wav", ".flac"
-};
+namespace {
 
-static bool isMixerMusicFile(const std::string& ext) {
-    std::string lower = ext;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    for (const auto& e : MIXER_MUSIC_EXT) {
-        if (lower == e) return true;
+size_t mixFromFile(sf::InputSoundFile& file,
+                   unsigned int fileChannels,
+                   unsigned int fileSampleRate,
+                   std::vector<sf::Int16>& readBuf,
+                   float gain,
+                   sf::Int16* output,
+                   size_t frameCount) {
+    if (fileChannels == 0 || fileSampleRate == 0 || frameCount == 0 || gain <= 0.0f) {
+        return 0;
     }
-    return false;
+
+    size_t readFrames = frameCount;
+    if (fileSampleRate != AudioMixer::SAMPLE_RATE) {
+        readFrames = static_cast<size_t>(
+            std::ceil(static_cast<double>(frameCount) * fileSampleRate / AudioMixer::SAMPLE_RATE)) + 1;
+    }
+
+    const size_t readSamples = readFrames * fileChannels;
+    if (readBuf.size() < readSamples) {
+        readBuf.resize(readSamples);
+    }
+
+    const sf::Uint64 gotSamples = file.read(readBuf.data(), static_cast<sf::Uint64>(readSamples));
+    if (gotSamples == 0) {
+        return 0;
+    }
+
+    const size_t gotFrames = static_cast<size_t>(gotSamples) / fileChannels;
+    size_t mixedFrames = 0;
+
+    if (fileSampleRate == AudioMixer::SAMPLE_RATE) {
+        mixedFrames = std::min(frameCount, gotFrames);
+        for (size_t i = 0; i < mixedFrames; ++i) {
+            int left = 0;
+            int right = 0;
+            if (fileChannels == 1) {
+                left = right = readBuf[i];
+            } else {
+                left = readBuf[i * 2];
+                right = readBuf[i * 2 + 1];
+            }
+
+            const int l = output[i * 2] + static_cast<int>(left * gain);
+            const int r = output[i * 2 + 1] + static_cast<int>(right * gain);
+            output[i * 2] = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
+            output[i * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
+        }
+        return mixedFrames;
+    }
+
+    for (size_t out = 0; out < frameCount; ++out) {
+        const size_t src = static_cast<size_t>(
+            static_cast<double>(out) * fileSampleRate / AudioMixer::SAMPLE_RATE);
+        if (src >= gotFrames) {
+            break;
+        }
+
+        int left = 0;
+        int right = 0;
+        if (fileChannels == 1) {
+            left = right = readBuf[src];
+        } else {
+            left = readBuf[src * 2];
+            right = readBuf[src * 2 + 1];
+        }
+
+        const int l = output[out * 2] + static_cast<int>(left * gain);
+        const int r = output[out * 2 + 1] + static_cast<int>(right * gain);
+        output[out * 2] = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
+        output[out * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
+        mixedFrames = out + 1;
+    }
+
+    return mixedFrames;
 }
 
+} // namespace
+
 AudioMixer::AudioMixer()
-    : m_rng(std::random_device{}())
-{
-    // Pre-allocate a decent read buffer (enough for ~50ms of stereo audio)
+    : m_rng(std::random_device{}()) {
     m_musicReadBuf.resize(SAMPLE_RATE / 20 * CHANNELS);
+    m_musicNextReadBuf.resize(SAMPLE_RATE / 20 * CHANNELS);
 }
 
 AudioMixer::~AudioMixer() = default;
 
-// ── Music control ────────────────────────────────────────────────────────────
-
-void AudioMixer::scanMusicDirectory(const std::string& directory) {
+bool AudioMixer::playTrack(const std::string& filepath) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_musicDirectory = directory;
-    m_allFiles.clear();
 
-    if (!fs::exists(directory) || !fs::is_directory(directory)) {
-        spdlog::warn("[AudioMixer] Music directory '{}' does not exist.", directory);
-        return;
-    }
-
-    for (const auto& entry : fs::directory_iterator(directory)) {
-        if (!entry.is_regular_file()) continue;
-        auto ext = entry.path().extension().string();
-        if (isMixerMusicFile(ext)) {
-            m_allFiles.push_back(entry.path().string());
-        }
-    }
-
-    std::sort(m_allFiles.begin(), m_allFiles.end());
-    spdlog::info("[AudioMixer] Found {} music file(s) in '{}'.", m_allFiles.size(), directory);
-}
-
-void AudioMixer::rescan() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    std::string dir = m_musicDirectory;
-    m_allFiles.clear();
-
-    if (dir.empty() || !fs::exists(dir)) return;
-
-    for (const auto& entry : fs::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) continue;
-        auto ext = entry.path().extension().string();
-        if (isMixerMusicFile(ext)) {
-            m_allFiles.push_back(entry.path().string());
-        }
-    }
-    std::sort(m_allFiles.begin(), m_allFiles.end());
-    spdlog::info("[AudioMixer] Rescan: {} music file(s).", m_allFiles.size());
-}
-
-void AudioMixer::shufflePlaylist() {
-    // caller must hold m_mutex
-    m_playlist = m_allFiles;
-    std::shuffle(m_playlist.begin(), m_playlist.end(), m_rng);
-}
-
-bool AudioMixer::openNextTrack() {
-    // caller must hold m_mutex
-    if (m_playlist.empty()) return false;
-
-    // Advance index; if at end, re-shuffle and start from 0
-    m_currentIndex++;
-    if (m_currentIndex >= static_cast<int>(m_playlist.size())) {
-        shufflePlaylist();
-        m_currentIndex = 0;
-    }
-
-    const auto& path = m_playlist[m_currentIndex];
-    if (!m_musicFile.openFromFile(path)) {
-        spdlog::warn("[AudioMixer] Failed to open: {}", path);
-        m_musicFileOpen = false;
-        // Try the next track (avoid infinite recursion by limiting retries)
-        if (m_playlist.size() > 1) {
-            return openNextTrack();
-        }
+    auto file = std::make_unique<sf::InputSoundFile>();
+    if (!file->openFromFile(filepath)) {
+        spdlog::warn("[AudioMixer] Failed to open track: {}", filepath);
         return false;
     }
 
-    m_musicFileOpen    = true;
-    m_musicChannels    = m_musicFile.getChannelCount();
-    m_musicSampleRate  = m_musicFile.getSampleRate();
-    m_musicTotalSamples = m_musicFile.getSampleCount();
+    m_musicChannels = file->getChannelCount();
+    m_musicSampleRate = file->getSampleRate();
+    m_musicFile = std::move(file);
 
-    auto filename = fs::path(path).filename().string();
-    spdlog::info("[AudioMixer] Now mixing: {} ({}Hz, {}ch)",
-                 filename, m_musicSampleRate, m_musicChannels);
+    m_musicNext.reset();
+    m_musicNextChannels = 0;
+    m_musicNextSampleRate = 0;
+    m_isCrossfading = false;
+    m_crossfadeTimer = 0.0f;
+    m_playing = true;
+    m_paused = false;
+
+    spdlog::info("[AudioMixer] playTrack: {} ({}Hz, {}ch)", filepath, m_musicSampleRate, m_musicChannels);
     return true;
 }
 
-void AudioMixer::play() {
+bool AudioMixer::crossfadeToTrack(const std::string& filepath) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_allFiles.empty()) {
-        spdlog::warn("[AudioMixer] No music files – nothing to play.");
-        return;
+
+    auto next = std::make_unique<sf::InputSoundFile>();
+    if (!next->openFromFile(filepath)) {
+        spdlog::warn("[AudioMixer] Failed to open crossfade target: {}", filepath);
+        return false;
     }
-    shufflePlaylist();
-    m_currentIndex = -1; // openNextTrack will advance to 0
+
+    if (!m_musicFile) {
+        m_musicChannels = next->getChannelCount();
+        m_musicSampleRate = next->getSampleRate();
+        m_musicFile = std::move(next);
+        m_playing = true;
+        m_paused = false;
+        return true;
+    }
+
+    m_musicNextChannels = next->getChannelCount();
+    m_musicNextSampleRate = next->getSampleRate();
+    m_musicNext = std::move(next);
+
+    m_isCrossfading = true;
+    m_crossfadeTimer = 0.0f;
     m_playing = true;
-    m_paused  = false;
-    openNextTrack();
+
+    spdlog::info("[AudioMixer] crossfadeToTrack: {} ({}Hz, {}ch)",
+        filepath, m_musicNextSampleRate, m_musicNextChannels);
+    return true;
+}
+
+void AudioMixer::stop() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    m_musicFile.reset();
+    m_musicNext.reset();
+    m_musicChannels = 0;
+    m_musicSampleRate = 0;
+    m_musicNextChannels = 0;
+    m_musicNextSampleRate = 0;
+    m_isCrossfading = false;
+    m_crossfadeTimer = 0.0f;
+    m_playing = false;
+    m_paused = false;
 }
 
 void AudioMixer::pause() {
@@ -136,15 +177,24 @@ void AudioMixer::resume() {
     m_paused = false;
 }
 
-void AudioMixer::nextTrack() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_playing) return;
-    openNextTrack();
-}
-
 void AudioMixer::setMusicVolume(float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_musicVolume = std::clamp(volume, 0.0f, 100.0f);
+}
+
+void AudioMixer::setFadeInDuration(float seconds) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_fadeInSeconds = std::max(0.0f, seconds);
+}
+
+void AudioMixer::setFadeOutDuration(float seconds) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_fadeOutSeconds = std::max(0.0f, seconds);
+}
+
+void AudioMixer::setCrossfadeOverlap(float seconds) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_crossfadeOverlap = std::max(0.0f, seconds);
 }
 
 void AudioMixer::setSfxVolume(float volume) {
@@ -157,160 +207,141 @@ void AudioMixer::setMuted(bool muted) {
     m_muted = muted;
 }
 
-// ── SFX ──────────────────────────────────────────────────────────────────────
-
 void AudioMixer::playSfx(const sf::SoundBuffer& buffer, float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     SfxInstance sfx;
-    sfx.channels   = buffer.getChannelCount();
+    sfx.channels = buffer.getChannelCount();
     sfx.sampleRate = buffer.getSampleRate();
-    sfx.position   = 0;
-    sfx.volume     = std::clamp(volume, 0.0f, 100.0f);
-
-    // Copy sample data from the buffer
-    const sf::Int16* ptr = buffer.getSamples();
-    sf::Uint64 count = buffer.getSampleCount();
-    sfx.samples.assign(ptr, ptr + count);
+    sfx.position = 0;
+    sfx.volume = std::clamp(volume, 0.0f, 100.0f);
+    sfx.samples = buffer.getSamples();
+    sfx.totalSamples = static_cast<size_t>(buffer.getSampleCount());
 
     m_activeSfx.push_back(std::move(sfx));
 }
 
-// ── PCM output ───────────────────────────────────────────────────────────────
-
 size_t AudioMixer::pullSamples(sf::Int16* output, size_t frameCount) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    const size_t totalSamples = frameCount * CHANNELS; // stereo interleaved
+    const size_t totalSamples = frameCount * CHANNELS;
     std::memset(output, 0, totalSamples * sizeof(sf::Int16));
 
-    if (m_muted) return frameCount;
+    if (m_muted || !m_playing || m_paused) {
+        return frameCount;
+    }
 
-    // ── Mix music ────────────────────────────────────────────────────────
-    if (m_playing && !m_paused && m_musicFileOpen) {
+    if (m_musicFile) {
         const float musicGain = m_musicVolume / 100.0f;
-        size_t framesRemaining = frameCount;
-        sf::Int16* dst = output;
 
-        while (framesRemaining > 0) {
-            // How many source frames to read from the file?
-            // If sample rates differ, we need to adjust the read count.
-            size_t readFrames = framesRemaining;
-            if (m_musicSampleRate != SAMPLE_RATE) {
-                // Simple ratio-based read count
-                readFrames = static_cast<size_t>(
-                    std::ceil(static_cast<double>(framesRemaining) *
-                              m_musicSampleRate / SAMPLE_RATE));
+        if (m_isCrossfading && m_musicNext) {
+            const float crossfadeDur = std::max({m_crossfadeOverlap, m_fadeOutSeconds, m_fadeInSeconds, 0.01f});
+            float progress = std::clamp(m_crossfadeTimer / crossfadeDur, 0.0f, 1.0f);
+
+            const float gainCurrent = musicGain * (1.0f - progress);
+            const float gainNext = musicGain * progress;
+
+            const size_t mixedCurrent = mixFromFile(
+                *m_musicFile, m_musicChannels, m_musicSampleRate, m_musicReadBuf,
+                gainCurrent, output, frameCount);
+            const size_t mixedNext = mixFromFile(
+                *m_musicNext, m_musicNextChannels, m_musicNextSampleRate, m_musicNextReadBuf,
+                gainNext, output, frameCount);
+
+            const bool currentEnded = (mixedCurrent == 0);
+            const bool nextEnded = (mixedNext == 0);
+
+            if (nextEnded) {
+                m_musicNext.reset();
+                m_musicNextChannels = 0;
+                m_musicNextSampleRate = 0;
+                m_isCrossfading = false;
+                m_crossfadeTimer = 0.0f;
             }
 
-            size_t readSamples = readFrames * m_musicChannels;
-            if (m_musicReadBuf.size() < readSamples) {
-                m_musicReadBuf.resize(readSamples);
-            }
-
-            sf::Uint64 got = m_musicFile.read(m_musicReadBuf.data(),
-                                              static_cast<sf::Uint64>(readSamples));
-            if (got == 0) {
-                // Track ended – open next
-                if (!openNextTrack()) {
-                    break; // no more tracks
-                }
-                continue; // retry with new track
-            }
-
-            size_t gotFrames = static_cast<size_t>(got) / m_musicChannels;
-
-            // Convert to stereo 44100Hz and mix into output
-            for (size_t i = 0; i < gotFrames && framesRemaining > 0; ++i) {
-                // Simple nearest-neighbor resampling
-                if (m_musicSampleRate != SAMPLE_RATE) {
-                    double srcPos = static_cast<double>(i) * SAMPLE_RATE / m_musicSampleRate;
-                    size_t outIdx = static_cast<size_t>(srcPos);
-                    if (outIdx >= framesRemaining) break;
-                    // Get source sample
-                    int left, right;
-                    if (m_musicChannels == 1) {
-                        left = right = m_musicReadBuf[i];
-                    } else {
-                        left  = m_musicReadBuf[i * 2];
-                        right = m_musicReadBuf[i * 2 + 1];
-                    }
-                    // Apply gain and mix (additive)
-                    int l = dst[outIdx * 2]     + static_cast<int>(left  * musicGain);
-                    int r = dst[outIdx * 2 + 1] + static_cast<int>(right * musicGain);
-                    dst[outIdx * 2]     = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
-                    dst[outIdx * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
+            if (currentEnded) {
+                if (m_musicNext) {
+                    m_musicFile = std::move(m_musicNext);
+                    m_musicChannels = m_musicNextChannels;
+                    m_musicSampleRate = m_musicNextSampleRate;
+                    m_musicNextChannels = 0;
+                    m_musicNextSampleRate = 0;
+                    m_isCrossfading = false;
+                    m_crossfadeTimer = 0.0f;
                 } else {
-                    // Same sample rate – direct copy with gain
-                    int left, right;
-                    if (m_musicChannels == 1) {
-                        left = right = m_musicReadBuf[i];
-                    } else {
-                        left  = m_musicReadBuf[i * 2];
-                        right = m_musicReadBuf[i * 2 + 1];
-                    }
-                    int l = dst[0] + static_cast<int>(left  * musicGain);
-                    int r = dst[1] + static_cast<int>(right * musicGain);
-                    dst[0] = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
-                    dst[1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
-                    dst += 2;
-                    framesRemaining--;
+                    m_musicFile.reset();
+                    m_musicChannels = 0;
+                    m_musicSampleRate = 0;
+                    m_playing = false;
+                }
+            } else if (m_isCrossfading && m_musicNext) {
+                m_crossfadeTimer += static_cast<float>(frameCount) / static_cast<float>(SAMPLE_RATE);
+                progress = std::clamp(m_crossfadeTimer / crossfadeDur, 0.0f, 1.0f);
+                if (progress >= 1.0f) {
+                    m_musicFile = std::move(m_musicNext);
+                    m_musicChannels = m_musicNextChannels;
+                    m_musicSampleRate = m_musicNextSampleRate;
+                    m_musicNextChannels = 0;
+                    m_musicNextSampleRate = 0;
+                    m_isCrossfading = false;
+                    m_crossfadeTimer = 0.0f;
                 }
             }
-
-            // If resampling, account for output frames we've consumed
-            if (m_musicSampleRate != SAMPLE_RATE) {
-                size_t outputFrames = static_cast<size_t>(
-                    static_cast<double>(gotFrames) * SAMPLE_RATE / m_musicSampleRate);
-                if (outputFrames > framesRemaining) outputFrames = framesRemaining;
-                dst += outputFrames * 2;
-                framesRemaining -= outputFrames;
+        } else {
+            const size_t mixed = mixFromFile(
+                *m_musicFile, m_musicChannels, m_musicSampleRate, m_musicReadBuf,
+                musicGain, output, frameCount);
+            if (mixed == 0) {
+                m_musicFile.reset();
+                m_musicChannels = 0;
+                m_musicSampleRate = 0;
+                m_playing = false;
             }
         }
     }
 
-    // ── Mix SFX ──────────────────────────────────────────────────────────
-    {
-        const float sfxGain = m_sfxVolume / 100.0f;
+    const float sfxGain = m_sfxVolume / 100.0f;
+    for (auto it = m_activeSfx.begin(); it != m_activeSfx.end(); ) {
+        auto& sfx = *it;
 
-        for (auto it = m_activeSfx.begin(); it != m_activeSfx.end(); ) {
-            auto& sfx = *it;
-            size_t sfxTotalSamples = sfx.samples.size();
-            bool done = false;
+        if (!sfx.samples || sfx.totalSamples == 0) {
+            it = m_activeSfx.erase(it);
+            continue;
+        }
 
-            for (size_t i = 0; i < frameCount; ++i) {
-                if (sfx.position >= sfxTotalSamples) {
-                    done = true;
-                    break;
-                }
-
-                int left, right;
-                if (sfx.channels == 1) {
-                    left = right = sfx.samples[sfx.position];
-                    sfx.position += 1;
-                } else {
-                    left  = sfx.samples[sfx.position];
-                    right = (sfx.position + 1 < sfxTotalSamples)
-                            ? sfx.samples[sfx.position + 1] : left;
-                    sfx.position += 2;
-                }
-
-                // Simple resampling: if sfx sample rate differs, skip/repeat
-                // For simplicity, we assume SFX are at 44100Hz (most game SFX are).
-                // A proper resampler could be added later.
-
-                float gain = sfxGain * (sfx.volume / 100.0f);
-                int l = output[i * 2]     + static_cast<int>(left  * gain);
-                int r = output[i * 2 + 1] + static_cast<int>(right * gain);
-                output[i * 2]     = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
-                output[i * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
+        bool done = false;
+        for (size_t i = 0; i < frameCount; ++i) {
+            if (sfx.position >= sfx.totalSamples) {
+                done = true;
+                break;
             }
 
-            if (done) {
-                it = m_activeSfx.erase(it);
+            int left = 0;
+            int right = 0;
+            if (sfx.channels == 1) {
+                left = right = sfx.samples[sfx.position];
+                sfx.position += 1;
             } else {
-                ++it;
+                left = sfx.samples[sfx.position];
+                right = (sfx.position + 1 < sfx.totalSamples)
+                    ? sfx.samples[sfx.position + 1]
+                    : left;
+                sfx.position += 2;
             }
+
+            // Global SFX volume is applied exactly once here; per-sound volume
+            // is provided by the caller (AudioManager).
+            const float gain = sfxGain * (sfx.volume / 100.0f);
+            const int l = output[i * 2] + static_cast<int>(left * gain);
+            const int r = output[i * 2 + 1] + static_cast<int>(right * gain);
+            output[i * 2] = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
+            output[i * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
+        }
+
+        if (done) {
+            it = m_activeSfx.erase(it);
+        } else {
+            ++it;
         }
     }
 

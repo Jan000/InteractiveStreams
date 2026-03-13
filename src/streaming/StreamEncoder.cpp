@@ -144,7 +144,7 @@ bool StreamEncoder::openAudioPipeForWriting() {
                       m_audioPipePath, std::strerror(errno));
         return false;
     }
-    setvbuf(m_audioPipeFile, nullptr, _IOFBF, 256 * 1024); // 256 KB buffer
+    setvbuf(m_audioPipeFile, nullptr, _IONBF, 0);
     spdlog::info("[StreamEncoder] FFmpeg connected to audio FIFO.");
     return true;
 #endif
@@ -300,6 +300,7 @@ bool StreamEncoder::start() {
     setvbuf(m_pipe, nullptr, _IOFBF, 256 * 1024); // 256 KB buffered I/O
 
     m_running = true;
+    m_streamSyncReady = false;
     m_thread = std::thread(&StreamEncoder::encoderThread, this);
 
     // Start audio thread if we have a mixer and pipe
@@ -314,6 +315,7 @@ bool StreamEncoder::start() {
 void StreamEncoder::stop() {
     // Guard against double-stop (destructor after explicit stop)
     bool wasRunning = m_running.exchange(false);
+    m_streamSyncReady = false;
     if (!wasRunning && !m_pipe && !m_thread.joinable()) return;
 
     m_cv.notify_all();
@@ -395,6 +397,7 @@ void StreamEncoder::encoderThread() {
                 std::memcpy(localBuffer.data(), m_frameBuffer.data(), localBuffer.size());
                 m_frameReady = false;
                 hasFrame = true;
+                m_streamSyncReady = true;
             } else if (hasFrame) {
                 // No new frame arrived – re-encode the last frame to keep
                 // the stream alive at a constant frame rate (duplicate).
@@ -526,6 +529,15 @@ void StreamEncoder::audioThread() {
 
     spdlog::info("[StreamEncoder] Audio thread running.");
 
+    // Wait until the first video frame has been consumed by the encoder thread.
+    while (m_running && !m_streamSyncReady.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    if (!m_running) {
+        spdlog::info("[StreamEncoder] Audio thread exiting before sync ready.");
+        return;
+    }
+
     // Write audio in 20 ms chunks at real-time pace
     const int chunkFrames  = m_audioSampleRate / 50;  // 882 frames @ 44100 Hz
     const int chunkSamples = chunkFrames * 2;          // stereo
@@ -553,6 +565,7 @@ void StreamEncoder::audioThread() {
         }
 #else
         size_t written = fwrite(buffer.data(), 1, chunkBytes, m_audioPipeFile);
+        fflush(m_audioPipeFile);
         if (written != chunkBytes) {
             if (m_running) {
                 spdlog::warn("[StreamEncoder] Audio pipe write failed ({}/{}). "

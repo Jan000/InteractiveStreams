@@ -156,18 +156,10 @@ void Application::initialize() {
 
     // ── Audio mixer (for stream encoding) ─────────────────────────────────
     m_impl->audioMixer = std::make_unique<AudioMixer>();
-    m_impl->audioMixer->scanMusicDirectory("assets/audio");
-    m_impl->audioMixer->setMusicVolume(
-        cfg.get<float>("audio.music_volume", 50.0f));
-    m_impl->audioMixer->setSfxVolume(
-        cfg.get<float>("audio.sfx_volume", 70.0f));
-    m_impl->audioMixer->setMuted(
-        cfg.get<bool>("audio.muted", false));
-    m_impl->audioMixer->play();
-    spdlog::info("AudioMixer initialised for stream encoding.");
 
-    // Connect AudioManager -> AudioMixer so SFX are mixed into stream audio
+    // Connect AudioManager -> AudioMixer; manager pushes full state and track.
     m_impl->audioManager->setAudioMixer(m_impl->audioMixer.get());
+    spdlog::info("AudioMixer initialised for stream encoding.");
 
     // ── Preview renderer (must be created BEFORE streams, because
     //    GameManager::loadGame() accesses the renderer for setWindowTitle) ─

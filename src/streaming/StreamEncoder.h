@@ -130,6 +130,7 @@ private:
 
     // Threading
     std::atomic<bool>       m_running{false};
+    std::atomic<bool>       m_streamSyncReady{false};
     std::thread             m_thread;
     std::mutex              m_mutex;
     std::condition_variable m_cv;

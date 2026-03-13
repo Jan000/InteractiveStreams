@@ -75,7 +75,9 @@ void YouTubeGrpcChat::streamLoop() {
     // Each iteration opens a new gRPC stream.
     // When the stream ends (offline, error, token expiry), we wait and retry.
 
-    constexpr int RECONNECT_WAIT_SEC      = 15;  // normal reconnect delay
+    constexpr int RECONNECT_WAIT_SEC_ACTIVE = 8;   // stream ended after traffic
+    constexpr int RECONNECT_WAIT_SEC_IDLE   = 60;  // stream ended without traffic
+    constexpr int RECONNECT_WAIT_SEC_ERROR  = 20;  // non-fatal error backoff
     constexpr int MAX_CONSECUTIVE_ERRORS  = 3;   // give up after N errors without messages
     constexpr int MAX_NOT_FOUND_RETRIES   = 2;
 
@@ -120,10 +122,15 @@ void YouTubeGrpcChat::streamLoop() {
             break;
         }
 
-        // ── Log gRPC connection in quota tracker ─────────────────────────
-        // gRPC StreamList costs quota on Google's side (equivalent to
-        // liveChatMessages.list).  We log it so the dashboard has visibility.
-        YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "gRPC StreamList (connect)");
+        // ── Reserve quota before opening the request ─────────────────────
+        // gRPC StreamList consumes quota on Google's side (same cost bucket
+        // as liveChatMessages.list). If our local daily budget is exhausted,
+        // stop here instead of burning more API units.
+        if (!YouTubeQuota::instance().consume(YouTubeQuota::COST_LIST, "gRPC StreamList (connect)")) {
+            spdlog::warn("[YouTube gRPC] Local quota budget exhausted before connect; stopping stream loop.");
+            m_quotaExhausted = true;
+            break;
+        }
 
         // ── Open server-streamed RPC ─────────────────────────────────────
         if (reconnects == 0) {
@@ -247,6 +254,8 @@ void YouTubeGrpcChat::streamLoop() {
         }
 
         grpc::Status status = reader->Finish();
+        int reconnectWaitSec = RECONNECT_WAIT_SEC_IDLE;
+
         if (!status.ok()) {
             consecutiveErrors++;
 
@@ -302,16 +311,22 @@ void YouTubeGrpcChat::streamLoop() {
                               "stopping gRPC, falling back to REST.", consecutiveErrors);
                 break;
             }
+
+            reconnectWaitSec = RECONNECT_WAIT_SEC_ERROR;
         } else {
             spdlog::debug("[YouTube gRPC] Stream batch ended normally ({} msgs).", batchMessages);
+            reconnectWaitSec = (batchMessages > 0)
+                ? RECONNECT_WAIT_SEC_ACTIVE
+                : RECONNECT_WAIT_SEC_IDLE;
         }
 
         reconnects++;
 
-        // Brief wait before reconnecting
+        // Adaptive wait before reconnecting.
+        // This prevents frequent idle reconnects from burning quota.
         if (m_running.load()) {
-            spdlog::debug("[YouTube gRPC] Reconnecting in {} seconds…", RECONNECT_WAIT_SEC);
-            for (int i = 0; i < RECONNECT_WAIT_SEC && m_running.load(); ++i) {
+            spdlog::debug("[YouTube gRPC] Reconnecting in {} seconds…", reconnectWaitSec);
+            for (int i = 0; i < reconnectWaitSec && m_running.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }

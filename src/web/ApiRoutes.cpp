@@ -1502,18 +1502,14 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
             return;
         }
         auto& audio = app.audioManager();
-        auto& mixer = app.audioMixer();
         if (body.contains("musicVolume")) {
             audio.setMusicVolume(body["musicVolume"].get<float>());
-            mixer.setMusicVolume(body["musicVolume"].get<float>());
         }
         if (body.contains("sfxVolume")) {
             audio.setSfxVolume(body["sfxVolume"].get<float>());
-            mixer.setSfxVolume(body["sfxVolume"].get<float>());
         }
         if (body.contains("muted")) {
             audio.setMuted(body["muted"].get<bool>());
-            mixer.setMuted(body["muted"].get<bool>());
         }
         if (body.contains("fadeInSeconds"))
             audio.setFadeInDuration(body["fadeInSeconds"].get<float>());
@@ -1537,25 +1533,21 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
 
     server.Post("/api/audio/next", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().nextTrack();
-        app.audioMixer().nextTrack();
         res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Post("/api/audio/pause", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().pauseMusic();
-        app.audioMixer().pause();
         res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Post("/api/audio/resume", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().resumeMusic();
-        app.audioMixer().resume();
         res.set_content(R"({"success":true})", "application/json");
     });
 
     server.Post("/api/audio/rescan", [&app](const httplib::Request&, httplib::Response& res) {
         app.audioManager().rescan();
-        app.audioMixer().rescan();
         nlohmann::json j;
         j["success"]    = true;
         j["trackCount"] = app.audioManager().trackCount();

@@ -141,6 +141,10 @@ void AudioManager::playMusic() {
     m_musicCurrent->play();
     m_musicPaused = false;
 
+    if (m_audioMixer) {
+        m_audioMixer->playTrack(m_playlist[m_currentIndex]);
+    }
+
     spdlog::info("[Audio] Now playing: {} ({}/{})",
         fs::path(m_playlist[0]).filename().string(), 1, m_playlist.size());
 }
@@ -155,6 +159,9 @@ void AudioManager::pauseMusic() {
     if (m_musicNext && m_musicNext->getStatus() == sf::Music::Playing) {
         m_musicNext->pause();
     }
+    if (m_audioMixer) {
+        m_audioMixer->pause();
+    }
 }
 
 void AudioManager::resumeMusic() {
@@ -167,6 +174,9 @@ void AudioManager::resumeMusic() {
             m_musicNext->play();
         }
         m_musicPaused = false;
+    }
+    if (m_audioMixer) {
+        m_audioMixer->resume();
     }
 }
 
@@ -181,6 +191,10 @@ void AudioManager::stopMusic() {
     m_musicPaused  = false;
     m_fadeState     = FadeState::None;
     m_fadeTimer     = 0.0f;
+
+    if (m_audioMixer) {
+        m_audioMixer->stop();
+    }
 }
 
 void AudioManager::nextTrack() {
@@ -215,6 +229,10 @@ void AudioManager::beginCrossfade() {
     // Start fade-in of new track at 0 volume
     m_musicNext->setVolume(0.0f);
     m_musicNext->play();
+
+    if (m_audioMixer) {
+        m_audioMixer->crossfadeToTrack(m_playlist[next]);
+    }
 
     m_fadeState = FadeState::Crossfading;
     m_fadeTimer = 0.0f;
@@ -327,6 +345,10 @@ void AudioManager::update(double dt) {
                 }
                 m_musicCurrent->play();
 
+                if (m_audioMixer) {
+                    m_audioMixer->playTrack(m_playlist[next]);
+                }
+
                 spdlog::info("[Audio] Now playing: {} ({}/{})",
                     fs::path(m_playlist[next]).filename().string(),
                     next + 1, m_playlist.size());
@@ -348,6 +370,9 @@ void AudioManager::setMusicVolume(float volume) {
     m_musicVolume = std::clamp(volume, 0.0f, 100.0f);
     if (!m_muted && m_fadeState == FadeState::None) {
         if (m_musicCurrent) m_musicCurrent->setVolume(m_musicVolume);
+    }
+    if (m_audioMixer) {
+        m_audioMixer->setMusicVolume(m_musicVolume);
     }
     // During fading, the volume is managed by the fade logic
 }
@@ -381,16 +406,25 @@ int AudioManager::trackCount() const {
 void AudioManager::setFadeInDuration(float seconds) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_fadeInSeconds = std::max(seconds, 0.0f);
+    if (m_audioMixer) {
+        m_audioMixer->setFadeInDuration(m_fadeInSeconds);
+    }
 }
 
 void AudioManager::setFadeOutDuration(float seconds) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_fadeOutSeconds = std::max(seconds, 0.0f);
+    if (m_audioMixer) {
+        m_audioMixer->setFadeOutDuration(m_fadeOutSeconds);
+    }
 }
 
 void AudioManager::setCrossfadeOverlap(float seconds) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_crossfadeOverlap = std::max(seconds, 0.0f);
+    if (m_audioMixer) {
+        m_audioMixer->setCrossfadeOverlap(m_crossfadeOverlap);
+    }
 }
 
 // ── SFX ──────────────────────────────────────────────────────────────────────
@@ -455,9 +489,9 @@ void AudioManager::playSfx(const std::string& name, float volume) {
     sound->play();
     m_activeSounds.push_back(std::move(sound));
 
-    // Also route to AudioMixer for stream encoding
+    // Route dry SFX volume to AudioMixer. Mixer applies global SFX gain once.
     if (m_audioMixer) {
-        m_audioMixer->playSfx(*it->second.buffers[idx], effectiveVol);
+        m_audioMixer->playSfx(*it->second.buffers[idx], volume);
     }
 
     // Limit active sounds to prevent resource exhaustion
@@ -469,11 +503,31 @@ void AudioManager::playSfx(const std::string& name, float volume) {
 void AudioManager::setAudioMixer(AudioMixer* mixer) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_audioMixer = mixer;
+    if (!m_audioMixer) {
+        return;
+    }
+
+    m_audioMixer->setMusicVolume(m_musicVolume);
+    m_audioMixer->setSfxVolume(m_sfxVolume);
+    m_audioMixer->setMuted(m_muted);
+    m_audioMixer->setFadeInDuration(m_fadeInSeconds);
+    m_audioMixer->setFadeOutDuration(m_fadeOutSeconds);
+    m_audioMixer->setCrossfadeOverlap(m_crossfadeOverlap);
+
+    if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_playlist.size())) {
+        m_audioMixer->playTrack(m_playlist[m_currentIndex]);
+        if (m_musicPaused) {
+            m_audioMixer->pause();
+        }
+    }
 }
 
 void AudioManager::setSfxVolume(float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_sfxVolume = std::clamp(volume, 0.0f, 100.0f);
+    if (m_audioMixer) {
+        m_audioMixer->setSfxVolume(m_sfxVolume);
+    }
 }
 
 // ── Mute ─────────────────────────────────────────────────────────────────────
@@ -486,6 +540,9 @@ void AudioManager::setMuted(bool muted) {
         if (m_musicNext)    m_musicNext->setVolume(0.0f);
     } else if (m_fadeState == FadeState::None) {
         if (m_musicCurrent) m_musicCurrent->setVolume(m_musicVolume);
+    }
+    if (m_audioMixer) {
+        m_audioMixer->setMuted(m_muted);
     }
     // During fading, unmute effect will be handled by next update() tick
 }
