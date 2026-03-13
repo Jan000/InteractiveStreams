@@ -43,6 +43,14 @@ AudioManager& Application::audioManager() {
 
 void PlayerDatabase::recordResult(const std::string&, const std::string&, const std::string&, int, bool) {}
 
+nlohmann::json PlayerDatabase::getPlayerStats(const std::string&) const {
+    return {
+        {"total_points", 0},
+        {"total_wins", 0},
+        {"games_played", 0}
+    };
+}
+
 } // namespace is::core
 
 // ══════════════════════════════════════════════════════════════════════════════

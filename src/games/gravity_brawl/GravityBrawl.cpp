@@ -11,12 +11,58 @@
 #include <filesystem>
 #include <sstream>
 #include <unordered_set>
+#include <optional>
+#include <cctype>
 
 namespace is::games::gravity_brawl {
 
 // Helper: check if a userId represents a bot
 static inline bool isBot(const std::string& userId) {
     return userId.size() >= 6 && userId.substr(0, 6) == "__bot_";
+}
+
+static std::optional<sf::Color> parseCustomColor(std::string token) {
+    if (token.empty()) return std::nullopt;
+    std::transform(token.begin(), token.end(), token.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (token == "reset" || token == "none" || token == "default") {
+        return sf::Color::White;
+    }
+
+    if (!token.empty() && token[0] == '#') {
+        token.erase(token.begin());
+    }
+    if (token.size() == 6) {
+        auto hexValue = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            return -1;
+        };
+        int v0 = hexValue(token[0]);
+        int v1 = hexValue(token[1]);
+        int v2 = hexValue(token[2]);
+        int v3 = hexValue(token[3]);
+        int v4 = hexValue(token[4]);
+        int v5 = hexValue(token[5]);
+        if (v0 >= 0 && v1 >= 0 && v2 >= 0 && v3 >= 0 && v4 >= 0 && v5 >= 0) {
+            return sf::Color(static_cast<sf::Uint8>(v0 * 16 + v1),
+                             static_cast<sf::Uint8>(v2 * 16 + v3),
+                             static_cast<sf::Uint8>(v4 * 16 + v5));
+        }
+    }
+
+    if (token == "red") return sf::Color(230, 70, 70);
+    if (token == "blue") return sf::Color(70, 130, 255);
+    if (token == "green") return sf::Color(80, 210, 120);
+    if (token == "yellow") return sf::Color(245, 220, 60);
+    if (token == "orange") return sf::Color(255, 150, 60);
+    if (token == "purple") return sf::Color(170, 90, 230);
+    if (token == "cyan") return sf::Color(70, 220, 220);
+    if (token == "pink") return sf::Color(255, 120, 190);
+    if (token == "white") return sf::Color(240, 240, 240);
+
+    return std::nullopt;
 }
 
 // ── Registration ─────────────────────────────────────────────────────────────
@@ -50,8 +96,25 @@ void GravityBrawl::ContactListener::BeginContact(b2Contact* contact) {
     b2Body* bodyA = contact->GetFixtureA()->GetBody();
     b2Body* bodyB = contact->GetFixtureB()->GetBody();
 
-    auto* dataA = reinterpret_cast<Planet*>(bodyA->GetUserData().pointer);
-    auto* dataB = reinterpret_cast<Planet*>(bodyB->GetUserData().pointer);
+    bool aIsAnomaly = m_game.isAnomalyBody(bodyA);
+    bool bIsAnomaly = m_game.isAnomalyBody(bodyB);
+
+    if (aIsAnomaly && !bIsAnomaly) {
+        if (Planet* planet = m_game.findPlanetByBody(bodyB)) {
+            m_game.collectAnomalyByBody(*planet, bodyA);
+        }
+        return;
+    }
+    if (bIsAnomaly && !aIsAnomaly) {
+        if (Planet* planet = m_game.findPlanetByBody(bodyA)) {
+            m_game.collectAnomalyByBody(*planet, bodyB);
+        }
+        return;
+    }
+    if (aIsAnomaly || bIsAnomaly) return;
+
+    Planet* dataA = m_game.findPlanetByBody(bodyA);
+    Planet* dataB = m_game.findPlanetByBody(bodyB);
 
     if (!dataA || !dataB) return;
     if (!dataA->alive || !dataB->alive) return;
@@ -137,6 +200,9 @@ void GravityBrawl::initialize() {
     m_blackHolePulse = 0.0f;
     m_blackHoleRotation = 0.0f;
     m_avatarCleanupTimer = 0.0;
+    m_nextAnomalySpawnTime = 20.0;
+    m_nextAnomalyId = 1;
+    m_anomalies.clear();
 
     // Pre-fill bots if configured
     spawnBots();
@@ -159,6 +225,13 @@ void GravityBrawl::shutdown() {
     m_killFeed.clear();
     m_floatingTexts.clear();
     m_botRespawnTimers.clear();
+    for (auto& anomaly : m_anomalies) {
+        if (anomaly.body && m_world) {
+            m_world->DestroyBody(anomaly.body);
+            anomaly.body = nullptr;
+        }
+    }
+    m_anomalies.clear();
     m_avatarCache.clear();
     m_contactListener.reset();
     m_world.reset();
@@ -435,7 +508,15 @@ void GravityBrawl::spawnBots() {
         p.userId = botId;
         p.displayName = BOT_NAMES[(m_botCounter - 1) % NUM_BOT_NAMES];
         p.avatarUrl.clear();
+        p.level = 1;
+        p.customColor.reset();
         p.alive = true;
+        p.lastActivityTime = m_gameTimer;
+        p.isAFK = false;
+        p.hasShield = false;
+        p.isGodMode = false;
+        p.godModeTimer = 0.0;
+        p.godModeMassBoostApplied = false;
         p.kills = 0;
         p.deaths = 0;
         p.survivalTime = 0.0;
@@ -547,6 +628,14 @@ void GravityBrawl::respawnDeadBots(float dt) {
                 p.hitFlashTimer = 0.0f;
                 p.trailTimer = 0.0f;
                 p.supernovaTimer = 0.0f;
+                p.level = 1;
+                p.customColor.reset();
+                p.lastActivityTime = m_gameTimer;
+                p.isAFK = false;
+                p.hasShield = false;
+                p.isGodMode = false;
+                p.godModeTimer = 0.0;
+                p.godModeMassBoostApplied = false;
                 p.avatarUrl.clear();
                 p.tier = PlanetTier::Asteroid;
                 p.baseRadius = m_tierRadius[0];
@@ -567,6 +656,10 @@ void GravityBrawl::respawnDeadBots(float dt) {
 
 void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
     handleStreamEvent(msg);
+    auto it = m_planets.find(msg.userId);
+    if (it != m_planets.end()) {
+        it->second.lastActivityTime = m_gameTimer;
+    }
     if (msg.text.empty()) return;
 
     // Extract first token (handles trailing whitespace, \r\n, extra text)
@@ -582,6 +675,36 @@ void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
 
     if (cmd == "join" || cmd == "play") {
         cmdJoin(msg.userId, msg.displayName, msg.avatarUrl);
+    } else if (cmd == "color") {
+        if (it == m_planets.end() || !it->second.alive) {
+            sendChatFeedback("Use !join first before changing colors.");
+            return;
+        }
+        if (it->second.level < 10) {
+            sendChatFeedback("Color customization unlocks at level 10.");
+            return;
+        }
+        std::string colorToken;
+        iss >> colorToken;
+        if (colorToken.empty()) {
+            sendChatFeedback("Usage: color <hex|name> (e.g. color #66ccff)");
+            return;
+        }
+        std::string loweredToken = colorToken;
+        std::transform(loweredToken.begin(), loweredToken.end(), loweredToken.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        auto parsed = parseCustomColor(colorToken);
+        if (!parsed.has_value()) {
+            sendChatFeedback("Unknown color. Use #RRGGBB or a basic color name.");
+            return;
+        }
+        if (loweredToken == "reset" || loweredToken == "none" || loweredToken == "default") {
+            it->second.customColor.reset();
+            sendChatFeedback(it->second.displayName + " reset planet color.");
+        } else {
+            it->second.customColor = *parsed;
+            sendChatFeedback(it->second.displayName + " changed planet color.");
+        }
     } else if (cmd == "smash" || cmd == "s") {
         cmdSmash(msg.userId);
     }
@@ -624,6 +747,12 @@ void GravityBrawl::cmdJoin(const std::string& userId,
         p.avatarUrl = avatarUrl;
     }
     p.alive = true;
+    p.lastActivityTime = m_gameTimer;
+    p.isAFK = false;
+    p.hasShield = false;
+    p.isGodMode = false;
+    p.godModeTimer = 0.0;
+    p.godModeMassBoostApplied = false;
     p.kills = 0;
     p.deaths = 0;
     p.survivalTime = 0.0;
@@ -647,6 +776,18 @@ void GravityBrawl::cmdJoin(const std::string& userId,
     p.glowPulse = 0.0f;
     p.supernovaTimer = 0.0f;
 
+    if (!isBot(userId)) {
+        try {
+            nlohmann::json stats = is::core::Application::instance().playerDatabase().getPlayerStats(userId);
+            const int historicalScore = stats.value("total_points", 0);
+            p.level = std::max(1, historicalScore / 500 + 1);
+        } catch (...) {
+            p.level = 1;
+        }
+    } else {
+        p.level = 1;
+    }
+
     if (!p.avatarUrl.empty()) {
         m_avatarCache.request(p.avatarUrl);
     }
@@ -669,6 +810,188 @@ void GravityBrawl::cmdJoin(const std::string& userId,
             userId, displayName, "gravity_brawl", 1, false);
     } catch (...) {}
 
+}
+
+void GravityBrawl::triggerLivestreamReward(const std::string& userId,
+                                           const std::string& displayName,
+                                           const std::string& platform,
+                                           const std::string& eventType,
+                                           int amount) {
+    (void)platform;
+    auto it = m_planets.find(userId);
+    if (it == m_planets.end() || !it->second.alive) {
+        cmdJoin(userId, displayName, "");
+        it = m_planets.find(userId);
+        if (it == m_planets.end()) return;
+    }
+
+    Planet& p = it->second;
+    p.lastActivityTime = m_gameTimer;
+
+    if (eventType == "yt_subscribe" || eventType == "twitch_sub") {
+        p.hasShield = true;
+        if (p.tier == PlanetTier::Asteroid) p.kills = std::max(p.kills, 3);
+        else if (p.tier == PlanetTier::IcePlanet) p.kills = std::max(p.kills, 10);
+        else if (p.tier == PlanetTier::GasGiant) p.kills = std::max(p.kills, 25);
+        p.score += 300;
+        updatePlanetTier(p);
+        if (p.body) {
+            addFloatingText("+300 SUB", worldToScreen(p.body->GetPosition()), sf::Color(120, 220, 255), 2.0f);
+        }
+        return;
+    }
+
+    if (eventType == "twitch_channel_points") {
+        triggerSupernova(p);
+        return;
+    }
+
+    if ((eventType == "yt_superchat" || eventType == "twitch_bits") && amount > 100) {
+        if (!p.isGodMode) {
+            p.isGodMode = true;
+            p.godModeTimer = 30.0;
+            p.massScale *= 3.0f;
+            p.godModeMassBoostApplied = true;
+        } else {
+            p.godModeTimer = std::max(p.godModeTimer, 30.0);
+        }
+        if (p.body) {
+            addFloatingText("GOD MODE 30s", worldToScreen(p.body->GetPosition()), sf::Color(255, 220, 90), 2.0f);
+        }
+    }
+}
+
+void GravityBrawl::spawnAnomaly() {
+    if (!m_world) return;
+
+    std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * b2_pi);
+    std::uniform_real_distribution<float> radiusDist(
+        BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier + 4.0f,
+        ARENA_RADIUS * 0.92f);
+    std::uniform_int_distribution<int> typeDist(0, 2);
+
+    float angle = angleDist(m_rng);
+    float radius = radiusDist(m_rng);
+    float x = WORLD_CENTER_X + std::cos(angle) * radius;
+    float y = WORLD_CENTER_Y + std::sin(angle) * radius;
+
+    b2BodyDef bodyDef;
+    bodyDef.type = b2_staticBody;
+    bodyDef.position.Set(x, y);
+    b2Body* body = m_world->CreateBody(&bodyDef);
+
+    b2CircleShape shape;
+    shape.m_radius = 0.45f;
+
+    b2FixtureDef fixtureDef;
+    fixtureDef.shape = &shape;
+    fixtureDef.isSensor = true;
+    body->CreateFixture(&fixtureDef);
+
+    Anomaly anomaly;
+    anomaly.id = m_nextAnomalyId++;
+    anomaly.type = static_cast<AnomalyType>(typeDist(m_rng));
+    anomaly.body = body;
+    anomaly.pulse = 0.0f;
+    anomaly.consumed = false;
+    m_anomalies.push_back(anomaly);
+}
+
+void GravityBrawl::renderAnomalies(sf::RenderTarget& target) {
+    for (const auto& anomaly : m_anomalies) {
+        if (anomaly.consumed || !anomaly.body) continue;
+        sf::Vector2f pos = worldToScreen(anomaly.body->GetPosition());
+        float baseR = 0.45f * PIXELS_PER_METER * m_cameraZoom;
+        float pulse = 1.0f + 0.18f * std::sin(anomaly.pulse);
+        float radius = baseR * pulse;
+
+        sf::Color color = sf::Color(220, 240, 255, 190);
+        if (anomaly.type == AnomalyType::Shield) {
+            color = sf::Color(120, 190, 255, 200);
+        } else if (anomaly.type == AnomalyType::ScoreJackpot) {
+            color = sf::Color(255, 240, 140, 210);
+        }
+
+        sf::CircleShape glow(radius * 1.7f);
+        glow.setOrigin(radius * 1.7f, radius * 1.7f);
+        sf::Color glowColor = color;
+        glowColor.a = 70;
+        glow.setFillColor(glowColor);
+        glow.setPosition(pos);
+        target.draw(glow);
+
+        sf::CircleShape core(radius);
+        core.setOrigin(radius, radius);
+        core.setPosition(pos);
+        core.setFillColor(color);
+        target.draw(core);
+    }
+}
+
+void GravityBrawl::applyAnomalyReward(Planet& p, const Anomaly& anomaly) {
+    if (!p.alive) return;
+
+    if (anomaly.type == AnomalyType::MassInjector) {
+        p.kills += 3;
+        updatePlanetTier(p);
+        p.score += 80;
+        if (p.body) {
+            addFloatingText("MASS+", worldToScreen(p.body->GetPosition()), sf::Color(255, 170, 90), 1.3f);
+        }
+        return;
+    }
+
+    if (anomaly.type == AnomalyType::Shield) {
+        p.hasShield = true;
+        if (p.body) {
+            addFloatingText("SHIELD", worldToScreen(p.body->GetPosition()), sf::Color(120, 190, 255), 1.3f);
+        }
+        return;
+    }
+
+    p.score += 250;
+    if (!isBot(p.userId)) {
+        try {
+            is::core::Application::instance().playerDatabase().recordResult(
+                p.userId, p.displayName, "gravity_brawl", 250, false);
+        } catch (...) {}
+    }
+    if (p.body) {
+        addFloatingText("+250", worldToScreen(p.body->GetPosition()), sf::Color(255, 240, 120), 1.5f);
+    }
+}
+
+bool GravityBrawl::isAnomalyBody(const b2Body* body) const {
+    if (!body) return false;
+    for (const auto& anomaly : m_anomalies) {
+        if (!anomaly.consumed && anomaly.body == body) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Planet* GravityBrawl::findPlanetByBody(b2Body* body) {
+    if (!body) return nullptr;
+    for (auto& [id, planet] : m_planets) {
+        (void)id;
+        if (planet.body == body) {
+            return &planet;
+        }
+    }
+    return nullptr;
+}
+
+void GravityBrawl::collectAnomalyByBody(Planet& collector, b2Body* anomalyBody) {
+    if (!collector.alive || !anomalyBody) return;
+
+    for (auto& anomaly : m_anomalies) {
+        if (anomaly.consumed || anomaly.body != anomalyBody) continue;
+        anomaly.consumed = true;
+        collector.lastActivityTime = m_gameTimer;
+        applyAnomalyReward(collector, anomaly);
+        return;
+    }
 }
 
 void GravityBrawl::cmdSmash(const std::string& userId) {
@@ -1073,6 +1396,25 @@ void GravityBrawl::update(double dt) {
     // ── Endless Mode: always playing ─────────────────────────────────────────
     m_gameTimer += dt;
 
+    // AFK tracking: inactive planets drift with weakened control forces.
+    for (auto& [id, p] : m_planets) {
+        (void)id;
+        if (!p.alive) {
+            p.isAFK = false;
+            continue;
+        }
+        p.isAFK = (m_gameTimer - p.lastActivityTime) > m_afkTimeoutSeconds;
+    }
+
+    if (m_gameTimer >= m_nextAnomalySpawnTime) {
+        spawnAnomaly();
+        m_nextAnomalySpawnTime = m_gameTimer + m_anomalySpawnInterval;
+    }
+
+    for (auto& anomaly : m_anomalies) {
+        anomaly.pulse += fdt * 2.5f;
+    }
+
     // Store previous positions for interpolation
     for (auto& [id, p] : m_planets) {
         if (p.body && p.alive) {
@@ -1089,6 +1431,19 @@ void GravityBrawl::update(double dt) {
 
     // Step physics
     m_world->Step(fdt, 8, 3);
+
+    // Remove collected anomalies and free their Box2D bodies.
+    for (auto it = m_anomalies.begin(); it != m_anomalies.end();) {
+        if (it->consumed) {
+            if (it->body && m_world) {
+                m_world->DestroyBody(it->body);
+                it->body = nullptr;
+            }
+            it = m_anomalies.erase(it);
+        } else {
+            ++it;
+        }
+    }
 
     // Post-physics: update render positions
     for (auto& [id, p] : m_planets) {
@@ -1245,6 +1600,11 @@ void GravityBrawl::applyOrbitalForces(float dt) {
         b2Vec2 tangent(-dir.y * orbDir, dir.x * orbDir);
         float orbitalSpeed = m_orbitalTangentialStrength;
 
+        if (p.isAFK) {
+            pullStrength *= 0.5f;
+            orbitalSpeed *= 0.5f;
+        }
+
         // Apply forces
         float mass = p.body->GetMass();
         p.body->ApplyForceToCenter(
@@ -1263,6 +1623,7 @@ void GravityBrawl::applyBlackHoleGravity(float dt) {
 
     for (auto& [id, p] : m_planets) {
         if (!p.alive || !p.body) continue;
+        if (p.isGodMode) continue;
 
         b2Vec2 pos = p.body->GetPosition();
         b2Vec2 toCenter(WORLD_CENTER_X - pos.x, WORLD_CENTER_Y - pos.y);
@@ -1304,6 +1665,24 @@ void GravityBrawl::checkBlackHoleDeaths() {
 
 void GravityBrawl::eliminatePlanet(Planet& p) {
     if (!p.alive) return;
+
+    if (p.hasShield) {
+        p.hasShield = false;
+        if (p.body) {
+            b2Vec2 pos = p.body->GetPosition();
+            b2Vec2 fromCenter(pos.x - WORLD_CENTER_X, pos.y - WORLD_CENTER_Y);
+            float len = fromCenter.Length();
+            if (len > 0.01f) {
+                fromCenter.x /= len;
+                fromCenter.y /= len;
+                p.body->ApplyLinearImpulseToCenter(
+                    b2Vec2(fromCenter.x * 18.0f, fromCenter.y * 18.0f), true);
+            }
+            addFloatingText("SHIELD", worldToScreen(pos), sf::Color(120, 190, 255), 1.3f);
+        }
+        return;
+    }
+
     p.alive = false;
     p.deaths++;
     // Respawn cooldown: prevent immediate re-join for 45 s
@@ -1663,6 +2042,9 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
     // Black hole
     renderBlackHole(target);
 
+    // Neutral space anomalies
+    renderAnomalies(target);
+
     // Planets
     renderPlanets(target, alpha);
 
@@ -1828,6 +2210,15 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     sf::Color glowColor = getTierGlowColor(p.tier);
     float anim = p.animTimer;
 
+    if (p.customColor.has_value()) {
+        baseColor = *p.customColor;
+    }
+
+    if (p.isAFK) {
+        baseColor = sf::Color(140, 140, 150, 150);
+        glowColor = sf::Color(80, 80, 90, 25);
+    }
+
     // Hit flash
     if (p.hitFlashTimer > 0.0f)
         baseColor = sf::Color::White;
@@ -1866,19 +2257,21 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     }
 
     // ── Outer glow ────────────────────────────────────────────────────────
-    float glowMul = 1.0f;
-    switch (p.tier) {
-    case PlanetTier::IcePlanet: glowMul = 1.5f; break;
-    case PlanetTier::GasGiant:  glowMul = 2.0f; break;
-    case PlanetTier::Star:      glowMul = 3.2f + 0.5f * std::sin(p.glowPulse); break;
-    default: break;
+    if (!p.isAFK) {
+        float glowMul = 1.0f;
+        switch (p.tier) {
+        case PlanetTier::IcePlanet: glowMul = 1.5f; break;
+        case PlanetTier::GasGiant:  glowMul = 2.0f; break;
+        case PlanetTier::Star:      glowMul = 3.2f + 0.5f * std::sin(p.glowPulse); break;
+        default: break;
+        }
+        float glowR = pixelRadius * glowMul;
+        sf::CircleShape glow(glowR);
+        glow.setOrigin(glowR, glowR);
+        glow.setPosition(screenPos);
+        glow.setFillColor(glowColor);
+        target.draw(glow);
     }
-    float glowR = pixelRadius * glowMul;
-    sf::CircleShape glow(glowR);
-    glow.setOrigin(glowR, glowR);
-    glow.setPosition(screenPos);
-    glow.setFillColor(glowColor);
-    target.draw(glow);
 
     // ── Main body ─────────────────────────────────────────────────────────
     if (p.tier == PlanetTier::Asteroid) {
@@ -2005,6 +2398,16 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         }
     }
 
+    if (p.hasShield) {
+        sf::CircleShape shield(pixelRadius * 1.12f);
+        shield.setOrigin(pixelRadius * 1.12f, pixelRadius * 1.12f);
+        shield.setPosition(screenPos);
+        shield.setFillColor(sf::Color::Transparent);
+        shield.setOutlineColor(sf::Color(120, 190, 255, 220));
+        shield.setOutlineThickness(2.5f * m_cameraZoom);
+        target.draw(shield);
+    }
+
     // ── Pre-baked avatar overlay (64x64 circular alpha) ──────────────────
     if (!p.avatarUrl.empty()) {
         if (const sf::Texture* avatarTex = m_avatarCache.getTexture(p.avatarUrl)) {
@@ -2065,7 +2468,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         if (rName.visible) {
             sf::Text nameText;
             nameText.setFont(m_font);
-            nameText.setString(p.displayName);
+            nameText.setString("[" + std::to_string(p.level) + "] " + p.displayName);
             nameText.setCharacterSize(rName.fontSize);
             nameText.setFillColor(sf::Color(255, 255, 255, 220));
             nameText.setOutlineColor(sf::Color(0, 0, 0, 180));

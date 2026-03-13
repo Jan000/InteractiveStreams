@@ -12,6 +12,7 @@
 #include <deque>
 #include <random>
 #include <memory>
+#include <optional>
 
 namespace is::games::gravity_brawl {
 
@@ -52,6 +53,14 @@ struct Planet {
     std::string userId;
     std::string displayName;
     std::string avatarUrl;
+    int         level = 1;
+    std::optional<sf::Color> customColor;
+    double      lastActivityTime = 0.0;
+    bool        isAFK = false;
+    bool        hasShield = false;
+    bool        isGodMode = false;
+    double      godModeTimer = 0.0;
+    bool        godModeMassBoostApplied = false;
 
     // Physics (owned by Box2D world)
     b2Body*     body = nullptr;
@@ -110,8 +119,17 @@ struct Planet {
         trailTimer     = std::max(0.0f, trailTimer    - dt);
         supernovaTimer = std::max(0.0f, supernovaTimer - dt);
         smashVisTimer  = std::max(0.0f, smashVisTimer  - dt);
+        godModeTimer   = std::max(0.0, godModeTimer - static_cast<double>(dt));
         animTimer     += dt;
         glowPulse     += dt * 2.0f;
+
+        if (isGodMode && godModeTimer <= 0.0) {
+            isGodMode = false;
+            if (godModeMassBoostApplied) {
+                massScale /= 3.0f;
+                godModeMassBoostApplied = false;
+            }
+        }
 
         // Update tier based on kills
         tier = tierFromKills(kills);
@@ -119,6 +137,9 @@ struct Planet {
 
     /// Get visual radius in meters (grows with tier)
     float getVisualRadius() const {
+        if (isGodMode) {
+            return radiusMeters * 1.8f;
+        }
         return radiusMeters;
     }
 
@@ -172,6 +193,20 @@ enum class GamePhase {
     GameOver     ///< Final scoreboard
 };
 
+enum class AnomalyType {
+    MassInjector,
+    Shield,
+    ScoreJackpot
+};
+
+struct Anomaly {
+    int         id = 0;
+    AnomalyType type = AnomalyType::MassInjector;
+    b2Body*     body = nullptr;
+    float       pulse = 0.0f;
+    bool        consumed = false;
+};
+
 // ── The Game ─────────────────────────────────────────────────────────────────
 
 class GravityBrawl : public IGame {
@@ -199,6 +234,11 @@ public:
     std::vector<std::pair<std::string, int>> getLeaderboard() const override;
     void configure(const nlohmann::json& settings) override;
     nlohmann::json getSettings() const override;
+    void triggerLivestreamReward(const std::string& userId,
+                                 const std::string& displayName,
+                                 const std::string& platform,
+                                 const std::string& eventType,
+                                 int amount);
 
     friend struct GravityBrawlTestAccess;
 
@@ -208,6 +248,12 @@ private:
                  const std::string& avatarUrl = "");
     void cmdSmash(const std::string& userId);
     void handleStreamEvent(const platform::ChatMessage& msg);
+    void spawnAnomaly();
+    void renderAnomalies(sf::RenderTarget& target);
+    void applyAnomalyReward(Planet& p, const Anomaly& anomaly);
+    bool isAnomalyBody(const b2Body* body) const;
+    Planet* findPlanetByBody(b2Body* body);
+    void collectAnomalyByBody(Planet& collector, b2Body* anomalyBody);
 
     // ── Bot Fill ─────────────────────────────────────────────────────────
     void spawnBots();
@@ -319,7 +365,10 @@ private:
     int    m_maxParticles         = 500;
     double m_afkTimeoutSeconds    = 180.0;
     double m_anomalySpawnInterval = 150.0;
+    double m_nextAnomalySpawnTime = 20.0;
     double m_avatarCleanupTimer   = 0.0;
+    int    m_nextAnomalyId        = 1;
+    std::vector<Anomaly> m_anomalies;
 
     // Cosmic Event (black hole pulse)
     double m_cosmicEventCooldown = 60.0;  // seconds between events
