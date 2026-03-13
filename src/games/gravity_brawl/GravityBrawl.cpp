@@ -174,7 +174,8 @@ void GravityBrawl::initialize() {
     // Initialize rendering
     m_background.initialize(
         static_cast<unsigned int>(SCREEN_W),
-        static_cast<unsigned int>(SCREEN_H));
+        static_cast<unsigned int>(SCREEN_H),
+        m_backgroundStars);
     m_postProcessing.initialize(
         static_cast<unsigned int>(SCREEN_W),
         static_cast<unsigned int>(SCREEN_H));
@@ -309,6 +310,20 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("enable_post_processing") && settings["enable_post_processing"].is_boolean()) {
         m_enablePostProcessing = settings["enable_post_processing"].get<bool>();
     }
+    if (settings.contains("background_stars") && settings["background_stars"].is_number_integer()) {
+        m_backgroundStars = std::clamp(settings["background_stars"].get<int>(), 0, 500);
+        // Reinitialize background with new star count
+        m_background.initialize(
+            static_cast<unsigned int>(SCREEN_W),
+            static_cast<unsigned int>(SCREEN_H),
+            m_backgroundStars);
+    }
+    if (settings.contains("enable_planet_glow") && settings["enable_planet_glow"].is_boolean()) {
+        m_enablePlanetGlow = settings["enable_planet_glow"].get<bool>();
+    }
+    if (settings.contains("cosmic_event_duration") && settings["cosmic_event_duration"].is_number()) {
+        m_cosmicEventDuration = std::max(1.0, settings["cosmic_event_duration"].get<double>());
+    }
     if (settings.contains("max_particles") && settings["max_particles"].is_number_integer()) {
         const int hardCap = static_cast<int>(MAX_PARTICLES_HARD_CAP);
         m_maxParticles = std::clamp(settings["max_particles"].get<int>(), 0, hardCap);
@@ -432,6 +447,9 @@ nlohmann::json GravityBrawl::getSettings() const {
     return {
         {"bot_fill", m_botFillTarget},
         {"enable_post_processing", m_enablePostProcessing},
+        {"background_stars", m_backgroundStars},
+        {"enable_planet_glow", m_enablePlanetGlow},
+        {"cosmic_event_duration", m_cosmicEventDuration},
         {"max_particles", m_maxParticles},
         {"afk_timeout_seconds", m_afkTimeoutSeconds},
         {"anomaly_spawn_interval", m_anomalySpawnInterval},
@@ -895,22 +913,15 @@ void GravityBrawl::renderAnomalies(sf::RenderTarget& target) {
         float pulse = 1.0f + 0.18f * std::sin(anomaly.pulse);
         float radius = baseR * pulse;
 
-        sf::Color color = sf::Color(220, 240, 255, 190);
+        sf::Color color = sf::Color(220, 240, 255);
         if (anomaly.type == AnomalyType::Shield) {
-            color = sf::Color(120, 190, 255, 200);
+            color = sf::Color(120, 190, 255);
         } else if (anomaly.type == AnomalyType::ScoreJackpot) {
-            color = sf::Color(255, 240, 140, 210);
+            color = sf::Color(255, 240, 140);
         }
 
-        sf::CircleShape glow(radius * 1.7f);
-        glow.setOrigin(radius * 1.7f, radius * 1.7f);
-        sf::Color glowColor = color;
-        glowColor.a = 70;
-        glow.setFillColor(glowColor);
-        glow.setPosition(pos);
-        target.draw(glow);
-
-        sf::CircleShape core(radius);
+        // Single opaque core (glow circle removed for CPU savings)
+        sf::CircleShape core(radius, 10); // reduced polygon count
         core.setOrigin(radius, radius);
         core.setPosition(pos);
         core.setFillColor(color);
@@ -2133,13 +2144,13 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
 
     float displayRadius = baseRadius * pulseScale;
 
-    // Accretion disk (outer glow rings)
-    for (int i = 5; i >= 0; --i) {
-        float r = displayRadius + i * 12.0f * m_cameraZoom;
-        sf::CircleShape ring(r);
+    // Accretion disk (reduced to 3 rings for CPU savings)
+    for (int i = 2; i >= 0; --i) {
+        float r = displayRadius + i * 18.0f * m_cameraZoom;
+        sf::CircleShape ring(r, 20); // 20 points instead of default 30
         ring.setOrigin(r, r);
         ring.setPosition(center);
-        sf::Uint8 a = static_cast<sf::Uint8>(30 - i * 4);
+        sf::Uint8 a = static_cast<sf::Uint8>(40 - i * 10);
         sf::Color c = ringColor;
         c.a = a;
         ring.setFillColor(sf::Color::Transparent);
@@ -2148,22 +2159,12 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
         target.draw(ring);
     }
 
-    // Inner glow
-    float glowR = displayRadius + 15.0f * m_cameraZoom;
-    sf::CircleShape glow(glowR);
-    glow.setOrigin(glowR, glowR);
-    glow.setPosition(center);
-    sf::Color glowColor = ringColor;
-    glowColor.a = 40;
-    glow.setFillColor(glowColor);
-    target.draw(glow);
-
-    // Event horizon (solid black center)
-    sf::CircleShape hole(displayRadius);
+    // Event horizon (solid black center — no alpha)
+    sf::CircleShape hole(displayRadius, 20);
     hole.setOrigin(displayRadius, displayRadius);
     hole.setPosition(center);
     hole.setFillColor(sf::Color(5, 0, 15));
-    hole.setOutlineColor(sf::Color(80, 40, 120, 180));
+    hole.setOutlineColor(sf::Color(80, 40, 120));
     hole.setOutlineThickness(2.0f);
     target.draw(hole);
 
@@ -2198,27 +2199,22 @@ void GravityBrawl::renderOrbitTrails(sf::RenderTarget& target) {
     float orbitR = ARENA_RADIUS * m_safeOrbitRadiusFactor * PIXELS_PER_METER * m_cameraZoom;
 
     // Faint orbit circle
-    sf::CircleShape orbit(orbitR);
+    sf::CircleShape orbit(orbitR, 24); // reduced polygon count
     orbit.setOrigin(orbitR, orbitR);
     orbit.setPosition(center);
     orbit.setFillColor(sf::Color::Transparent);
-    orbit.setOutlineColor(sf::Color(80, 80, 120, 30));
-    orbit.setOutlineThickness(1.5f);
+    orbit.setOutlineColor(sf::Color(60, 60, 90)); // opaque thin line
+    orbit.setOutlineThickness(1.0f);
     target.draw(orbit);
 
     // Danger zone ring (inner)
     float dangerR = BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier * PIXELS_PER_METER * m_cameraZoom;
-    sf::CircleShape danger(dangerR);
+    sf::CircleShape danger(dangerR, 24); // reduced polygon count
     danger.setOrigin(dangerR, dangerR);
     danger.setPosition(center);
     danger.setFillColor(sf::Color::Transparent);
-
-    sf::Uint8 dangerAlpha = 20;
-    if (m_cosmicEventActive > 0.0) {
-        dangerAlpha = static_cast<sf::Uint8>(40 + 30 * std::sin(m_blackHolePulse * 4.0f));
-    }
-    danger.setOutlineColor(sf::Color(200, 50, 50, dangerAlpha));
-    danger.setOutlineThickness(1.5f);
+    danger.setOutlineColor(sf::Color(180, 40, 40)); // opaque red line
+    danger.setOutlineThickness(1.0f);
     target.draw(danger);
 }
 
@@ -2250,8 +2246,8 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     }
 
     if (p.isAFK) {
-        baseColor = sf::Color(140, 140, 150, 150);
-        glowColor = sf::Color(80, 80, 90, 25);
+        baseColor = sf::Color(110, 110, 120);  // opaque desaturated gray (no alpha blend)
+        glowColor = sf::Color(60, 60, 70);     // opaque dark gray
     }
 
     // Hit flash
@@ -2262,7 +2258,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     if (p.supernovaTimer > 0.0f) {
         float progress = 1.0f - p.supernovaTimer / 0.5f;
         float ringR = pixelRadius + progress * 200.0f * m_cameraZoom;
-        sf::CircleShape ring(ringR);
+        sf::CircleShape ring(ringR, 16); // reduced polygon count
         ring.setOrigin(ringR, ringR);
         ring.setPosition(screenPos);
         sf::Uint8 ringA = static_cast<sf::Uint8>((1.0f - progress) * 200);
@@ -2274,7 +2270,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
 
     // ── Star corona rays (behind the glow) ──────────────────────────────
     if (p.tier == PlanetTier::Star) {
-        const int RAY_COUNT = 8;
+        const int RAY_COUNT = 4; // reduced from 8 for CPU savings
         for (int i = 0; i < RAY_COUNT; ++i) {
             float baseAngDeg = i * (360.0f / RAY_COUNT) + anim * 18.0f;
             float rayLen = pixelRadius * (1.6f + 0.5f * std::sin(anim * 2.5f + i * 1.1f));
@@ -2291,8 +2287,8 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         }
     }
 
-    // ── Outer glow ────────────────────────────────────────────────────────
-    if (!p.isAFK) {
+    // ── Outer glow (optional — expensive alpha blend per planet) ──────────
+    if (m_enablePlanetGlow && !p.isAFK) {
         float glowMul = 1.0f;
         switch (p.tier) {
         case PlanetTier::IcePlanet: glowMul = 1.5f; break;
@@ -2301,7 +2297,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         default: break;
         }
         float glowR = pixelRadius * glowMul;
-        sf::CircleShape glow(glowR);
+        sf::CircleShape glow(glowR, 16); // reduced polygon count
         glow.setOrigin(glowR, glowR);
         glow.setPosition(screenPos);
         glow.setFillColor(glowColor);
@@ -2336,9 +2332,9 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         };
         for (const auto& c : CRATERS) {
             float cr = pixelRadius * 0.16f;
-            sf::CircleShape crater(cr);
+            sf::CircleShape crater(cr, 8); // 8 points is enough for tiny craters
             crater.setOrigin(cr, cr);
-            crater.setFillColor(sf::Color(75, 70, 80, 160));
+            crater.setFillColor(sf::Color(75, 70, 80)); // opaque — no alpha blend
             crater.setPosition(
                 screenPos.x + c[0] * pixelRadius,
                 screenPos.y + c[1] * pixelRadius);
@@ -2346,7 +2342,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         }
     } else {
         // Smooth circle for IcePlanet, GasGiant, Star
-        sf::CircleShape body(pixelRadius);
+        sf::CircleShape body(pixelRadius, 20); // reduced polygon count for CPU
         body.setOrigin(pixelRadius, pixelRadius);
         body.setPosition(screenPos);
         body.setFillColor(baseColor);
@@ -2379,16 +2375,16 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
                 spike.setPosition(
                     screenPos.x + std::cos(ang) * pixelRadius,
                     screenPos.y + std::sin(ang) * pixelRadius);
-                spike.setFillColor(sf::Color(180, 230, 255, 170));
+                spike.setFillColor(sf::Color(180, 230, 255)); // opaque — no alpha blend
                 target.draw(spike);
             }
             float shimR = pixelRadius * 0.38f;
-            sf::CircleShape shimmer(shimR);
+            sf::CircleShape shimmer(shimR, 10); // reduced polygon count
             shimmer.setOrigin(shimR, shimR);
             shimmer.setPosition(
                 screenPos.x - pixelRadius * 0.18f,
                 screenPos.y - pixelRadius * 0.18f);
-            shimmer.setFillColor(sf::Color(210, 245, 255, 55));
+            shimmer.setFillColor(sf::Color(190, 225, 240)); // opaque tinted — no alpha blend
             target.draw(shimmer);
         }
 
@@ -2405,7 +2401,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
                 band.setPosition(screenPos.x + shift, y);
                 sf::Color bc = baseColor;
                 bc.r = static_cast<sf::Uint8>(std::max(0, bc.r - 30));
-                bc.a = 90;
+                bc.a = 255; // opaque bands — no alpha blend on CPU
                 band.setFillColor(bc);
                 target.draw(band);
             }
@@ -2417,14 +2413,14 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             storm.setPosition(
                 screenPos.x + std::cos(stormAng) * orbitR,
                 screenPos.y + std::sin(stormAng) * orbitR * 0.45f);
-            storm.setFillColor(sf::Color(160, 45, 25, 150));
+            storm.setFillColor(sf::Color(160, 45, 25)); // opaque storm
             target.draw(storm);
         }
 
         // Star: bright pulsing inner core
         if (p.tier == PlanetTier::Star) {
             float coreR = pixelRadius * 0.42f;
-            sf::CircleShape core(coreR);
+            sf::CircleShape core(coreR, 12); // reduced polygon count
             core.setOrigin(coreR, coreR);
             core.setPosition(screenPos);
             sf::Uint8 cA = static_cast<sf::Uint8>(200 + 50 * std::sin(anim * 3.5f));
@@ -2434,7 +2430,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     }
 
     if (p.hasShield) {
-        sf::CircleShape shield(pixelRadius * 1.12f);
+        sf::CircleShape shield(pixelRadius * 1.12f, 16); // reduced polygon count
         shield.setOrigin(pixelRadius * 1.12f, pixelRadius * 1.12f);
         shield.setPosition(screenPos);
         shield.setFillColor(sf::Color::Transparent);
@@ -2452,22 +2448,12 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             float scale = diameter / 64.0f;
             avatar.setScale(scale, scale);
             avatar.setPosition(screenPos);
-            avatar.setColor(sf::Color(255, 255, 255, 210)); // slight transparency so tier effects peek through
+            avatar.setColor(sf::Color(255, 255, 255)); // opaque — no alpha blend cost
             target.draw(avatar);
         }
     }
 
-    // ── Specular highlight (all tiers) ───────────────────────────────────
-    {
-        float specR = pixelRadius * 0.22f;
-        sf::CircleShape spec(specR);
-        spec.setOrigin(specR, specR);
-        spec.setPosition(
-            screenPos.x - pixelRadius * 0.28f,
-            screenPos.y - pixelRadius * 0.28f);
-        spec.setFillColor(sf::Color(255, 255, 255, 45));
-        target.draw(spec);
-    }
+    // ── Specular highlight removed — barely visible alpha=45, not worth CPU cost ──
 
     // ── Smash slash arc ───────────────────────────────────────────────────
     if (p.smashVisTimer > 0.0f) {
@@ -2650,7 +2636,7 @@ void GravityBrawl::renderFloatingTexts(sf::RenderTarget& target) {
         c.a = a;
         text.setFillColor(c);
         text.setOutlineColor(sf::Color(0, 0, 0, a));
-        text.setOutlineThickness(2.0f);
+        text.setOutlineThickness(1.0f);
 
         sf::FloatRect bounds = text.getLocalBounds();
         text.setOrigin(bounds.left + bounds.width / 2.0f, bounds.top + bounds.height / 2.0f);
@@ -2678,7 +2664,7 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
             titleText.setString("GRAVITY BRAWL");
             titleText.setFillColor(sf::Color(200, 180, 255, 200));
             titleText.setOutlineColor(sf::Color(0, 0, 0, 200));
-            titleText.setOutlineThickness(2.0f);
+            titleText.setOutlineThickness(1.0f);
             applyTextLayout(titleText, r);
             target.draw(titleText);
         }
@@ -2749,13 +2735,8 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
 // ── Cosmic Event Warning ─────────────────────────────────────────────────────
 
 void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
-    // Flashing red overlay — drawn even without font so tests can detect the event
+    // Fullscreen red overlay removed — too expensive for CPU rendering (alpha blend per pixel)
     float pulse = std::abs(std::sin(m_blackHolePulse * 3.0f));
-    sf::Uint8 a = static_cast<sf::Uint8>(pulse * 40 + 8);  // min alpha=8 so it's always visible
-
-    sf::RectangleShape overlay(sf::Vector2f(SCREEN_W, SCREEN_H));
-    overlay.setFillColor(sf::Color(255, 0, 0, a));
-    target.draw(overlay);
 
     if (!m_fontLoaded) return;
 
@@ -2769,7 +2750,7 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
             warning.setCharacterSize(r.fontSize);
             warning.setFillColor(sf::Color(255, 50, 50, static_cast<sf::Uint8>(180 + pulse * 75)));
             warning.setOutlineColor(sf::Color(0, 0, 0, 220));
-            warning.setOutlineThickness(2.0f);
+            warning.setOutlineThickness(1.0f);
             sf::FloatRect wb = warning.getLocalBounds();
             warning.setOrigin(wb.left + wb.width / 2.0f, wb.top + wb.height / 2.0f);
             warning.setPosition(r.px, r.py);
@@ -2791,7 +2772,7 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
             timerText.setCharacterSize(r.fontSize);
             timerText.setFillColor(sf::Color(255, 80, 80, 220));
             timerText.setOutlineColor(sf::Color(0, 0, 0, 220));
-            timerText.setOutlineThickness(2.0f);
+            timerText.setOutlineThickness(1.0f);
             sf::FloatRect tb = timerText.getLocalBounds();
             timerText.setOrigin(tb.left + tb.width / 2.0f, tb.top + tb.height / 2.0f);
 

@@ -363,6 +363,8 @@ private:
     // CPU safety and runtime tuning (headless software-rendering defaults)
     bool   m_enablePostProcessing = false;
     int    m_maxParticles         = 500;
+    int    m_backgroundStars      = 120;    // star count for Background (0-500)
+    bool   m_enablePlanetGlow     = false;  // outer glow behind each planet (expensive alpha)
     double m_afkTimeoutSeconds    = 180.0;
     double m_anomalySpawnInterval = 150.0;
     double m_nextAnomalySpawnTime = 20.0;

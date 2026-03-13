@@ -5,12 +5,13 @@
 namespace is::rendering {
 
 /// Animated parallax background for visual depth.
+/// CPU-optimized: single batched VertexArray draw, no alpha blending.
 class Background {
 public:
     Background() = default;
 
     /// Initialize with render target size.
-    void initialize(unsigned int width, unsigned int height);
+    void initialize(unsigned int width, unsigned int height, int starCount = 120);
 
     /// Update background animation.
     void update(float dt);
@@ -19,7 +20,6 @@ public:
     void render(sf::RenderTarget& target);
 
 private:
-    /// A star/particle in the background.
     struct BackgroundStar {
         sf::Vector2f position;
         float        size;
@@ -29,18 +29,10 @@ private:
     };
 
     std::vector<BackgroundStar> m_stars;
+    sf::VertexArray m_vertices{sf::Quads};
     float m_width  = 1080;
     float m_height = 1920;
     float m_time   = 0.0f;
-
-    // Nebula-like color regions
-    struct NebulaBlob {
-        sf::Vector2f position;
-        float        radius;
-        sf::Color    color;
-        float        phase;
-    };
-    std::vector<NebulaBlob> m_nebulae;
 };
 
 } // namespace is::rendering

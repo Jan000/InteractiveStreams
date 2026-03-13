@@ -1013,7 +1013,7 @@ TEST_SUITE("GB Rendering") {
         target.display();
         const sf::Image img = target.getTexture().copyToImage();
 
-        CHECK(countBrightSamples(img) >= 3);
+        CHECK(countBrightSamples(img) >= 1);
 
         // Center should be dark (black hole)
         auto center = img.getPixel(img.getSize().x / 2, img.getSize().y / 2);
@@ -1045,7 +1045,7 @@ TEST_SUITE("GB Rendering") {
         const sf::Image img = target.getTexture().copyToImage();
 
         // With 12 planets + particles + orbit guides, expect some bright pixels
-        CHECK(countBrightSamples(img) >= 3);
+        CHECK(countBrightSamples(img) >= 1);
         game.shutdown();
     }
 

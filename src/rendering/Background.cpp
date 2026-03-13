@@ -4,21 +4,21 @@
 
 namespace is::rendering {
 
-void Background::initialize(unsigned int width, unsigned int height) {
+void Background::initialize(unsigned int width, unsigned int height, int starCount) {
     m_width = static_cast<float>(width);
     m_height = static_cast<float>(height);
 
-    std::mt19937 rng(42);  // Deterministic seed for consistent background
+    std::mt19937 rng(42);
     std::uniform_real_distribution<float> xDist(0, m_width);
     std::uniform_real_distribution<float> yDist(0, m_height);
-    std::uniform_real_distribution<float> sizeDist(0.5f, 3.0f);
+    std::uniform_real_distribution<float> sizeDist(0.5f, 2.5f);
     std::uniform_real_distribution<float> speedDist(0.1f, 0.5f);
     std::uniform_real_distribution<float> brightDist(0.3f, 1.0f);
     std::uniform_real_distribution<float> phaseDist(0.0f, 6.28f);
 
-    // Generate stars
     m_stars.clear();
-    for (int i = 0; i < 200; ++i) {
+    int count = std::clamp(starCount, 0, 500);
+    for (int i = 0; i < count; ++i) {
         m_stars.push_back({
             {xDist(rng), yDist(rng)},
             sizeDist(rng),
@@ -27,43 +27,33 @@ void Background::initialize(unsigned int width, unsigned int height) {
             phaseDist(rng)
         });
     }
-
-    // Generate nebula blobs
-    m_nebulae.clear();
-    std::uniform_real_distribution<float> radiusDist(100, 300);
-    m_nebulae.push_back({{m_width * 0.2f, m_height * 0.3f}, radiusDist(rng), sf::Color(30, 10, 60, 15), phaseDist(rng)});
-    m_nebulae.push_back({{m_width * 0.7f, m_height * 0.6f}, radiusDist(rng), sf::Color(10, 20, 50, 15), phaseDist(rng)});
-    m_nebulae.push_back({{m_width * 0.5f, m_height * 0.8f}, radiusDist(rng), sf::Color(40, 5, 30, 10), phaseDist(rng)});
+    m_vertices.resize(static_cast<size_t>(count) * 4);
 }
 
 void Background::update(float dt) {
     m_time += dt;
+
+    // Pre-compute vertex positions and opaque colors (no alpha blending)
+    for (size_t i = 0; i < m_stars.size(); ++i) {
+        const auto& star = m_stars[i];
+        float twinkle = 0.6f + 0.4f * std::sin(m_time * star.speed * 5.0f + star.twinklePhase);
+        sf::Uint8 gray = static_cast<sf::Uint8>(255 * star.brightness * twinkle);
+        sf::Color c(gray, gray, gray); // Opaque — no alpha blend cost
+
+        float s = star.size;
+        float x = star.position.x;
+        float y = star.position.y;
+        size_t vi = i * 4;
+        m_vertices[vi + 0] = {{x - s, y - s}, c};
+        m_vertices[vi + 1] = {{x + s, y - s}, c};
+        m_vertices[vi + 2] = {{x + s, y + s}, c};
+        m_vertices[vi + 3] = {{x - s, y + s}, c};
+    }
 }
 
 void Background::render(sf::RenderTarget& target) {
-    // Nebula blobs (soft colored circles)
-    for (const auto& neb : m_nebulae) {
-        float pulse = 1.0f + std::sin(m_time * 0.3f + neb.phase) * 0.15f;
-        float r = neb.radius * pulse;
-
-        sf::CircleShape blob(r);
-        blob.setOrigin(r, r);
-        blob.setPosition(neb.position);
-        blob.setFillColor(neb.color);
-        target.draw(blob);
-    }
-
-    // Stars
-    for (const auto& star : m_stars) {
-        float twinkle = 0.6f + 0.4f * std::sin(m_time * star.speed * 5.0f + star.twinklePhase);
-        sf::Uint8 alpha = static_cast<sf::Uint8>(255 * star.brightness * twinkle);
-
-        sf::CircleShape dot(star.size);
-        dot.setOrigin(star.size, star.size);
-        dot.setPosition(star.position);
-        dot.setFillColor(sf::Color(255, 255, 255, alpha));
-        target.draw(dot);
-    }
+    // Single batched draw call for all stars — no per-star overhead
+    target.draw(m_vertices);
 }
 
 } // namespace is::rendering
