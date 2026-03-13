@@ -99,16 +99,14 @@ void GravityBrawl::ContactListener::BeginContact(b2Contact* contact) {
     bool aIsAnomaly = m_game.isAnomalyBody(bodyA);
     bool bIsAnomaly = m_game.isAnomalyBody(bodyB);
 
+    // Defer anomaly pickups — processing them during Step() would modify
+    // fixtures while the world is locked, triggering a Box2D assert.
     if (aIsAnomaly && !bIsAnomaly) {
-        if (Planet* planet = m_game.findPlanetByBody(bodyB)) {
-            m_game.collectAnomalyByBody(*planet, bodyA);
-        }
+        m_game.m_pendingAnomalies.push_back({bodyB, bodyA});
         return;
     }
     if (bIsAnomaly && !aIsAnomaly) {
-        if (Planet* planet = m_game.findPlanetByBody(bodyA)) {
-            m_game.collectAnomalyByBody(*planet, bodyB);
-        }
+        m_game.m_pendingAnomalies.push_back({bodyA, bodyB});
         return;
     }
     if (aIsAnomaly || bIsAnomaly) return;
@@ -123,7 +121,9 @@ void GravityBrawl::ContactListener::BeginContact(b2Contact* contact) {
     b2Vec2 relVel = bodyA->GetLinearVelocity() - bodyB->GetLinearVelocity();
     float impulse = relVel.Length();
 
-    m_game.onPlanetCollision(*dataA, *dataB, impulse);
+    // Defer planet collision too (onPlanetCollision awards points + particles,
+    // safe to run later, and avoids any future fixture mutations).
+    m_game.m_pendingCollisions.push_back({bodyA, bodyB, impulse});
 }
 
 // ── Constructor / Destructor ─────────────────────────────────────────────────
@@ -232,6 +232,8 @@ void GravityBrawl::shutdown() {
         }
     }
     m_anomalies.clear();
+    m_pendingAnomalies.clear();
+    m_pendingCollisions.clear();
     m_avatarCache.clear();
     m_contactListener.reset();
     m_world.reset();
@@ -935,6 +937,12 @@ void GravityBrawl::applyAnomalyReward(Planet& p, const Anomaly& anomaly) {
         p.kills += 3;
         updatePlanetTier(p);
         p.score += 80;
+        if (!isBot(p.userId)) {
+            try {
+                is::core::Application::instance().playerDatabase().recordResult(
+                    p.userId, p.displayName, "gravity_brawl", 80, false);
+            } catch (...) {}
+        }
         if (p.body) {
             addFloatingText("MASS+", worldToScreen(p.body->GetPosition()), sf::Color(255, 170, 90), 1.3f);
         }
@@ -992,6 +1000,28 @@ void GravityBrawl::collectAnomalyByBody(Planet& collector, b2Body* anomalyBody) 
         applyAnomalyReward(collector, anomaly);
         return;
     }
+}
+
+// ── Deferred Contact Processing ──────────────────────────────────────────────
+
+void GravityBrawl::processDeferredContacts() {
+    // Anomaly pickups
+    for (const auto& ap : m_pendingAnomalies) {
+        if (Planet* planet = findPlanetByBody(ap.planetBody)) {
+            collectAnomalyByBody(*planet, ap.anomalyBody);
+        }
+    }
+    m_pendingAnomalies.clear();
+
+    // Planet-planet collisions
+    for (const auto& pc : m_pendingCollisions) {
+        Planet* a = findPlanetByBody(pc.bodyA);
+        Planet* b = findPlanetByBody(pc.bodyB);
+        if (a && b && a->alive && b->alive) {
+            onPlanetCollision(*a, *b, pc.impulse);
+        }
+    }
+    m_pendingCollisions.clear();
 }
 
 void GravityBrawl::cmdSmash(const std::string& userId) {
@@ -1431,6 +1461,9 @@ void GravityBrawl::update(double dt) {
 
     // Step physics
     m_world->Step(fdt, 8, 3);
+
+    // Process contacts that were deferred from BeginContact (world is now unlocked)
+    processDeferredContacts();
 
     // Remove collected anomalies and free their Box2D bodies.
     for (auto it = m_anomalies.begin(); it != m_anomalies.end();) {

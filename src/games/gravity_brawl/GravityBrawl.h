@@ -346,7 +346,6 @@ private:
     bool                       m_fontLoaded = false;
 
     // Timing
-    // Timing
     double m_countdownTimer      = 0.0;   // legacy – kept for test accessor compat
     int    m_lastCountdownBeep   = 0;     // legacy
     double m_gameTimer           = 0.0;   // total elapsed time (counts up forever)
@@ -443,6 +442,13 @@ private:
         GravityBrawl& m_game;
     };
     std::unique_ptr<ContactListener> m_contactListener;
+
+    // Deferred contact events (processed after Step to avoid Box2D locked-world asserts)
+    struct PendingAnomalyPickup { b2Body* planetBody = nullptr; b2Body* anomalyBody = nullptr; };
+    struct PendingCollision      { b2Body* bodyA = nullptr; b2Body* bodyB = nullptr; float impulse = 0.0f; };
+    std::vector<PendingAnomalyPickup> m_pendingAnomalies;
+    std::vector<PendingCollision>     m_pendingCollisions;
+    void processDeferredContacts();
 
     // Process a collision between two planets
     void onPlanetCollision(Planet& a, Planet& b, float impulse);
