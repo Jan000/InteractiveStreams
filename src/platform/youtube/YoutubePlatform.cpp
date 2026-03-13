@@ -280,42 +280,66 @@ void YoutubePlatform::pollLoop() {
     constexpr int DELAY_BETWEEN_ATTEMPTS_MS = 30000; // 30s between attempts
 
     if (m_liveChatId.empty()) {
-        // Wait for a local stream to start encoding.  Do NOT try the API
-        // before that — this is what was burning quota.
-        if (!waitForStreaming()) return;
+        // Strict guard: never run auto-detection before a local stream is active.
+        // While waiting, manual detection requests from the dashboard remain possible.
+        while (m_shouldRun && m_liveChatId.empty() && (!m_streamingChecker || !m_streamingChecker())) {
+            m_detectionStatus = "Waiting for stream start. Auto-detect is paused.";
 
-        // Stream started — wait 10 seconds for YouTube to register the ingest
-        spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register...",
-                     DELAY_BEFORE_FIRST_MS / 1000);
-        for (int w = 0; w < DELAY_BEFORE_FIRST_MS && m_shouldRun; w += 500)
+            if (m_detectionRequested.exchange(false)) {
+                refreshTokenIfNeeded();
+                spdlog::info("[YouTube] Running manually-requested broadcast detection while waiting for stream start...");
+                m_detectionStatus = "Manual detection in progress...";
+                std::string chatId = fetchLiveChatId();
+                if (!chatId.empty()) {
+                    m_liveChatId = chatId;
+                    m_autoDetectedChatId = true;
+                    m_detectionStatus = "Found via manual detection";
+                    spdlog::info("[YouTube] Manual detection succeeded! liveChatId: {}", m_liveChatId);
+                    break;
+                }
+                m_detectionStatus = "Manual detection: no broadcast found. Waiting for stream start.";
+                spdlog::warn("[YouTube] Manual detection found no broadcast.");
+            }
+
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
         if (!m_shouldRun) return;
 
-        // Try detection up to MAX_AUTO_ATTEMPTS times
-        // Auto-detection only uses cheap OAuth path (1 unit).
-        for (int attempt = 0; attempt < MAX_AUTO_ATTEMPTS && m_shouldRun && m_liveChatId.empty(); ++attempt) {
-            refreshTokenIfNeeded();
-            spdlog::info("[YouTube] Auto-detection attempt {}/{} ...", attempt + 1, MAX_AUTO_ATTEMPTS);
-            std::string chatId = fetchLiveChatId();
-            if (!chatId.empty()) {
-                m_liveChatId = chatId;
-                m_autoDetectedChatId = true;
-                spdlog::info("[YouTube] Broadcast detected! liveChatId: {}", m_liveChatId);
-                break;
-            }
-            if (attempt + 1 < MAX_AUTO_ATTEMPTS) {
-                spdlog::info("[YouTube] Attempt {} failed — retrying in {}s...",
-                             attempt + 1, DELAY_BETWEEN_ATTEMPTS_MS / 1000);
-                for (int w = 0; w < DELAY_BETWEEN_ATTEMPTS_MS && m_shouldRun; w += 500)
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-        }
+        // If manual detection already resolved the chat, skip auto-detection.
+        if (m_liveChatId.empty()) {
+            // Stream started — wait 10 seconds for YouTube to register the ingest
+            spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register...",
+                        DELAY_BEFORE_FIRST_MS / 1000);
+            for (int w = 0; w < DELAY_BEFORE_FIRST_MS && m_shouldRun; w += 500)
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if (!m_shouldRun) return;
 
-        if (m_liveChatId.empty() && m_shouldRun) {
-            m_detectionStatus = "Auto-detection exhausted (2 attempts). Use manual detect.";
-            spdlog::warn("[YouTube] Auto-detection exhausted after {} attempts. "
-                         "Waiting for manual detection request from dashboard.",
-                         MAX_AUTO_ATTEMPTS);
+            // Try detection up to MAX_AUTO_ATTEMPTS times
+            // Auto-detection only uses cheap OAuth path (1 unit).
+            for (int attempt = 0; attempt < MAX_AUTO_ATTEMPTS && m_shouldRun && m_liveChatId.empty(); ++attempt) {
+                refreshTokenIfNeeded();
+                spdlog::info("[YouTube] Auto-detection attempt {}/{} ...", attempt + 1, MAX_AUTO_ATTEMPTS);
+                std::string chatId = fetchLiveChatId();
+                if (!chatId.empty()) {
+                    m_liveChatId = chatId;
+                    m_autoDetectedChatId = true;
+                    spdlog::info("[YouTube] Broadcast detected! liveChatId: {}", m_liveChatId);
+                    break;
+                }
+                if (attempt + 1 < MAX_AUTO_ATTEMPTS) {
+                    spdlog::info("[YouTube] Attempt {} failed — retrying in {}s...",
+                                attempt + 1, DELAY_BETWEEN_ATTEMPTS_MS / 1000);
+                    for (int w = 0; w < DELAY_BETWEEN_ATTEMPTS_MS && m_shouldRun; w += 500)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+            }
+
+            if (m_liveChatId.empty() && m_shouldRun) {
+                m_detectionStatus = "Auto-detection exhausted (2 attempts). Use manual detect.";
+                spdlog::warn("[YouTube] Auto-detection exhausted after {} attempts. "
+                            "Waiting for manual detection request from dashboard.",
+                            MAX_AUTO_ATTEMPTS);
+            }
         }
     }
 
