@@ -300,15 +300,6 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
         m_botFillTarget = settings["bot_fill"].get<int>();
         spdlog::info("[GravityBrawl] Bot fill target set to {}", m_botFillTarget);
     }
-    if (settings.contains("game_duration") && settings["game_duration"].is_number()) {
-        m_gameDuration = settings["game_duration"].get<double>();
-    }
-    if (settings.contains("lobby_duration") && settings["lobby_duration"].is_number()) {
-        m_lobbyDuration = settings["lobby_duration"].get<double>();
-    }
-    if (settings.contains("min_players") && settings["min_players"].is_number_integer()) {
-        m_minPlayers = settings["min_players"].get<int>();
-    }
     if (settings.contains("epoch_duration") && settings["epoch_duration"].is_number()) {
         m_epochDuration = std::max(60.0, settings["epoch_duration"].get<double>());
     }
@@ -440,9 +431,6 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
 nlohmann::json GravityBrawl::getSettings() const {
     return {
         {"bot_fill", m_botFillTarget},
-        {"game_duration", m_gameDuration},
-        {"lobby_duration", m_lobbyDuration},
-        {"min_players", m_minPlayers},
         {"enable_post_processing", m_enablePostProcessing},
         {"max_particles", m_maxParticles},
         {"afk_timeout_seconds", m_afkTimeoutSeconds},
@@ -679,7 +667,7 @@ void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
         cmdJoin(msg.userId, msg.displayName, msg.avatarUrl);
     } else if (cmd == "color") {
         if (it == m_planets.end() || !it->second.alive) {
-            sendChatFeedback("Use !join first before changing colors.");
+            sendChatFeedback("Use join first before changing colors.");
             return;
         }
         if (it->second.level < 10) {
@@ -1555,14 +1543,26 @@ void GravityBrawl::update(double dt) {
     // ── Epoch countdown (Breathing Black Hole) ────────────────────────────────
     m_blackHoleEpochTimer -= dt;
     if (m_blackHoleEpochTimer <= 0.0) {
-        // VOID ERUPTION: award every alive player 250 points
+        // VOID ERUPTION: award every alive player 250 points and push outward
         int survivors = 0;
         for (auto& [id, p] : m_planets) {
-            if (!p.alive) continue;
+            if (!p.alive || !p.body) continue;
             survivors++;
             p.score += 250;
             sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
             addFloatingText("+250 ERUPTION!", screenPos, sf::Color(255, 180, 80), 2.5f);
+
+            // Dramatic outward impulse — the black hole "exhales"
+            b2Vec2 pos = p.body->GetPosition();
+            b2Vec2 away(pos.x - WORLD_CENTER_X, pos.y - WORLD_CENTER_Y);
+            float len = away.Length();
+            if (len > 0.01f) {
+                away.x /= len;
+                away.y /= len;
+                p.body->ApplyLinearImpulseToCenter(
+                    b2Vec2(away.x * 25.0f, away.y * 25.0f), true);
+            }
+
             if (!isBot(id)) {
                 try {
                     is::core::Application::instance().playerDatabase().recordResult(
@@ -1667,8 +1667,10 @@ void GravityBrawl::applyBlackHoleGravity(float dt) {
         float distanceFromKillZone = std::max(1.0f, dist - BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier);
         float pullForce = effectiveGravity / distanceFromKillZone;
         pullForce = std::min(pullForce, m_blackHoleGravityCap);
-        // Anti-snowball: heavier (more kills = larger) planets are pulled harder
-        pullForce *= (1.0f + p.massScale * 0.15f);
+        // Anti-snowball: heavier planets are pulled harder; the king gets extra pull
+        float snowballFactor = 1.0f + p.massScale * 0.15f;
+        if (p.isKing) snowballFactor += 0.25f;
+        pullForce *= snowballFactor;
 
         b2Vec2 dir(toCenter.x / dist, toCenter.y / dist);
         float mass = p.body->GetMass();
@@ -1863,7 +1865,7 @@ void GravityBrawl::triggerCosmicEvent() {
     std::string message;
     switch (eventType) {
     case 0:
-        message = "🕳️ THE BLACK HOLE IS HUNGRY! Spam !s to escape!";
+        message = "🕳️ THE BLACK HOLE IS HUNGRY! Spam s to escape!";
         break;
     case 1:
         message = "⚡ GRAVITATIONAL SURGE! The void pulls harder!";
@@ -2799,10 +2801,6 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
         }
     }
 }
-
-// ── Countdown ────────────────────────────────────────────────────────────────
-
-// ── Game Over Screen ─────────────────────────────────────────────────────────
 
 // ── IGame Interface ──────────────────────────────────────────────────────────
 

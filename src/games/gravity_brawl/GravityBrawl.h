@@ -346,14 +346,15 @@ private:
     bool                       m_fontLoaded = false;
 
     // Timing
-    double m_countdownTimer      = 0.0;   // legacy – kept for test accessor compat
-    int    m_lastCountdownBeep   = 0;     // legacy
     double m_gameTimer           = 0.0;   // total elapsed time (counts up forever)
-    double m_lobbyTimer          = 0.0;   // legacy – kept for test accessor compat
     double m_survivalAccum       = 0.0;   // fractional survival point accumulator
-    double m_gameDuration        = 300.0; // legacy (was per-round timer; kept for configure() compat)
-    double m_lobbyDuration       = 30.0;  // legacy
-    int    m_minPlayers          = 2;     // legacy
+
+    // Legacy – kept for test accessor compatibility only (unused at runtime)
+    double m_countdownTimer      = 0.0;
+    double m_lobbyTimer          = 0.0;
+    double m_gameDuration        = 300.0;
+    double m_lobbyDuration       = 30.0;
+    int    m_minPlayers          = 2;
 
     // Epoch system (breathing black hole)
     double m_blackHoleEpochTimer = 900.0; // counts down to next Void Eruption
