@@ -529,15 +529,6 @@ void StreamEncoder::audioThread() {
 
     spdlog::info("[StreamEncoder] Audio thread running.");
 
-    // Wait until the first video frame has been consumed by the encoder thread.
-    while (m_running && !m_streamSyncReady.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
-    if (!m_running) {
-        spdlog::info("[StreamEncoder] Audio thread exiting before sync ready.");
-        return;
-    }
-
     // Write audio in 20 ms chunks at real-time pace
     const int chunkFrames  = m_audioSampleRate / 50;  // 882 frames @ 44100 Hz
     const int chunkSamples = chunkFrames * 2;          // stereo
@@ -546,6 +537,48 @@ void StreamEncoder::audioThread() {
 
     auto nextWriteTime = std::chrono::steady_clock::now();
     const auto chunkDuration = std::chrono::microseconds(20000); // 20 ms
+
+    // Pre-fill with silence until the first video frame is consumed.
+    // FFmpeg needs continuous audio data from the pipe to produce muxed
+    // FLV output.  Without this, YouTube stays in "preparing" state
+    // because FFmpeg can't mux packets without data on both inputs.
+    while (m_running && !m_streamSyncReady.load()) {
+        std::fill(buffer.begin(), buffer.end(), 0);
+
+#ifdef _WIN32
+        DWORD written = 0;
+        BOOL ok = WriteFile(m_audioPipeHandle, buffer.data(),
+                            static_cast<DWORD>(chunkBytes), &written, nullptr);
+        if (!ok || written != chunkBytes) {
+            if (m_running) {
+                spdlog::warn("[StreamEncoder] Audio pipe write failed during silence fill (err={}).",
+                             GetLastError());
+            }
+            return;
+        }
+#else
+        size_t written = fwrite(buffer.data(), 1, chunkBytes, m_audioPipeFile);
+        fflush(m_audioPipeFile);
+        if (written != chunkBytes) {
+            if (m_running) {
+                spdlog::warn("[StreamEncoder] Audio pipe write failed during silence fill ({}/{}).",
+                             written, chunkBytes);
+            }
+            return;
+        }
+#endif
+        nextWriteTime += chunkDuration;
+        std::this_thread::sleep_until(nextWriteTime);
+    }
+    if (!m_running) {
+        spdlog::info("[StreamEncoder] Audio thread exiting before sync ready.");
+        return;
+    }
+
+    spdlog::info("[StreamEncoder] Audio sync ready — switching to real audio.");
+
+    // Reset timing for real audio loop (seamless transition from silence)
+    nextWriteTime = std::chrono::steady_clock::now();
 
     while (m_running) {
         // Pull mixed audio from the AudioMixer
