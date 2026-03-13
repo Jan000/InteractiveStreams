@@ -70,6 +70,8 @@ private:
     std::queue<PreparedAvatar> m_readyImages;
     std::unordered_set<std::string> m_inFlight;
     std::unordered_map<std::string, TextureEntry> m_textures;
+    std::unordered_map<std::string, int> m_failedUrls; // URL → retry count
+    static constexpr int MAX_RETRIES = 2;
 
     std::atomic<bool> m_running{false};
     std::thread m_worker;

@@ -2452,6 +2452,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             float scale = diameter / 64.0f;
             avatar.setScale(scale, scale);
             avatar.setPosition(screenPos);
+            avatar.setColor(sf::Color(255, 255, 255, 210)); // slight transparency so tier effects peek through
             target.draw(avatar);
         }
     }

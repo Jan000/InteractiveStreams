@@ -27,6 +27,8 @@ void AvatarCache::request(const std::string& url) {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_textures.find(url) != m_textures.end()) return;
         if (m_inFlight.find(url) != m_inFlight.end()) return;
+        auto failIt = m_failedUrls.find(url);
+        if (failIt != m_failedUrls.end() && failIt->second >= MAX_RETRIES) return;
 
         m_inFlight.insert(url);
         m_downloadQueue.push(url);
@@ -94,6 +96,7 @@ void AvatarCache::clear() {
     m_readyImages = {};
     m_inFlight.clear();
     m_textures.clear();
+    m_failedUrls.clear();
 }
 
 void AvatarCache::workerLoop() {
@@ -118,6 +121,8 @@ void AvatarCache::workerLoop() {
             m_inFlight.erase(url);
             if (prepared.has_value()) {
                 m_readyImages.push(std::move(*prepared));
+            } else {
+                m_failedUrls[url]++;
             }
         }
     }
