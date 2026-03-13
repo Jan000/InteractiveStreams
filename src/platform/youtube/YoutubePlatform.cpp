@@ -495,6 +495,7 @@ void YoutubePlatform::pollLoop() {
                             std::string rawId = author.value("channelId", "unknown");
                             msg.userId = ChatMessage::makeUserId("youtube", rawId);
                             msg.displayName = author.value("displayName", "Unknown");
+                            msg.avatarUrl = author.value("profileImageUrl", "");
                             msg.isModerator = author.value("isChatModerator", false);
                         }
 

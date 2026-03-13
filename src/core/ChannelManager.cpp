@@ -277,12 +277,13 @@ std::vector<platform::ChatMessage> ChannelManager::filterByChannels(
 // ── Local test helpers ───────────────────────────────────────────────────────
 
 void ChannelManager::injectLocalMessage(const std::string& username,
-                                         const std::string& text) {
+                                        const std::string& text,
+                                        const std::string& avatarUrl) {
     std::lock_guard<std::mutex> lock(m_mutex);
     for (auto& e : m_channels) {
         if (e->config.id == "local") {
             auto* lp = dynamic_cast<platform::LocalPlatform*>(e->platform.get());
-            if (lp) lp->injectMessage(username, text);
+            if (lp) lp->injectMessage(username, text, avatarUrl);
             return;
         }
     }

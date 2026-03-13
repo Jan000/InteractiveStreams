@@ -10,6 +10,7 @@ struct ChatMessage {
     std::string channelId;     ///< Channel/room ID
     std::string userId;        ///< Unique user identifier (platform-prefixed)
     std::string displayName;   ///< User's display name
+    std::string avatarUrl;     ///< Optional profile image URL
     std::string text;          ///< Message content
     bool        isModerator = false;
     bool        isSubscriber = false;

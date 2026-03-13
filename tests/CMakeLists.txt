@@ -35,6 +35,7 @@ set(TESTED_SOURCES
     ${CMAKE_SOURCE_DIR}/src/core/AudioMixer.cpp
     ${CMAKE_SOURCE_DIR}/src/games/GameRegistry.cpp
     ${CMAKE_SOURCE_DIR}/src/games/chaos_arena/PhysicsWorld.cpp
+    ${CMAKE_SOURCE_DIR}/src/games/gravity_brawl/AvatarCache.cpp
     ${CMAKE_SOURCE_DIR}/src/games/gravity_brawl/GravityBrawl.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/local/LocalPlatform.cpp
     ${CMAKE_SOURCE_DIR}/src/games/color_conquest/Grid.cpp

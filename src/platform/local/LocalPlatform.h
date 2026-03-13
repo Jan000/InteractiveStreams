@@ -34,7 +34,8 @@ public:
     // ──── Local-specific API ─────────────────────────────────────────────
 
     /// Inject a chat message (called from REST API or console).
-    void injectMessage(const std::string& username, const std::string& text);
+    void injectMessage(const std::string& username, const std::string& text,
+                       const std::string& avatarUrl = "");
 
     /// Get the outgoing message log (messages sent *to* local chat).
     std::vector<std::string> getMessageLog() const;

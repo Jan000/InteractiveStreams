@@ -90,6 +90,8 @@ struct GravityBrawlTestAccess {
     static double& gameTimer(GravityBrawl& game) { return game.m_gameTimer; }
     static double& lobbyTimer(GravityBrawl& game) { return game.m_lobbyTimer; }
     static double& countdownTimer(GravityBrawl& game) { return game.m_countdownTimer; }
+    static double& epochTimer(GravityBrawl& game) { return game.m_blackHoleEpochTimer; }
+    static double epochDuration(const GravityBrawl& game) { return game.m_epochDuration; }
     static double& cosmicEventActive(GravityBrawl& game) { return game.m_cosmicEventActive; }
     static double& cosmicEventTimer(GravityBrawl& game) { return game.m_cosmicEventTimer; }
     static GamePhase& phase(GravityBrawl& game) { return game.m_phase; }
@@ -475,7 +477,8 @@ TEST_SUITE("GB Physics") {
         TA::startPlaying(game);
 
         const float baseGravity = TA::currentBlackHoleGravity(game);
-        TA::gameTimer(game) = 120.0;
+        // Simulate epoch progress: 80% through the epoch → epochProgress = 0.8
+        TA::epochTimer(game) = TA::epochDuration(game) * 0.2;
         const float timeGrownGravity = TA::currentBlackHoleGravity(game);
         CHECK(timeGrownGravity > baseGravity);
 
@@ -498,12 +501,12 @@ TEST_SUITE("GB Physics") {
 
         // Force massive gravity bonus
         TA::blackHoleConsumedGravityBonus(game) = 1000.0f;
-        TA::gameTimer(game) = 99999.0;
+        // Force epoch to fully elapse (epochProgress = 1)
+        TA::epochTimer(game) = 0.0;
 
-        // The raw gravity is huge, but applyBlackHoleGravity uses min(force, cap)
-        // Verify the raw value exceeds the cap (the cap is enforced inside the force application)
+        // currentBlackHoleGravity() clamps its return to the cap
         float rawGravity = TA::currentBlackHoleGravity(game);
-        CHECK(rawGravity > TA::blackHoleGravityCap(game));
+        CHECK(rawGravity == doctest::Approx(TA::blackHoleGravityCap(game)));
         game.shutdown();
     }
 
@@ -593,13 +596,13 @@ TEST_SUITE("GB Physics") {
         game.initialize();
         Planet& a = addPlanet(game, "p1", "P1", 0.0f, 1);
         Planet& b = addPlanet(game, "p2", "P2", 1.0f, -1);
-        // Phase is Lobby (not Playing)
 
         int scoreA = a.score;
         int scoreB = b.score;
         TA::onPlanetCollision(game, a, b, 5.0f);
-        CHECK(a.score == scoreA); // No points in lobby
-        CHECK(b.score == scoreB);
+        // Game is always in Playing state — collisions award points immediately
+        CHECK(a.score == scoreA + 2);
+        CHECK(b.score == scoreB + 2);
         game.shutdown();
     }
 
@@ -636,34 +639,22 @@ TEST_SUITE("GB Gameplay") {
     TEST_CASE("Full lifecycle: Lobby → Countdown → Playing → GameOver") {
         GravityBrawl game;
         game.initialize();
-        game.configure({{"lobby_duration", 2.0}, {"game_duration", 8.0}, {"min_players", 2}});
 
-        CHECK(TA::phase(game) == GamePhase::Lobby);
-
-        // Join 4 players via chat (more players avoids premature GameOver from a single death)
-        game.onChatMessage(makeMsg("u1", "Alice", "!join"));
-        game.onChatMessage(makeMsg("u2", "Bob", "!join"));
-        game.onChatMessage(makeMsg("u3", "Carol", "!join"));
-        game.onChatMessage(makeMsg("u4", "Dan", "!join"));
-        CHECK(aliveCount(game) == 4);
-
-        // Advance through lobby (lobby timer shortened to 5s by join logic)
-        tick(game, 360); // 6 seconds
-
-        // Should have transitioned past lobby
-        CHECK(TA::phase(game) != GamePhase::Lobby);
-
-        // If countdown, advance 3 more seconds
-        if (TA::phase(game) == GamePhase::Countdown) {
-            tick(game, 240);
-        }
+        // Endless mode: game is in Playing state from the very first tick
         CHECK(TA::phase(game) == GamePhase::Playing);
+        CHECK(game.isRoundComplete() == false);
+        CHECK(game.isGameOver() == false);
 
-        // Play until game ends (time limit or elimination)
-        tick(game, 600); // 10 seconds (gameDuration = 8)
+        // Join some players
+        game.onChatMessage(makeMsg("u1", "Alice", "join"));
+        game.onChatMessage(makeMsg("u2", "Bob", "join"));
+        CHECK(aliveCount(game) == 2);
 
-        CHECK(TA::phase(game) == GamePhase::GameOver);
-        CHECK(game.isGameOver());
+        // Simulate for a while — phase stays Playing forever
+        tick(game, 600); // 10 seconds
+        CHECK(TA::phase(game) == GamePhase::Playing);
+        CHECK(game.isGameOver() == false);
+        CHECK(game.isRoundComplete() == false);
         game.shutdown();
     }
 
@@ -701,16 +692,9 @@ TEST_SUITE("GB Gameplay") {
         GravityBrawl game;
         game.initialize();
         Planet& p = addPlanet(game, "u1", "P1", 0.0f, 1);
-        // Still in Lobby — smash should be rejected
+        // Game starts in Playing — smash works immediately with or without '!'
         b2Vec2 velBefore = p.body->GetLinearVelocity();
-        game.onChatMessage(makeMsg("u1", "P1", "!s"));
-        b2Vec2 velAfter = p.body->GetLinearVelocity();
-        CHECK(velAfter.x == doctest::Approx(velBefore.x));
-        CHECK(velAfter.y == doctest::Approx(velBefore.y));
-
-        // Switch to playing phase
-        TA::startPlaying(game);
-        game.onChatMessage(makeMsg("u1", "P1", "!s"));
+        game.onChatMessage(makeMsg("u1", "P1", "s"));
         b2Vec2 velSmashed = p.body->GetLinearVelocity();
         float speedDelta = (velSmashed - velBefore).Length();
         CHECK(speedDelta > 1.0f); // Got a meaningful impulse
@@ -888,7 +872,10 @@ TEST_SUITE("GB Gameplay") {
         TA::eliminatePlanet(game, p2);
         tick(game, 1);
 
-        CHECK(TA::phase(game) == GamePhase::GameOver);
+        // Endless mode: game never ends — last planet continues alone
+        CHECK(TA::phase(game) == GamePhase::Playing);
+        CHECK(game.isGameOver() == false);
+        CHECK(p1.alive);
         game.shutdown();
     }
 
@@ -959,16 +946,21 @@ TEST_SUITE("GB Gameplay") {
     TEST_CASE("Join is blocked during GameOver phase") {
         GravityBrawl game;
         game.initialize();
-        addPlanet(game, "p1", "P1", 0.0f, 1);
-        addPlanet(game, "p2", "P2", 3.14f, -1);
+        Planet& p1 = addPlanet(game, "p1", "P1", 0.0f, 1);
         TA::startPlaying(game);
 
-        // Force GameOver
-        TA::phase(game) = GamePhase::GameOver;
+        // Eliminate p1 to trigger the 45-second respawn cooldown
+        TA::eliminatePlanet(game, p1);
+        CHECK(!p1.alive);
 
-        // Try to join — should be rejected
-        game.onChatMessage(makeMsg("late", "LateJoiner", "!join"));
-        CHECK(TA::planets(game).count("late") == 0);
+        // Immediately try to rejoin — cooldown blocks it
+        game.onChatMessage(makeMsg("p1", "P1", "join"));
+        CHECK(!TA::planets(game)["p1"].alive);
+
+        // Advance past the 45-second cooldown
+        TA::gameTimer(game) += 46.0;
+        game.onChatMessage(makeMsg("p1", "P1", "join"));
+        CHECK(TA::planets(game)["p1"].alive);
         game.shutdown();
     }
 
@@ -1232,7 +1224,6 @@ TEST_SUITE("GB Stress") {
             }
 
             // Stop if game ended
-            if (TA::phase(game) == GamePhase::GameOver) break;
         }
 
         // Some interaction should have happened
@@ -1286,8 +1277,6 @@ TEST_SUITE("GB Stress") {
             if (step % 600 == 0) {
                 REQUIRE(allPositionsFinite(game));
             }
-
-            if (TA::phase(game) == GamePhase::GameOver) break;
         }
 
         CHECK(allPositionsFinite(game));
@@ -1319,21 +1308,13 @@ TEST_SUITE("GB Stress") {
 
         int frameCount = 0;
         int smashCount = 0;
-        int phaseChanges = 0;
-        GamePhase lastPhase = TA::phase(game);
 
         // Run up to 45 seconds of real simulation (lobby + countdown + game)
         for (int step = 0; step < 2700; ++step) {
             game.update(1.0 / 60.0);
 
-            GamePhase currentPhase = TA::phase(game);
-            if (currentPhase != lastPhase) {
-                phaseChanges++;
-                lastPhase = currentPhase;
-            }
-
-            // Humans smash every second during gameplay
-            if (currentPhase == GamePhase::Playing && step % 60 == 0) {
+            // Humans smash every second
+            if (step % 60 == 0) {
                 for (int i = 0; i < 4; ++i) {
                     game.onChatMessage(makeMsg("h" + std::to_string(i),
                                                "Human" + std::to_string(i), "!s"));
@@ -1351,11 +1332,8 @@ TEST_SUITE("GB Stress") {
 
             if (step % 300 == 0)
                 REQUIRE(allPositionsFinite(game));
-
-            if (currentPhase == GamePhase::GameOver) break;
         }
 
-        CHECK(phaseChanges >= 1);
         CHECK(smashCount > 0);
         if (canRender) CHECK(frameCount > 10);
 
@@ -1392,7 +1370,6 @@ TEST_SUITE("GB AutoPlay") {
                         TA::cmdSmash(game, "d" + std::to_string(i));
                 }
                 game.update(1.0 / 60.0);
-                if (TA::phase(game) == GamePhase::GameOver) break;
             }
 
             int alive = aliveCount(game);
@@ -1556,8 +1533,6 @@ TEST_SUITE("GB AutoPlay") {
                 if (alive < 20) hadKill = true;
                 if (state["cosmicEventActive"].get<bool>()) hadCosmicEvent = true;
             }
-
-            if (TA::phase(game) == GamePhase::GameOver) break;
         }
 
         // ── Validate match quality ──────────────────────────────────────
@@ -1581,8 +1556,8 @@ TEST_SUITE("GB AutoPlay") {
             totalKills += p["kills"].get<int>();
 
         // With 20 aggressive players, expect at least a few kills or the game reached end
-        bool gameFinished = (TA::phase(game) == GamePhase::GameOver);
-        CHECK((totalKills > 0 || gameFinished));
+        // With 20 aggressive players, expect at least some kills
+        CHECK(totalKills > 0);
 
         game.shutdown();
     }
@@ -1778,17 +1753,30 @@ TEST_SUITE("GB GravityCap") {
         // Set huge consumed bonus
         TA::blackHoleConsumedGravityBonus(game) = 100.0f;
 
-        // Measure at time 0
-        TA::gameTimer(game) = 0.0;
-        float g0 = TA::currentBlackHoleGravity(game);
+        // In endless-epoch mode gravity grows with epochProgress² (0 at epoch start, max at epoch end)
+        // Measure at epoch start (epochTimer == epochDuration, progress=0)
+        double dur = TA::epochDuration(game);
+        TA::epochTimer(game) = dur;   // start of epoch → progress 0
+        float gStart = TA::currentBlackHoleGravity(game);
 
-        // Measure at time 100
-        TA::gameTimer(game) = 100.0;
-        float g100 = TA::currentBlackHoleGravity(game);
+        // Measure at epoch end (epochTimer == 0, progress = 1)
+        TA::epochTimer(game) = 0.0;
+        float gEnd = TA::currentBlackHoleGravity(game);
 
-        // Growth should be from time only (bonus is capped, same both times)
-        float expectedGrowth = 100.0f * 0.02f; // 2.0
-        CHECK(std::abs((g100 - g0) - expectedGrowth) < 0.1f);
+        // Gravity must increase over the epoch (quadratic ramp)
+        CHECK(gEnd > gStart);
+
+        // Consumed gravity bonus must be capped at half of gravity cap (verify it's never uncapped)
+        // With huge bonus (100) both measurements should use the capped value only
+        TA::blackHoleConsumedGravityBonus(game) = 0.0f;
+        TA::epochTimer(game) = 0.0;
+        float gNoBonusEnd = TA::currentBlackHoleGravity(game);
+        TA::blackHoleConsumedGravityBonus(game) = 100.0f;
+        float gHugeBonusEnd = TA::currentBlackHoleGravity(game);
+        // Doubling a huge bonus should not increase gravity further (bonus already at cap)
+        TA::blackHoleConsumedGravityBonus(game) = 200.0f;
+        float gDoubleHugeBonusEnd = TA::currentBlackHoleGravity(game);
+        CHECK(std::abs(gHugeBonusEnd - gDoubleHugeBonusEnd) < 0.01f); // both capped equally
 
         game.shutdown();
     }

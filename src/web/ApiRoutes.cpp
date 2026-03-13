@@ -1220,13 +1220,14 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         try {
             auto body = nlohmann::json::parse(req.body);
             std::string username = body.value("username", "dashboard");
+            std::string avatarUrl = body.value("avatar_url", "");
             std::string text     = body.value("text", "");
             if (text.empty()) {
                 res.status = 400;
                 res.set_content(R"({"error":"Empty message"})", "application/json");
                 return;
             }
-            app.channelManager().injectLocalMessage(username, text);
+            app.channelManager().injectLocalMessage(username, text, avatarUrl);
             res.set_content(R"({"success":true})", "application/json");
         } catch (const std::exception& e) {
             res.status = 400;

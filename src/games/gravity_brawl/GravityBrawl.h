@@ -1,6 +1,7 @@
 #pragma once
 
 #include "games/IGame.h"
+#include "games/gravity_brawl/AvatarCache.h"
 #include "rendering/Background.h"
 #include "rendering/PostProcessing.h"
 
@@ -50,6 +51,7 @@ struct Planet {
     // Identity
     std::string userId;
     std::string displayName;
+    std::string avatarUrl;
 
     // Physics (owned by Box2D world)
     b2Body*     body = nullptr;
@@ -95,6 +97,9 @@ struct Planet {
 
     // Whether this player is the current king (bounty target)
     bool        isKing         = false;
+
+    // Respawn cooldown: player cannot rejoin before this game-timer value
+    double      nextJoinTime   = 0.0;
 
     /// Returns true if this planet is a bot (AI-controlled filler).
     bool isBot() const { return userId.rfind("__bot_", 0) == 0; }
@@ -178,8 +183,8 @@ public:
     std::string id() const override { return "gravity_brawl"; }
     std::string displayName() const override { return "Gravity Brawl"; }
     std::string description() const override {
-        return "Galactic moshpit! Orbit the black hole, !s to smash enemies into the void. "
-               "Last planet standing earns the crown!";
+         return "Galactic moshpit! Orbit the black hole, type 's' to smash enemies into the void. "
+             "Survive epoch-ending Void Eruptions to earn bonus points!";
     }
 
     void initialize() override;
@@ -199,8 +204,10 @@ public:
 
 private:
     // ── Commands ─────────────────────────────────────────────────────────
-    void cmdJoin(const std::string& userId, const std::string& displayName);
+    void cmdJoin(const std::string& userId, const std::string& displayName,
+                 const std::string& avatarUrl = "");
     void cmdSmash(const std::string& userId);
+    void handleStreamEvent(const platform::ChatMessage& msg);
 
     // ── Bot Fill ─────────────────────────────────────────────────────────
     void spawnBots();
@@ -219,8 +226,8 @@ private:
     std::unordered_map<std::string, float> m_botRespawnTimers; ///< Dead bot → remaining respawn delay
 
     // ── Game logic ──────────────────────────────────────────────────────
-    void startCountdown();
-    void startPlaying();
+    void startCountdown();  ///< Legacy: calls startPlaying() directly (no countdown in endless mode)
+    void startPlaying();    ///< Resets game state; used by tests and bot fill
     void applyOrbitalForces(float dt);
     void applyBlackHoleGravity(float dt);
     void checkBlackHoleDeaths();
@@ -244,10 +251,8 @@ private:
     void renderParticles(sf::RenderTarget& target);
     void renderKillFeed(sf::RenderTarget& target);
     void renderUI(sf::RenderTarget& target);
-    void renderCountdown(sf::RenderTarget& target);
     void renderCosmicEventWarning(sf::RenderTarget& target);
     void renderFloatingTexts(sf::RenderTarget& target);
-    void renderGameOverScreen(sf::RenderTarget& target);
     float currentBlackHoleGravity() const;
 
     /// Scale a font size by the current font scale factor.
@@ -290,18 +295,31 @@ private:
     // Rendering
     rendering::Background      m_background;
     rendering::PostProcessing  m_postProcessing;
+    AvatarCache                m_avatarCache;
     sf::Font                   m_font;
     bool                       m_fontLoaded = false;
 
     // Timing
-    double m_countdownTimer    = 0.0;
-    int    m_lastCountdownBeep = 0;   // tracks last played countdown tick
-    double m_gameTimer         = 0.0;  // total elapsed game time
-    double m_lobbyTimer        = 0.0;
-    double m_survivalAccum     = 0.0;  // fractional survival point accumulator
-    double m_gameDuration      = 300.0; // 5 minutes per session
-    double m_lobbyDuration     = 30.0;
-    int    m_minPlayers        = 2;
+    // Timing
+    double m_countdownTimer      = 0.0;   // legacy – kept for test accessor compat
+    int    m_lastCountdownBeep   = 0;     // legacy
+    double m_gameTimer           = 0.0;   // total elapsed time (counts up forever)
+    double m_lobbyTimer          = 0.0;   // legacy – kept for test accessor compat
+    double m_survivalAccum       = 0.0;   // fractional survival point accumulator
+    double m_gameDuration        = 300.0; // legacy (was per-round timer; kept for configure() compat)
+    double m_lobbyDuration       = 30.0;  // legacy
+    int    m_minPlayers          = 2;     // legacy
+
+    // Epoch system (breathing black hole)
+    double m_blackHoleEpochTimer = 900.0; // counts down to next Void Eruption
+    double m_epochDuration       = 900.0; // full cycle length in seconds
+
+    // CPU safety and runtime tuning (headless software-rendering defaults)
+    bool   m_enablePostProcessing = false;
+    int    m_maxParticles         = 500;
+    double m_afkTimeoutSeconds    = 180.0;
+    double m_anomalySpawnInterval = 150.0;
+    double m_avatarCleanupTimer   = 0.0;
 
     // Cosmic Event (black hole pulse)
     double m_cosmicEventCooldown = 60.0;  // seconds between events
@@ -357,8 +375,8 @@ private:
     // RNG
     std::mt19937 m_rng;
 
-    // Particle capacity
-    static constexpr size_t MAX_PARTICLES = 5000;
+    // Hard upper bound regardless of runtime setting
+    static constexpr size_t MAX_PARTICLES_HARD_CAP = 5000;
 
     // Trail emission rate limiter (seconds between trail emissions per planet)
     static constexpr float TRAIL_EMIT_INTERVAL = 0.05f; // 20 Hz instead of every frame

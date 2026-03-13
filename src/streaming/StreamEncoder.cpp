@@ -577,6 +577,15 @@ void StreamEncoder::audioThread() {
 
         // Pace to real-time
         nextWriteTime += chunkDuration;
+        auto now = std::chrono::steady_clock::now();
+        // Guard against catch-up bursts: if we've fallen more than 3 chunks
+        // (~60 ms) behind real-time (e.g. after a blocking write or OS sleep
+        // longer than expected), reset the deadline instead of flooding the
+        // pipe with all the missed chunks at once.
+        if (now > nextWriteTime + chunkDuration * 3) {
+            spdlog::debug("[StreamEncoder] Audio thread fell behind – resetting real-time clock.");
+            nextWriteTime = now;
+        }
         std::this_thread::sleep_until(nextWriteTime);
     }
 

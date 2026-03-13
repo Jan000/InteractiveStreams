@@ -67,7 +67,8 @@ public:
 
     // ── Local test helper ────────────────────────────────────────────────
 
-    void injectLocalMessage(const std::string& username, const std::string& text);
+    void injectLocalMessage(const std::string& username, const std::string& text,
+                            const std::string& avatarUrl = "");
     std::vector<std::string> getLocalMessageLog() const;
 
     // ── Send messages to channels ────────────────────────────────────────

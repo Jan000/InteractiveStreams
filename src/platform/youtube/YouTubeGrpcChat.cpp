@@ -216,6 +216,7 @@ void YouTubeGrpcChat::streamLoop() {
                     std::string rawId = author.has_channel_id() ? author.channel_id() : "unknown";
                     msg.userId      = ChatMessage::makeUserId("youtube", rawId);
                     msg.displayName = author.has_display_name() ? author.display_name() : "Unknown";
+                    msg.avatarUrl   = author.has_profile_image_url() ? author.profile_image_url() : "";
                     msg.isModerator = author.has_is_chat_moderator() && author.is_chat_moderator();
                     msg.isSubscriber = (author.has_is_chat_sponsor() && author.is_chat_sponsor()) ||
                                       (author.has_is_chat_owner() && author.is_chat_owner());

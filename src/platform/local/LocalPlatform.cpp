@@ -82,12 +82,15 @@ void LocalPlatform::configure(const nlohmann::json& settings) {
     }
 }
 
-void LocalPlatform::injectMessage(const std::string& username, const std::string& text) {
+void LocalPlatform::injectMessage(const std::string& username,
+                                  const std::string& text,
+                                  const std::string& avatarUrl) {
     ChatMessage msg;
     msg.platformId  = "local";
     msg.channelId   = "local";
     msg.userId      = ChatMessage::makeUserId("local", username);
     msg.displayName = username;
+    msg.avatarUrl   = avatarUrl;
     msg.text        = text;
     msg.isModerator = false;
     msg.isSubscriber = false;

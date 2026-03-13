@@ -10,6 +10,7 @@
 #include <numeric>
 #include <filesystem>
 #include <sstream>
+#include <unordered_set>
 
 namespace is::games::gravity_brawl {
 
@@ -125,15 +126,20 @@ void GravityBrawl::initialize() {
     // Load sound effects (gracefully skips missing files)
     loadSfx();
 
-    m_phase = GamePhase::Lobby;
-    m_lobbyTimer = m_lobbyDuration;
+    // Endless mode: start in Playing state immediately
+    m_phase = GamePhase::Playing;
     m_gameTimer = 0.0;
+    m_blackHoleEpochTimer = m_epochDuration;
     m_cosmicEventTimer = m_cosmicEventCooldown;
     m_cosmicEventActive = 0.0;
     m_blackHoleConsumedGravityBonus = 0.0f;
     m_currentKingId.clear();
     m_blackHolePulse = 0.0f;
     m_blackHoleRotation = 0.0f;
+    m_avatarCleanupTimer = 0.0;
+
+    // Pre-fill bots if configured
+    spawnBots();
 
     spdlog::info("[GravityBrawl] Initialized.");
 }
@@ -153,6 +159,7 @@ void GravityBrawl::shutdown() {
     m_killFeed.clear();
     m_floatingTexts.clear();
     m_botRespawnTimers.clear();
+    m_avatarCache.clear();
     m_contactListener.reset();
     m_world.reset();
 }
@@ -223,13 +230,31 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     }
     if (settings.contains("lobby_duration") && settings["lobby_duration"].is_number()) {
         m_lobbyDuration = settings["lobby_duration"].get<double>();
-        // Apply immediately if we are still in the lobby (fixes "always 30s" issue)
-        if (m_phase == GamePhase::Lobby) {
-            m_lobbyTimer = m_lobbyDuration;
-        }
     }
     if (settings.contains("min_players") && settings["min_players"].is_number_integer()) {
         m_minPlayers = settings["min_players"].get<int>();
+    }
+    if (settings.contains("epoch_duration") && settings["epoch_duration"].is_number()) {
+        m_epochDuration = std::max(60.0, settings["epoch_duration"].get<double>());
+    }
+    if (settings.contains("epoch_duration_seconds") && settings["epoch_duration_seconds"].is_number()) {
+        m_epochDuration = std::max(60.0, settings["epoch_duration_seconds"].get<double>());
+    }
+    if (settings.contains("enable_post_processing") && settings["enable_post_processing"].is_boolean()) {
+        m_enablePostProcessing = settings["enable_post_processing"].get<bool>();
+    }
+    if (settings.contains("max_particles") && settings["max_particles"].is_number_integer()) {
+        const int hardCap = static_cast<int>(MAX_PARTICLES_HARD_CAP);
+        m_maxParticles = std::clamp(settings["max_particles"].get<int>(), 0, hardCap);
+        if (m_particles.size() > static_cast<size_t>(m_maxParticles)) {
+            m_particles.resize(static_cast<size_t>(m_maxParticles));
+        }
+    }
+    if (settings.contains("afk_timeout_seconds") && settings["afk_timeout_seconds"].is_number()) {
+        m_afkTimeoutSeconds = std::max(5.0, settings["afk_timeout_seconds"].get<double>());
+    }
+    if (settings.contains("anomaly_spawn_interval") && settings["anomaly_spawn_interval"].is_number()) {
+        m_anomalySpawnInterval = std::max(5.0, settings["anomaly_spawn_interval"].get<double>());
     }
     if (settings.contains("cosmic_event_cooldown") && settings["cosmic_event_cooldown"].is_number()) {
         m_cosmicEventCooldown = settings["cosmic_event_cooldown"].get<double>();
@@ -331,6 +356,10 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
     }
+    // If the game is already running, ensure bot count matches the new target
+    if (m_world) {
+        spawnBots();
+    }
 }
 
 nlohmann::json GravityBrawl::getSettings() const {
@@ -339,6 +368,11 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"game_duration", m_gameDuration},
         {"lobby_duration", m_lobbyDuration},
         {"min_players", m_minPlayers},
+        {"enable_post_processing", m_enablePostProcessing},
+        {"max_particles", m_maxParticles},
+        {"afk_timeout_seconds", m_afkTimeoutSeconds},
+        {"anomaly_spawn_interval", m_anomalySpawnInterval},
+        {"epoch_duration_seconds", m_epochDuration},
         {"cosmic_event_cooldown", m_cosmicEventCooldown},
         {"spawn_radius_factor", m_spawnRadiusFactor},
         {"spawn_orbit_speed", m_spawnOrbitSpeed},
@@ -369,7 +403,8 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"bot_smash_chance", m_botSmashChance},
         {"bot_danger_smash_chance", m_botDangerSmashChance},
         {"bot_event_smash_chance", m_botEventSmashChance},
-        {"text_elements", textElementsJson()}
+        {"text_elements", textElementsJson()},
+        {"epoch_duration", m_epochDuration}
     };
 }
 
@@ -399,6 +434,7 @@ void GravityBrawl::spawnBots() {
         Planet& p = m_planets[botId];
         p.userId = botId;
         p.displayName = BOT_NAMES[(m_botCounter - 1) % NUM_BOT_NAMES];
+        p.avatarUrl.clear();
         p.alive = true;
         p.kills = 0;
         p.deaths = 0;
@@ -483,7 +519,6 @@ void GravityBrawl::updateBotAI(float dt) {
 
 void GravityBrawl::respawnDeadBots(float dt) {
     if (!m_botRespawn || m_botFillTarget <= 0) return;
-    if (m_phase != GamePhase::Playing) return;
 
     // Collect dead bots that need respawn tracking
     for (auto& [id, p] : m_planets) {
@@ -512,6 +547,7 @@ void GravityBrawl::respawnDeadBots(float dt) {
                 p.hitFlashTimer = 0.0f;
                 p.trailTimer = 0.0f;
                 p.supernovaTimer = 0.0f;
+                p.avatarUrl.clear();
                 p.tier = PlanetTier::Asteroid;
                 p.baseRadius = m_tierRadius[0];
                 p.radiusMeters = m_tierRadius[0];
@@ -530,37 +566,63 @@ void GravityBrawl::respawnDeadBots(float dt) {
 // ── Chat Message Handling ────────────────────────────────────────────────────
 
 void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
-    if (msg.text.empty() || msg.text[0] != '!') return;
+    handleStreamEvent(msg);
+    if (msg.text.empty()) return;
 
     // Extract first token (handles trailing whitespace, \r\n, extra text)
     std::istringstream iss(msg.text);
     std::string cmd;
     iss >> cmd;
 
+    // Strip optional leading '!' for backward compatibility with existing viewers
+    if (!cmd.empty() && cmd[0] == '!') cmd = cmd.substr(1);
+
     // Lowercase for command matching
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
-    if (cmd == "!join" || cmd == "!play") {
-        cmdJoin(msg.userId, msg.displayName);
-    } else if (cmd == "!smash" || cmd == "!s") {
+    if (cmd == "join" || cmd == "play") {
+        cmdJoin(msg.userId, msg.displayName, msg.avatarUrl);
+    } else if (cmd == "smash" || cmd == "s") {
         cmdSmash(msg.userId);
     }
 }
 
-void GravityBrawl::cmdJoin(const std::string& userId, const std::string& displayName) {
-    // Block joins after game ends
-    if (m_phase == GamePhase::GameOver) return;
+void GravityBrawl::handleStreamEvent(const platform::ChatMessage& msg) {
+    if (msg.avatarUrl.empty()) return;
 
+    // Asynchronously prefetch avatar so join rendering can hit a warm cache.
+    m_avatarCache.request(msg.avatarUrl);
+
+    auto it = m_planets.find(msg.userId);
+    if (it != m_planets.end()) {
+        it->second.avatarUrl = msg.avatarUrl;
+    }
+}
+
+void GravityBrawl::cmdJoin(const std::string& userId,
+                           const std::string& displayName,
+                           const std::string& avatarUrl) {
     // Check if already alive
     auto it = m_planets.find(userId);
     if (it != m_planets.end() && it->second.alive) {
         return; // Already in the game
     }
 
+    // Respawn cooldown: dead human players must wait 45 s before rejoining (bots bypass)
+    if (!isBot(userId) && it != m_planets.end() && m_gameTimer < it->second.nextJoinTime) {
+        int secsLeft = static_cast<int>(std::ceil(it->second.nextJoinTime - m_gameTimer));
+        sendChatFeedback("⏳ " + displayName + " can rejoin in " +
+                         std::to_string(secsLeft) + "s");
+        return;
+    }
+
     // Create or reset planet
     Planet& p = m_planets[userId];
     p.userId = userId;
     p.displayName = displayName;
+    if (!avatarUrl.empty()) {
+        p.avatarUrl = avatarUrl;
+    }
     p.alive = true;
     p.kills = 0;
     p.deaths = 0;
@@ -585,6 +647,10 @@ void GravityBrawl::cmdJoin(const std::string& userId, const std::string& display
     p.glowPulse = 0.0f;
     p.supernovaTimer = 0.0f;
 
+    if (!p.avatarUrl.empty()) {
+        m_avatarCache.request(p.avatarUrl);
+    }
+
     // Destroy old body if exists
     if (p.body && m_world) {
         m_world->DestroyBody(p.body);
@@ -597,27 +663,17 @@ void GravityBrawl::cmdJoin(const std::string& userId, const std::string& display
     sendChatFeedback("☄️ " + displayName + " entered the orbit!");
     playSfx("gb_join");
 
-    // Score: participation
+    // Participation score (only on first join, not rejoin)
     try {
         is::core::Application::instance().playerDatabase().recordResult(
             userId, displayName, "gravity_brawl", 1, false);
     } catch (...) {}
 
-    // If in lobby and enough players, start countdown
-    if (m_phase == GamePhase::Lobby) {
-        int aliveCnt = 0;
-        for (const auto& [_, pl] : m_planets)
-            if (pl.alive) aliveCnt++;
-        if (aliveCnt >= m_minPlayers && m_lobbyTimer > 5.0) {
-            m_lobbyTimer = 5.0; // Shorten lobby
-        }
-    }
 }
 
 void GravityBrawl::cmdSmash(const std::string& userId) {
     auto it = m_planets.find(userId);
     if (it == m_planets.end() || !it->second.alive) return;
-    if (m_phase != GamePhase::Playing) return;
 
     Planet& p = it->second;
 
@@ -900,7 +956,6 @@ void GravityBrawl::triggerSupernova(Planet& p) {
 
 void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
     if (impulse < 2.0f) return; // Ignore gentle touches
-    if (m_phase != GamePhase::Playing) return; // No scoring outside active play
 
     // Both planets get pushed — mark last-hit-by for kill attribution
     double now = m_gameTimer;
@@ -946,30 +1001,42 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
 // ── Phase Management ─────────────────────────────────────────────────────────
 
 void GravityBrawl::startCountdown() {
-    // Fill up with bots before the round starts
-    spawnBots();
-
-    m_phase = GamePhase::Countdown;
-    m_countdownTimer = 3.0;
-    m_lastCountdownBeep = 4; // triggers beep on first tick (3)
-    spdlog::info("[GravityBrawl] Countdown started.");
+    // Legacy: endless mode has no countdown, immediately start playing
+    startPlaying();
 }
 
 void GravityBrawl::startPlaying() {
     m_phase = GamePhase::Playing;
     m_gameTimer = 0.0;
+    m_blackHoleEpochTimer = m_epochDuration;
     m_cosmicEventTimer = m_cosmicEventCooldown;
     m_cosmicEventActive = 0.0;
     m_blackHoleConsumedGravityBonus = 0.0f;
     m_survivalAccum = 0.0;
+    spawnBots();
     playSfx("gb_battle_start");
-    spdlog::info("[GravityBrawl] Game started!");
+    spdlog::info("[GravityBrawl] Endless game running.");
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
 
 void GravityBrawl::update(double dt) {
     float fdt = static_cast<float>(dt);
+
+    // Main-thread texture uploads from background-prepared 64x64 images.
+    m_avatarCache.processPendingUploads(2);
+    m_avatarCleanupTimer += dt;
+    if (m_avatarCleanupTimer >= 5.0) {
+        std::unordered_set<std::string> activeAvatarUrls;
+        activeAvatarUrls.reserve(m_planets.size());
+        for (const auto& [id, p] : m_planets) {
+            (void)id;
+            if (!p.alive || p.avatarUrl.empty()) continue;
+            activeAvatarUrls.insert(p.avatarUrl);
+        }
+        m_avatarCache.cleanupUnused(activeAvatarUrls, std::chrono::seconds(120));
+        m_avatarCleanupTimer = 0.0;
+    }
 
     // Always update visuals
     m_background.update(fdt);
@@ -1003,215 +1070,130 @@ void GravityBrawl::update(double dt) {
         }
     }
 
-    switch (m_phase) {
-    case GamePhase::Lobby: {
-        m_lobbyTimer -= dt;
+    // ── Endless Mode: always playing ─────────────────────────────────────────
+    m_gameTimer += dt;
 
-        // Update planet positions even in lobby (orbiting looks cool)
-        for (auto& [id, p] : m_planets) {
-            if (p.body && p.alive) {
-                b2Vec2 pos = p.body->GetPosition();
-                p.prevPosition = {pos.x, pos.y};
-                p.updateTimers(fdt);
-            }
+    // Store previous positions for interpolation
+    for (auto& [id, p] : m_planets) {
+        if (p.body && p.alive) {
+            b2Vec2 pos = p.body->GetPosition();
+            p.prevPosition = {pos.x, pos.y};
+            p.updateTimers(fdt);
         }
-        applyOrbitalForces(fdt);
-        m_world->Step(fdt, 6, 2);
-        for (auto& [id, p] : m_planets) {
-            if (p.body && p.alive) {
-                b2Vec2 pos = p.body->GetPosition();
-                p.renderPosition = {pos.x, pos.y};
-            }
-        }
-
-        if (m_lobbyTimer <= 0.0) {
-            int aliveCnt = 0;
-            for (const auto& [_, p] : m_planets)
-                if (p.alive) aliveCnt++;
-            if (aliveCnt >= m_minPlayers) {
-                startCountdown();
-            } else {
-                m_lobbyTimer = m_lobbyDuration;
-            }
-        }
-        break;
     }
 
-    case GamePhase::Countdown: {
-        m_countdownTimer -= dt;
+    // Apply forces
+    applyOrbitalForces(fdt);
+    applyBlackHoleGravity(fdt);
+    updateCosmicEvent(fdt);
 
-        // Play one beep per countdown tick (3, 2, 1)
-        {
-            int cur = static_cast<int>(std::ceil(m_countdownTimer));
-            if (cur >= 1 && cur < m_lastCountdownBeep) {
-                playSfx("gb_countdown");
-                m_lastCountdownBeep = cur;
+    // Step physics
+    m_world->Step(fdt, 8, 3);
+
+    // Post-physics: update render positions
+    for (auto& [id, p] : m_planets) {
+        if (p.body && p.alive) {
+            b2Vec2 pos = p.body->GetPosition();
+            p.renderPosition = {pos.x, pos.y};
+
+            // Survival time
+            p.survivalTime += dt;
+
+            // Trail particles for higher tiers (rate-limited)
+            if (p.tier >= PlanetTier::IcePlanet && m_trailEmitTimer <= 0.0f) {
+                sf::Vector2f screenPos = worldToScreen(pos);
+                emitTrail(screenPos, getTierColor(p.tier));
+            }
+
+            // Star tier ambient particles (rate-limited, every ~0.3s)
+            if (p.tier == PlanetTier::Star && m_trailEmitTimer <= 0.0f) {
+                sf::Vector2f screenPos = worldToScreen(pos);
+                emitParticles(screenPos, sf::Color(255, 255, 150, 180), 1, 20.f, 360.f, 0.8f);
+            }
+
+            // Clamp velocity to prevent crazy speeds
+            b2Vec2 vel = p.body->GetLinearVelocity();
+            float maxSpeed = 25.0f;
+            if (vel.Length() > maxSpeed) {
+                vel.Normalize();
+                vel = b2Vec2(vel.x * maxSpeed, vel.y * maxSpeed);
+                p.body->SetLinearVelocity(vel);
+            }
+
+            // Update fixture radius if grown (threshold 0.05 to avoid frequent recreation)
+            float newRadius = p.getVisualRadius();
+            if (std::abs(newRadius - p.radiusMeters) > 0.05f) {
+                p.radiusMeters = newRadius;
+                // Recreate fixture with new size
+                if (p.body->GetFixtureList()) {
+                    p.body->DestroyFixture(p.body->GetFixtureList());
+                }
+                b2CircleShape shape;
+                shape.m_radius = newRadius;
+                b2FixtureDef fixDef;
+                fixDef.shape = &shape;
+                fixDef.density = 1.0f * p.getMassScale();
+                fixDef.friction = 0.3f;
+                fixDef.restitution = 0.7f;
+                p.body->CreateFixture(&fixDef);
             }
         }
-
-        // Keep orbiting during countdown
-        for (auto& [id, p] : m_planets) {
-            if (p.body && p.alive) {
-                b2Vec2 pos = p.body->GetPosition();
-                p.prevPosition = {pos.x, pos.y};
-                p.updateTimers(fdt);
-            }
-        }
-        applyOrbitalForces(fdt);
-        m_world->Step(fdt, 6, 2);
-        for (auto& [id, p] : m_planets) {
-            if (p.body && p.alive) {
-                b2Vec2 pos = p.body->GetPosition();
-                p.renderPosition = {pos.x, pos.y};
-            }
-        }
-
-        if (m_countdownTimer <= 0.0) {
-            startPlaying();
-        }
-        break;
     }
 
-    case GamePhase::Playing: {
-        m_gameTimer += dt;
-
-        // Store previous positions for interpolation
-        for (auto& [id, p] : m_planets) {
-            if (p.body && p.alive) {
-                b2Vec2 pos = p.body->GetPosition();
-                p.prevPosition = {pos.x, pos.y};
-                p.updateTimers(fdt);
-            }
-        }
-
-        // Apply forces
-        applyOrbitalForces(fdt);
-        applyBlackHoleGravity(fdt);
-        updateCosmicEvent(fdt);
-
-        // Step physics
-        m_world->Step(fdt, 8, 3);
-
-        // Post-physics: update render positions
-        for (auto& [id, p] : m_planets) {
-            if (p.body && p.alive) {
-                b2Vec2 pos = p.body->GetPosition();
-                p.renderPosition = {pos.x, pos.y};
-
-                // Survival time
-                p.survivalTime += dt;
-
-                // Trail particles for higher tiers (rate-limited)
-                if (p.tier >= PlanetTier::IcePlanet && m_trailEmitTimer <= 0.0f) {
-                    sf::Vector2f screenPos = worldToScreen(pos);
-                    emitTrail(screenPos, getTierColor(p.tier));
-                }
-
-                // Star tier ambient particles (rate-limited, every ~0.3s)
-                if (p.tier == PlanetTier::Star && m_trailEmitTimer <= 0.0f) {
-                    sf::Vector2f screenPos = worldToScreen(pos);
-                    emitParticles(screenPos, sf::Color(255, 255, 150, 180), 1, 20.f, 360.f, 0.8f);
-                }
-
-                // Clamp velocity to prevent crazy speeds
-                b2Vec2 vel = p.body->GetLinearVelocity();
-                float maxSpeed = 25.0f;
-                if (vel.Length() > maxSpeed) {
-                    vel.Normalize();
-                    vel = b2Vec2(vel.x * maxSpeed, vel.y * maxSpeed);
-                    p.body->SetLinearVelocity(vel);
-                }
-
-                // Update fixture radius if grown (threshold 0.05 to avoid frequent recreation)
-                float newRadius = p.getVisualRadius();
-                if (std::abs(newRadius - p.radiusMeters) > 0.05f) {
-                    p.radiusMeters = newRadius;
-                    // Recreate fixture with new size
-                    if (p.body->GetFixtureList()) {
-                        p.body->DestroyFixture(p.body->GetFixtureList());
-                    }
-                    b2CircleShape shape;
-                    shape.m_radius = newRadius;
-                    b2FixtureDef fixDef;
-                    fixDef.shape = &shape;
-                    fixDef.density = 1.0f * p.getMassScale();
-                    fixDef.friction = 0.3f;
-                    fixDef.restitution = 0.7f;
-                    p.body->CreateFixture(&fixDef);
-                }
-            }
-        }
-
-        // Reset trail emit timer after processing all planets
-        if (m_trailEmitTimer <= 0.0f) {
-            m_trailEmitTimer = TRAIL_EMIT_INTERVAL;
-        }
-
-        // Check deaths (black hole)
-        checkBlackHoleDeaths();
-
-        // Bot AI
-        updateBotAI(fdt);
-        respawnDeadBots(fdt);
-
-        // Survival points
-        awardSurvivalPoints(dt);
-
-        // Update king
-        updateKing();
-
-        // Cosmic event
-        m_cosmicEventTimer -= dt;
-        if (m_cosmicEventTimer <= 0.0 && m_cosmicEventActive <= 0.0) {
-            triggerCosmicEvent();
-        }
-
-        // Check game over (time limit or <= 1 alive)
-        int aliveCnt = 0;
-        for (const auto& [_, p] : m_planets)
-            if (p.alive) aliveCnt++;
-
-        if (m_gameTimer >= m_gameDuration || (aliveCnt <= 1 && m_planets.size() > 1)) {
-            m_phase = GamePhase::GameOver;
-            playSfx("gb_game_over");
-            spdlog::info("[GravityBrawl] Game over!");
-
-            // Award win to the last player standing or highest score
-            std::string winnerId;
-            int bestScore = -1;
-            for (const auto& [id, p] : m_planets) {
-                if (p.score > bestScore) {
-                    bestScore = p.score;
-                    winnerId = id;
-                }
-            }
-            if (!winnerId.empty()) {
-                const auto& winner = m_planets[winnerId];
-                if (!isBot(winnerId)) {
-                    try {
-                        is::core::Application::instance().playerDatabase().recordResult(
-                            winnerId, winner.displayName, "gravity_brawl", 100, true);
-                    } catch (...) {}
-                    sendChatFeedback("🏆 " + winner.displayName + " wins Gravity Brawl with " +
-                                     std::to_string(winner.score) + " points!");
-                }
-
-                // Celebration particles for the winner
-                if (winner.body) {
-                    sf::Vector2f winPos = worldToScreen(winner.body->GetPosition());
-                    emitExplosion(winPos, sf::Color(255, 215, 0), 200);
-                    emitExplosion(winPos, sf::Color(255, 255, 255), 100);
-                }
-            }
-        }
-
-        // Allow late joins during playing phase
-        break;
+    // Reset trail emit timer after processing all planets
+    if (m_trailEmitTimer <= 0.0f) {
+        m_trailEmitTimer = TRAIL_EMIT_INTERVAL;
     }
 
-    case GamePhase::GameOver:
-        // Brief display before the GameManager handles transition
-        break;
+    // Check deaths (black hole)
+    checkBlackHoleDeaths();
+
+    // Bot AI
+    updateBotAI(fdt);
+    respawnDeadBots(fdt);
+
+    // Survival points
+    awardSurvivalPoints(dt);
+
+    // Update king
+    updateKing();
+
+    // Cosmic event
+    m_cosmicEventTimer -= dt;
+    if (m_cosmicEventTimer <= 0.0 && m_cosmicEventActive <= 0.0) {
+        triggerCosmicEvent();
+    }
+
+    // ── Epoch countdown (Breathing Black Hole) ────────────────────────────────
+    m_blackHoleEpochTimer -= dt;
+    if (m_blackHoleEpochTimer <= 0.0) {
+        // VOID ERUPTION: award every alive player 250 points
+        int survivors = 0;
+        for (auto& [id, p] : m_planets) {
+            if (!p.alive) continue;
+            survivors++;
+            p.score += 250;
+            sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
+            addFloatingText("+250 ERUPTION!", screenPos, sf::Color(255, 180, 80), 2.5f);
+            if (!isBot(id)) {
+                try {
+                    is::core::Application::instance().playerDatabase().recordResult(
+                        id, p.displayName, "gravity_brawl", 250, false);
+                } catch (...) {}
+            }
+        }
+        // Big explosion at black hole
+        sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
+        emitExplosion(center, sf::Color(180, 80, 255), 250);
+        emitExplosion(center, sf::Color(255, 255, 255), 80);
+        sendChatFeedback("🌋 VOID ERUPTION! " + std::to_string(survivors) +
+                         " survivors earn +250 pts each! New epoch begins.");
+        playSfx("gb_game_over"); // dramatic sound for eruption
+        spdlog::info("[GravityBrawl] Void Eruption! {} survivors.", survivors);
+
+        // Reset epoch
+        m_blackHoleEpochTimer = m_epochDuration;
+        m_blackHoleConsumedGravityBonus = 0.0f;
     }
 }
 
@@ -1291,6 +1273,8 @@ void GravityBrawl::applyBlackHoleGravity(float dt) {
         float distanceFromKillZone = std::max(1.0f, dist - BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier);
         float pullForce = effectiveGravity / distanceFromKillZone;
         pullForce = std::min(pullForce, m_blackHoleGravityCap);
+        // Anti-snowball: heavier (more kills = larger) planets are pulled harder
+        pullForce *= (1.0f + p.massScale * 0.15f);
 
         b2Vec2 dir(toCenter.x / dist, toCenter.y / dist);
         float mass = p.body->GetMass();
@@ -1322,6 +1306,8 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
     if (!p.alive) return;
     p.alive = false;
     p.deaths++;
+    // Respawn cooldown: prevent immediate re-join for 45 s
+    p.nextJoinTime = m_gameTimer + 45.0;
     playSfx("gb_death");
 
     bool victimIsBot = isBot(p.userId);
@@ -1331,12 +1317,10 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
     sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
     emitExplosion(screenPos, getTierColor(p.tier), 80);
 
-    if (m_phase == GamePhase::Playing) {
-        float gravityGain = std::max(0.0f, p.radiusMeters * m_blackHoleConsumeSizeFactor);
-        m_blackHoleConsumedGravityBonus += gravityGain;
-        spdlog::info("[GravityBrawl] Black hole gravity increased by {:.2f} (total bonus {:.2f}) after consuming '{}'",
-                     gravityGain, m_blackHoleConsumedGravityBonus, victimName);
-    }
+    float gravityGain = std::max(0.0f, p.radiusMeters * m_blackHoleConsumeSizeFactor);
+    m_blackHoleConsumedGravityBonus += gravityGain;
+    spdlog::info("[GravityBrawl] Black hole gravity increased by {:.2f} (total bonus {:.2f}) after consuming '{}'",
+                 gravityGain, m_blackHoleConsumedGravityBonus, victimName);
 
     // Kill attribution
     std::string killerId = p.lastHitBy;
@@ -1541,7 +1525,8 @@ void GravityBrawl::emitParticles(sf::Vector2f pos, sf::Color color, int count,
 
     float baseAngle = (spread < 360.f) ? 0.f : 0.f;
 
-    for (int i = 0; i < count && m_particles.size() < MAX_PARTICLES; ++i) {
+    const size_t runtimeCap = static_cast<size_t>(std::clamp(m_maxParticles, 0, static_cast<int>(MAX_PARTICLES_HARD_CAP)));
+    for (int i = 0; i < count && m_particles.size() < runtimeCap; ++i) {
         float angle = (angleDist(m_rng) - spread / 2.0f) * (3.14159f / 180.0f);
         float spd = speedDist(m_rng);
         float lt = lifeDist(m_rng);
@@ -1622,17 +1607,20 @@ void GravityBrawl::updateCameraZoom(float dt) {
         return;
     }
 
-    // Find the maximum distance from WORLD_CENTER among alive players
-    float maxDist = 0.0f;
+    // Per-axis maximum extent (absolute offset from world center) over all alive planets.
+    // Using per-axis bounding box instead of a radial approximation gives correct results
+    // for the portrait 9:16 screen: vertical screen space is ~1.78x the horizontal space,
+    // so a player far above/below center should trigger zoom-in, not zoom-out.
+    float maxExtentH = 0.0f;
+    float maxExtentV = 0.0f;
     int aliveCount = 0;
     for (const auto& [_, p] : m_planets) {
         if (!p.alive || !p.body) continue;
         ++aliveCount;
         b2Vec2 pos = p.body->GetPosition();
-        float dx = pos.x - WORLD_CENTER_X;
-        float dy = pos.y - WORLD_CENTER_Y;
-        float dist = std::sqrt(dx * dx + dy * dy) + p.getVisualRadius();
-        maxDist = std::max(maxDist, dist);
+        float r = p.getVisualRadius();
+        maxExtentH = std::max(maxExtentH, std::abs(pos.x - WORLD_CENTER_X) + r);
+        maxExtentV = std::max(maxExtentV, std::abs(pos.y - WORLD_CENTER_Y) + r);
     }
 
     // No alive players — reset to default zoom
@@ -1643,22 +1631,18 @@ void GravityBrawl::updateCameraZoom(float dt) {
         return;
     }
 
-    // The default view fits SCREEN_H / 2 / PIXELS_PER_METER meters vertically
-    // from center (portrait 9:16).  Horizontal is narrower: SCREEN_W / 2 / PPM.
-    float defaultRadiusV = SCREEN_H / 2.0f / PIXELS_PER_METER;
-    float defaultRadiusH = SCREEN_W / 2.0f / PIXELS_PER_METER;
-    float defaultRadius  = std::min(defaultRadiusV, defaultRadiusH);
+    // Full half-extents of the screen in world units at zoom=1
+    const float halfW = SCREEN_W / 2.0f / PIXELS_PER_METER;  // 20 m
+    const float halfH = SCREEN_H / 2.0f / PIXELS_PER_METER;  // ~35.6 m
 
-    float neededRadius = maxDist + m_cameraBufferMeters;
+    // Required zoom to fit all players with buffer on each independent axis.
+    // Taking the minimum of the two ensures no player clips off either edge.
+    float neededH = maxExtentH + m_cameraBufferMeters;
+    float neededV = maxExtentV + m_cameraBufferMeters;
+    float zoomH   = (neededH > 0.01f) ? (halfW / neededH) : m_cameraMaxZoom;
+    float zoomV   = (neededV > 0.01f) ? (halfH / neededV) : m_cameraMaxZoom;
 
-    if (neededRadius > defaultRadius) {
-        m_cameraTargetZoom = std::max(m_cameraMinZoom, defaultRadius / neededRadius);
-    } else if (neededRadius > 0.01f) {
-        // Zoom in when all players are clustered near the center
-        m_cameraTargetZoom = std::min(m_cameraMaxZoom, defaultRadius / neededRadius);
-    } else {
-        m_cameraTargetZoom = 1.0f;
-    }
+    m_cameraTargetZoom = std::clamp(std::min(zoomH, zoomV), m_cameraMinZoom, m_cameraMaxZoom);
 
     // Smooth interpolation toward target
     float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);
@@ -1699,23 +1683,16 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
     // In-game leaderboard removed; global scoreboard overlay handles it
 
     // GameOver scoreboard
-    if (m_phase == GamePhase::GameOver) {
-        renderGameOverScreen(target);
-    }
-
-    // Countdown
-    if (m_phase == GamePhase::Countdown) {
-        renderCountdown(target);
-    }
-
     // Post-processing
-    auto* rt = dynamic_cast<sf::RenderTexture*>(&target);
-    if (rt) {
-        m_postProcessing.applyVignette(*rt, 0.5f);
-        m_postProcessing.applyBloom(*rt, 0.6f, 0.4f);
-        m_postProcessing.applyChromaticAberration(*rt, 1.2f);
+    if (m_enablePostProcessing) {
+        auto* rt = dynamic_cast<sf::RenderTexture*>(&target);
+        if (rt) {
+            m_postProcessing.applyVignette(*rt, 0.5f);
+            m_postProcessing.applyBloom(*rt, 0.6f, 0.4f);
+            m_postProcessing.applyChromaticAberration(*rt, 1.2f);
+        }
+        m_postProcessing.applyScanlines(target, 0.02f);
     }
-    m_postProcessing.applyScanlines(target, 0.02f);
 }
 
 // ── Black Hole Rendering ─────────────────────────────────────────────────────
@@ -1741,7 +1718,7 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
 
     // Accretion disk (outer glow rings)
     for (int i = 5; i >= 0; --i) {
-        float r = displayRadius + i * 12.0f;
+        float r = displayRadius + i * 12.0f * m_cameraZoom;
         sf::CircleShape ring(r);
         ring.setOrigin(r, r);
         ring.setPosition(center);
@@ -1755,7 +1732,7 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
     }
 
     // Inner glow
-    float glowR = displayRadius + 15.0f;
+    float glowR = displayRadius + 15.0f * m_cameraZoom;
     sf::CircleShape glow(glowR);
     glow.setOrigin(glowR, glowR);
     glow.setPosition(center);
@@ -1781,7 +1758,8 @@ void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
         sf::Vector2f pPos(center.x + dist * std::cos(a), center.y + dist * std::sin(a));
         sf::Vector2f pVel(-(dist * 0.5f) * std::cos(a), -(dist * 0.5f) * std::sin(a));
 
-        if (m_particles.size() < MAX_PARTICLES) {
+        const size_t runtimeCap = static_cast<size_t>(std::clamp(m_maxParticles, 0, static_cast<int>(MAX_PARTICLES_HARD_CAP)));
+        if (m_particles.size() < runtimeCap) {
             Particle part;
             part.position = pPos;
             part.velocity = pVel;
@@ -1812,7 +1790,7 @@ void GravityBrawl::renderOrbitTrails(sf::RenderTarget& target) {
     target.draw(orbit);
 
     // Danger zone ring (inner)
-    float dangerR = BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier * PIXELS_PER_METER;
+    float dangerR = BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier * PIXELS_PER_METER * m_cameraZoom;
     sf::CircleShape danger(dangerR);
     danger.setOrigin(dangerR, dangerR);
     danger.setPosition(center);
@@ -2024,6 +2002,19 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             sf::Uint8 cA = static_cast<sf::Uint8>(200 + 50 * std::sin(anim * 3.5f));
             core.setFillColor(sf::Color(255, 255, 230, cA));
             target.draw(core);
+        }
+    }
+
+    // ── Pre-baked avatar overlay (64x64 circular alpha) ──────────────────
+    if (!p.avatarUrl.empty()) {
+        if (const sf::Texture* avatarTex = m_avatarCache.getTexture(p.avatarUrl)) {
+            sf::Sprite avatar(*avatarTex);
+            avatar.setOrigin(32.0f, 32.0f);
+            float diameter = std::max(2.0f, pixelRadius * 2.0f);
+            float scale = diameter / 64.0f;
+            avatar.setScale(scale, scale);
+            avatar.setPosition(screenPos);
+            target.draw(avatar);
         }
     }
 
@@ -2265,15 +2256,12 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
             }
 
             std::string infoStr;
-            if (m_phase == GamePhase::Lobby) {
-                infoStr = "LOBBY - " + std::to_string(aliveCount) + " planets | Starting in " +
-                          std::to_string(static_cast<int>(m_lobbyTimer)) + "s";
-            } else if (m_phase == GamePhase::Playing) {
-                int remaining = static_cast<int>(m_gameDuration - m_gameTimer);
-                infoStr = std::to_string(aliveCount) + "/" + std::to_string(totalCount) +
-                          " alive | " + std::to_string(remaining) + "s left";
-            } else if (m_phase == GamePhase::GameOver) {
-                infoStr = "GAME OVER";
+            {
+                int epochMins = static_cast<int>(m_blackHoleEpochTimer) / 60;
+                int epochSecs = static_cast<int>(m_blackHoleEpochTimer) % 60;
+                char epochBuf[16];
+                snprintf(epochBuf, sizeof(epochBuf), "%d:%02d", epochMins, epochSecs);
+                infoStr = std::to_string(aliveCount) + " Planets active | Eruption in " + epochBuf;
             }
 
             sf::Text infoText;
@@ -2288,12 +2276,12 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
     }
 
     // Join hint
-    if (m_phase == GamePhase::Lobby || m_phase == GamePhase::Playing) {
+    {
         auto r = resolve("join_hint", SCREEN_W, SCREEN_H);
         if (r.visible) {
             sf::Text joinHint;
             joinHint.setFont(m_font);
-            joinHint.setString("Type !join to play | !s to smash");
+            joinHint.setString("Type join to play | s to smash");
             joinHint.setFillColor(sf::Color(150, 150, 180, 160));
             joinHint.setOutlineColor(sf::Color(0, 0, 0, 120));
             joinHint.setOutlineThickness(1.0f);
@@ -2303,7 +2291,7 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
     }
 
     // Cosmic event warning bar
-    if (m_cosmicEventActive <= 0.0 && m_cosmicEventTimer < 10.0 && m_phase == GamePhase::Playing) {
+    if (m_cosmicEventActive <= 0.0 && m_cosmicEventTimer < 10.0) {
         auto r = resolve("event_warning", SCREEN_W, SCREEN_H);
         if (r.visible) {
             sf::Text warningText;
@@ -2338,7 +2326,7 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
         if (r.visible) {
             sf::Text warning;
             warning.setFont(m_font);
-            warning.setString("BLACK HOLE SURGE! SPAM !s TO ESCAPE!");
+                        warning.setString("BLACK HOLE SURGE! SPAM s TO ESCAPE!");
             warning.setCharacterSize(r.fontSize);
             warning.setFillColor(sf::Color(255, 50, 50, static_cast<sf::Uint8>(180 + pulse * 75)));
             warning.setOutlineColor(sf::Color(0, 0, 0, 220));
@@ -2378,142 +2366,24 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
 
 // ── Countdown ────────────────────────────────────────────────────────────────
 
-void GravityBrawl::renderCountdown(sf::RenderTarget& target) {
-    if (!m_fontLoaded) return;
-    auto r = resolve("countdown", SCREEN_W, SCREEN_H);
-    if (!r.visible) return;
-
-    int count = static_cast<int>(std::ceil(m_countdownTimer));
-    if (count <= 0) return;
-
-    sf::Text text;
-    text.setFont(m_font);
-    text.setString(std::to_string(count));
-    text.setCharacterSize(r.fontSize);
-    text.setFillColor(sf::Color(255, 255, 255, 230));
-    text.setOutlineColor(sf::Color(100, 50, 200, 200));
-    text.setOutlineThickness(4.0f);
-    sf::FloatRect bounds = text.getLocalBounds();
-    text.setOrigin(bounds.left + bounds.width / 2.0f, bounds.top + bounds.height / 2.0f);
-    text.setPosition(r.px, r.py);
-
-    float frac = static_cast<float>(m_countdownTimer - static_cast<int>(m_countdownTimer));
-    float scale = 1.0f + frac * 0.5f;
-    text.setScale(scale, scale);
-    target.draw(text);
-}
-
 // ── Game Over Screen ─────────────────────────────────────────────────────────
-
-void GravityBrawl::renderGameOverScreen(sf::RenderTarget& target) {
-    // Semi-transparent dark overlay
-    sf::RectangleShape overlay(sf::Vector2f(SCREEN_W, SCREEN_H));
-    overlay.setFillColor(sf::Color(0, 0, 0, 120));
-    target.draw(overlay);
-
-    if (!m_fontLoaded) return;
-
-    // Sort players by score descending
-    std::vector<const Planet*> ranked;
-    ranked.reserve(m_planets.size());
-    for (const auto& [id, p] : m_planets) {
-        if (isBot(id)) continue; // Skip bots from scoreboard
-        ranked.push_back(&p);
-    }
-    std::sort(ranked.begin(), ranked.end(),
-              [](const Planet* a, const Planet* b) { return a->score > b->score; });
-
-    float centerX = SCREEN_W / 2.0f;
-    float startY = SCREEN_H * 0.25f;
-
-    // Winner announcement
-    if (!ranked.empty()) {
-        sf::Text winnerText;
-        winnerText.setFont(m_font);
-        winnerText.setString(ranked[0]->displayName + " WINS!");
-        winnerText.setCharacterSize(fs(42));
-        winnerText.setFillColor(sf::Color(255, 215, 0));
-        winnerText.setOutlineColor(sf::Color(0, 0, 0, 220));
-        winnerText.setOutlineThickness(3.0f);
-        sf::FloatRect wb = winnerText.getLocalBounds();
-        winnerText.setOrigin(wb.left + wb.width / 2.0f, wb.top + wb.height / 2.0f);
-        winnerText.setPosition(centerX, startY);
-        target.draw(winnerText);
-        startY += fs(42) + 20.0f;
-    }
-
-    // Score header
-    {
-        sf::Text headerText;
-        headerText.setFont(m_font);
-        headerText.setString("FINAL STANDINGS");
-        headerText.setCharacterSize(fs(24));
-        headerText.setFillColor(sf::Color(200, 180, 255, 220));
-        headerText.setOutlineColor(sf::Color(0, 0, 0, 180));
-        headerText.setOutlineThickness(1.0f);
-        sf::FloatRect hb = headerText.getLocalBounds();
-        headerText.setOrigin(hb.left + hb.width / 2.0f, hb.top + hb.height / 2.0f);
-        headerText.setPosition(centerX, startY);
-        target.draw(headerText);
-        startY += fs(24) + 15.0f;
-    }
-
-    // Player rankings (top 8)
-    int maxDisplay = std::min(static_cast<int>(ranked.size()), 8);
-    for (int i = 0; i < maxDisplay; ++i) {
-        const Planet* p = ranked[i];
-
-        // Rank colors: gold, silver, bronze, then white
-        sf::Color rankColor;
-        if (i == 0)      rankColor = sf::Color(255, 215, 0);
-        else if (i == 1) rankColor = sf::Color(192, 192, 192);
-        else if (i == 2) rankColor = sf::Color(205, 127, 50);
-        else             rankColor = sf::Color(180, 180, 200);
-
-        std::string entry = "#" + std::to_string(i + 1) + "  " + p->displayName +
-                            "   " + std::to_string(p->score) + " pts  (" +
-                            std::to_string(p->kills) + " kills)";
-
-        sf::Text entryText;
-        entryText.setFont(m_font);
-        entryText.setString(entry);
-        entryText.setCharacterSize(fs(18));
-        entryText.setFillColor(rankColor);
-        entryText.setOutlineColor(sf::Color(0, 0, 0, 180));
-        entryText.setOutlineThickness(1.0f);
-        sf::FloatRect eb = entryText.getLocalBounds();
-        entryText.setOrigin(eb.left + eb.width / 2.0f, eb.top + eb.height / 2.0f);
-        entryText.setPosition(centerX, startY);
-        target.draw(entryText);
-
-        startY += fs(18) + 8.0f;
-    }
-}
 
 // ── IGame Interface ──────────────────────────────────────────────────────────
 
 bool GravityBrawl::isRoundComplete() const {
-    return m_phase == GamePhase::GameOver || m_phase == GamePhase::Lobby;
+    return false; // Endless mode — never ends
 }
 
 bool GravityBrawl::isGameOver() const {
-    return m_phase == GamePhase::GameOver;
+    return false; // Endless mode — never ends
 }
 
 nlohmann::json GravityBrawl::getState() const {
     nlohmann::json state;
-    state["phase"] = [&]() {
-        switch (m_phase) {
-        case GamePhase::Lobby:     return "lobby";
-        case GamePhase::Countdown: return "countdown";
-        case GamePhase::Playing:   return "playing";
-        case GamePhase::GameOver:  return "game_over";
-        }
-        return "unknown";
-    }();
-
+    state["phase"] = "playing";
     state["gameTimer"] = m_gameTimer;
-    state["gameDuration"] = m_gameDuration;
+    state["epochTimer"] = m_blackHoleEpochTimer;
+    state["epochDuration"] = m_epochDuration;
     state["cosmicEventActive"] = m_cosmicEventActive > 0.0;
     state["cosmicEventTimer"] = m_cosmicEventTimer;
     state["blackHoleGravity"] = currentBlackHoleGravity();
@@ -2543,9 +2413,12 @@ nlohmann::json GravityBrawl::getState() const {
 }
 
 float GravityBrawl::currentBlackHoleGravity() const {
-    float base = m_blackHoleBaseGravity + static_cast<float>(m_gameTimer) * m_blackHoleTimeGrowthFactor;
+    // Epoch-based: gravity ramps exponentially over the 15-minute cycle then resets at Void Eruption
+    double epochProgress = std::clamp(1.0 - (m_blackHoleEpochTimer / m_epochDuration), 0.0, 1.0);
+    float epochBonus = static_cast<float>(epochProgress * epochProgress) *
+                       (m_blackHoleGravityCap - m_blackHoleBaseGravity);
     float cappedBonus = std::min(m_blackHoleConsumedGravityBonus, m_blackHoleGravityCap * 0.5f);
-    return base + cappedBonus;
+    return std::min(m_blackHoleBaseGravity + epochBonus + cappedBonus, m_blackHoleGravityCap);
 }
 
 std::vector<std::pair<std::string, int>> GravityBrawl::getLeaderboard() const {
@@ -2561,9 +2434,9 @@ std::vector<std::pair<std::string, int>> GravityBrawl::getLeaderboard() const {
 
 nlohmann::json GravityBrawl::getCommands() const {
     return nlohmann::json::array({
-        {{"command", "!join"},  {"aliases", nlohmann::json::array({"!play"})},
+        {{"command", "join"},  {"aliases", nlohmann::json::array({"play"})},
          {"description", "Enter the orbit as a planet"}},
-        {{"command", "!smash"}, {"aliases", nlohmann::json::array({"!s"})},
+        {{"command", "smash"}, {"aliases", nlohmann::json::array({"s"})},
          {"description", "Dash forward / smash nearby planets. Spam 5x fast for SUPERNOVA!"}}
     });
 }
