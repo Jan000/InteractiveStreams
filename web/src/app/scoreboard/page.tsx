@@ -15,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +37,8 @@ import {
   Palette,
   LayoutDashboard,
   Pencil,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +58,9 @@ const defaultPanel = (title: string, dur = 10): ScoreboardPanelConfig => ({
   title_color: "#FFD700",
   name_color: "#AAAABC",
   points_color: "#58A6FF",
+  gold_color: "#FFD700",
+  silver_color: "#C8C8C8",
+  bronze_color: "#CD7F32",
 });
 
 const defaultConfig: ScoreboardConfig = {
@@ -75,6 +79,13 @@ export default function ScoreboardPage() {
   const [config, setConfig] = useState<ScoreboardConfig>(defaultConfig);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Collapsible panel sections
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({
+    alltime: true,
+    recent: false,
+    round: false,
+  });
 
   // Player management state
   const [players, setPlayers] = useState<PlayerEntry[]>([]);
@@ -185,7 +196,6 @@ export default function ScoreboardPage() {
     try {
       await api.deletePlayer(userId);
       toast.success("Player deleted");
-      // Also remove from hidden list if present
       setConfig((prev) => ({
         ...prev,
         hidden_players: prev.hidden_players.filter((id) => id !== userId),
@@ -196,8 +206,42 @@ export default function ScoreboardPage() {
     }
   };
 
+  const togglePanel = (panel: string) =>
+    setExpandedPanels((prev) => ({ ...prev, [panel]: !prev[panel] }));
+
+  // ── Color input helper ──────────────────────────────────────────────
+  const ColorField = ({
+    panel,
+    field,
+    label,
+  }: {
+    panel: "alltime" | "recent" | "round";
+    field: keyof ScoreboardPanelConfig;
+    label: string;
+  }) => {
+    const value = config[panel][field] as string;
+    return (
+      <div className="space-y-1">
+        <Label className="text-[10px] text-muted-foreground">{label}</Label>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="color"
+            value={value}
+            onChange={(e) => updatePanel(panel, field, e.target.value)}
+            className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent p-0.5"
+          />
+          <Input
+            className="h-7 text-[10px] font-mono flex-1"
+            value={value}
+            onChange={(e) => updatePanel(panel, field, e.target.value)}
+          />
+        </div>
+      </div>
+    );
+  };
+
   // ── Panel settings sub-component ────────────────────────────────────
-  const PanelSettings = ({
+  const PanelSection = ({
     panel,
     label,
     icon,
@@ -207,166 +251,179 @@ export default function ScoreboardPage() {
     icon: React.ReactNode;
   }) => {
     const p = config[panel];
+    const isExpanded = expandedPanels[panel];
+
     return (
-      <div className="space-y-4">
-        {/* Enable + Title row */}
-        <div className="flex items-center gap-4">
+      <div className="rounded-lg border">
+        {/* Panel header — always visible */}
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
+          onClick={() => togglePanel(panel)}
+        >
+          {icon}
+          <span className="text-sm font-medium flex-1 text-left">{label}</span>
           <div className="flex items-center gap-2">
-            {icon}
-            <span className="text-sm font-medium">{label}</span>
+            <Badge
+              variant={p.enabled ? "default" : "secondary"}
+              className="text-[10px]"
+            >
+              {p.enabled ? (p.top_n > 0 ? `Top ${p.top_n}` : "Disabled") : "Off"}
+            </Badge>
+            {isExpanded ? (
+              <ChevronDown className="size-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-4 text-muted-foreground" />
+            )}
           </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <Label className="text-xs text-muted-foreground">Enabled</Label>
-            <Switch
-              size="sm"
-              checked={p.enabled}
-              onCheckedChange={(v) => updatePanel(panel, "enabled", v)}
-            />
-          </div>
-        </div>
+        </button>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Title</Label>
-            <Input
-              className="h-8 text-sm"
-              value={p.title}
-              onChange={(e) => updatePanel(panel, "title", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              Duration (seconds)
-            </Label>
-            <NumericInput
-              className="h-8 text-sm"
-              min={1}
-              max={120}
-              value={p.duration_secs}
-              onChange={(v) => updatePanel(panel, "duration_secs", v)}
-            />
-          </div>
-        </div>
-
-        {/* Display settings */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              Entries (Top N)
-            </Label>
-            <NumericInput
-              className="h-8 text-sm"
-              integer
-              min={1}
-              max={20}
-              value={p.top_n}
-              onChange={(v) => updatePanel(panel, "top_n", v)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Font Size</Label>
-            <NumericInput
-              className="h-8 text-sm"
-              integer
-              min={8}
-              max={48}
-              value={p.font_size}
-              onChange={(v) => updatePanel(panel, "font_size", v)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              Box Width (%)
-            </Label>
-            <NumericInput
-              className="h-8 text-sm"
-              min={10}
-              max={80}
-              value={p.box_width_pct}
-              onChange={(v) => updatePanel(panel, "box_width_pct", v)}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              Position X (%)
-            </Label>
-            <NumericInput
-              className="h-8 text-sm"
-              min={0}
-              max={100}
-              value={p.pos_x_pct}
-              onChange={(v) => updatePanel(panel, "pos_x_pct", v)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              Position Y (%)
-            </Label>
-            <NumericInput
-              className="h-8 text-sm"
-              min={0}
-              max={100}
-              value={p.pos_y_pct}
-              onChange={(v) => updatePanel(panel, "pos_y_pct", v)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Opacity</Label>
-            <NumericInput
-              className="h-8 text-sm"
-              min={0}
-              max={1}
-              step={0.05}
-              value={p.opacity}
-              onChange={(v) => updatePanel(panel, "opacity", v)}
-            />
-          </div>
-        </div>
-
-        {/* Colors */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Palette className="size-3.5 text-muted-foreground" />
-            <Label className="text-xs font-medium">Colors</Label>
-          </div>
-          <div className="grid grid-cols-5 gap-3">
-            {(
-              [
-                ["bg_color", "Background"],
-                ["border_color", "Border"],
-                ["title_color", "Title"],
-                ["name_color", "Name"],
-                ["points_color", "Points"],
-              ] as const
-            ).map(([field, label]) => (
-              <div key={field} className="space-y-1">
-                <Label className="text-[10px] text-muted-foreground">
-                  {label}
-                </Label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={p[field]}
-                    onChange={(e) =>
-                      updatePanel(panel, field, e.target.value)
-                    }
-                    className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent p-0.5"
-                  />
+        {/* Collapsible panel body */}
+        {isExpanded && (
+          <div className="border-t px-4 pb-4 pt-3 space-y-4">
+            {/* Enable + Title */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 flex-1">
+                <div className="space-y-1 flex-1">
+                  <Label className="text-xs text-muted-foreground">Title</Label>
                   <Input
-                    className="h-7 text-[10px] font-mono flex-1"
-                    value={p[field]}
-                    onChange={(e) =>
-                      updatePanel(panel, field, e.target.value)
-                    }
+                    className="h-8 text-sm"
+                    value={p.title}
+                    onChange={(e) => updatePanel(panel, "title", e.target.value)}
                   />
                 </div>
               </div>
-            ))}
+              <div className="flex items-center gap-2 pt-5">
+                <Label className="text-xs text-muted-foreground">Enabled</Label>
+                <Switch
+                  size="sm"
+                  checked={p.enabled}
+                  onCheckedChange={(v) => updatePanel(panel, "enabled", v)}
+                />
+              </div>
+            </div>
+
+            {/* Display settings */}
+            <div className="grid grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Duration (s)
+                </Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  min={0}
+                  max={120}
+                  value={p.duration_secs}
+                  onChange={(v) => updatePanel(panel, "duration_secs", v)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Entries
+                </Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  integer
+                  min={0}
+                  max={20}
+                  value={p.top_n}
+                  onChange={(v) => updatePanel(panel, "top_n", v)}
+                />
+                <p className="text-[9px] text-muted-foreground">0 = hide panel</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Font Size</Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  integer
+                  min={8}
+                  max={48}
+                  value={p.font_size}
+                  onChange={(v) => updatePanel(panel, "font_size", v)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Opacity</Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={p.opacity}
+                  onChange={(v) => updatePanel(panel, "opacity", v)}
+                />
+              </div>
+            </div>
+
+            {/* Position & Size */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Position X (%)
+                </Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  min={0}
+                  max={100}
+                  value={p.pos_x_pct}
+                  onChange={(v) => updatePanel(panel, "pos_x_pct", v)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Position Y (%)
+                </Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  min={0}
+                  max={100}
+                  value={p.pos_y_pct}
+                  onChange={(v) => updatePanel(panel, "pos_y_pct", v)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Box Width (%)
+                </Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  min={10}
+                  max={80}
+                  value={p.box_width_pct}
+                  onChange={(v) => updatePanel(panel, "box_width_pct", v)}
+                />
+              </div>
+            </div>
+
+            {/* Colors — Panel colors */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Palette className="size-3.5 text-muted-foreground" />
+                <Label className="text-xs font-medium">Panel Colors</Label>
+              </div>
+              <div className="grid grid-cols-5 gap-3">
+                <ColorField panel={panel} field="bg_color" label="Background" />
+                <ColorField panel={panel} field="border_color" label="Border" />
+                <ColorField panel={panel} field="title_color" label="Title" />
+                <ColorField panel={panel} field="name_color" label="Name" />
+                <ColorField panel={panel} field="points_color" label="Points" />
+              </div>
+            </div>
+
+            {/* Colors — Rank colors */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Crown className="size-3.5 text-muted-foreground" />
+                <Label className="text-xs font-medium">Rank Colors (Top 3)</Label>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <ColorField panel={panel} field="gold_color" label="1st — Gold" />
+                <ColorField panel={panel} field="silver_color" label="2nd — Silver" />
+                <ColorField panel={panel} field="bronze_color" label="3rd — Bronze" />
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -383,6 +440,11 @@ export default function ScoreboardPage() {
     );
   };
 
+  // Count active panels
+  const activePanels = [config.alltime, config.recent, config.round].filter(
+    (p) => p.enabled && p.top_n > 0
+  ).length;
+
   // ── Render ──────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -393,9 +455,12 @@ export default function ScoreboardPage() {
           <div>
             <h1 className="text-2xl font-bold">Scoreboard</h1>
             <p className="text-sm text-muted-foreground">
-              Overlay configuration &amp; player management
+              Overlay configuration, animations &amp; player management
             </p>
           </div>
+          <Badge variant="secondary" className="ml-2">
+            {activePanels}/3 panels active
+          </Badge>
         </div>
         <Button onClick={handleSave} disabled={!dirty || saving} size="sm">
           <Save className="size-4 mr-1" />
@@ -403,15 +468,18 @@ export default function ScoreboardPage() {
         </Button>
       </div>
 
-      {/* Global Settings */}
+      {/* Global Settings + Animation */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Settings2 className="size-4 text-muted-foreground" />
             <CardTitle className="text-sm font-medium">
-              Global Settings
+              Global Settings &amp; Animation
             </CardTitle>
           </div>
+          <CardDescription className="text-xs">
+            Controls that affect all panels
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
@@ -427,6 +495,9 @@ export default function ScoreboardPage() {
                 value={config.fade_secs}
                 onChange={(v) => updateGlobal("fade_secs", v)}
               />
+              <p className="text-[9px] text-muted-foreground">
+                Fade between panels. 0 = instant switch.
+              </p>
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">
@@ -440,8 +511,8 @@ export default function ScoreboardPage() {
                 value={config.chat_interval}
                 onChange={(v) => updateGlobal("chat_interval", v)}
               />
-              <p className="text-[10px] text-muted-foreground">
-                0 = disabled
+              <p className="text-[9px] text-muted-foreground">
+                Post scoreboard to chat. 0 = disabled.
               </p>
             </div>
             <div className="space-y-1">
@@ -456,12 +527,15 @@ export default function ScoreboardPage() {
                 value={config.recent_hours}
                 onChange={(v) => updateGlobal("recent_hours", v)}
               />
+              <p className="text-[9px] text-muted-foreground">
+                Time window for &ldquo;Recent&rdquo; panel.
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Panel Config Tabs */}
+      {/* Panel Configurations — all three stacked */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
@@ -471,47 +545,26 @@ export default function ScoreboardPage() {
             </CardTitle>
           </div>
           <CardDescription className="text-xs">
-            Configure each scoreboard panel type independently
+            Each panel can be individually enabled, styled, and positioned.
+            Set entries to 0 to hide a panel.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="alltime">
-            <TabsList className="mb-4">
-              <TabsTrigger value="alltime">
-                <Trophy className="size-3.5 mr-1" />
-                All-Time
-              </TabsTrigger>
-              <TabsTrigger value="recent">
-                <Clock className="size-3.5 mr-1" />
-                Recent
-              </TabsTrigger>
-              <TabsTrigger value="round">
-                <Star className="size-3.5 mr-1" />
-                Current Round
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="alltime">
-              <PanelSettings
-                panel="alltime"
-                label="All-Time Leaderboard"
-                icon={<Trophy className="size-4 text-yellow-400" />}
-              />
-            </TabsContent>
-            <TabsContent value="recent">
-              <PanelSettings
-                panel="recent"
-                label="Recent Leaderboard"
-                icon={<Clock className="size-4 text-blue-400" />}
-              />
-            </TabsContent>
-            <TabsContent value="round">
-              <PanelSettings
-                panel="round"
-                label="Current Round"
-                icon={<Star className="size-4 text-emerald-400" />}
-              />
-            </TabsContent>
-          </Tabs>
+        <CardContent className="space-y-3">
+          <PanelSection
+            panel="alltime"
+            label="All-Time Leaderboard"
+            icon={<Trophy className="size-4 text-yellow-400" />}
+          />
+          <PanelSection
+            panel="recent"
+            label="Recent Leaderboard"
+            icon={<Clock className="size-4 text-blue-400" />}
+          />
+          <PanelSection
+            panel="round"
+            label="Current Round"
+            icon={<Star className="size-4 text-emerald-400" />}
+          />
         </CardContent>
       </Card>
 
@@ -668,7 +721,7 @@ export default function ScoreboardPage() {
               </CardTitle>
             </div>
             <CardDescription className="text-xs">
-              Live preview
+              Live preview — auto-refreshes every 5s
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -713,7 +766,7 @@ export default function ScoreboardPage() {
               <CardTitle className="text-sm">{config.alltime.title}</CardTitle>
             </div>
             <CardDescription className="text-xs">
-              Live preview
+              Live preview — auto-refreshes every 5s
             </CardDescription>
           </CardHeader>
           <CardContent>

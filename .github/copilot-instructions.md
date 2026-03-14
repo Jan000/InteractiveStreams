@@ -615,7 +615,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 5. **Web-Dashboard**: Statische Dateien aus `dashboard/` neben Executable. Next.js Static Export, gebaut mit `bun run build`. **Immer `bun` verwenden** (nicht npm/yarn).
 6. **API-Auth**: API-Key (`web.api_key`) oder Password-Login (Session-basiert, `Sha256.h`). `/api/auth/*` immer erlaubt. `--reset-password` für Recovery.
 7. **Docker/CI**: Multi-Stage Dockerfile (Bun → Ubuntu C++ → Ubuntu Runtime + FFmpeg/Xvfb). Named Volume für SQLite. GitHub Actions: 4 Jobs (Dashboard, Linux, Windows, Docker) auf Push/PR zu `main`.
-8. **Commits**: Beschreibende Commits nach jeder Änderung; README.md und diese Datei aktualisieren.
+8. **Commits & Push**: Beschreibende Commits nach jeder Änderung erstellen **und auf `main` pushen**. README.md und diese Datei bei Bedarf aktualisieren.
 9. **Git Hash Version**: `IS_GIT_HASH` Compile-Definition. `/api/status` → `version: "0.2.0+<hash>"`, `gitHash`.
 10. **Config Export/Import**: `GET /api/config/export` → JSON-Snapshot (`_export_version: 1`). `POST /api/config/import` → restauriert und fordert Restart.
 11. **Per-Game Settings**: `configure(json)` / `getSettings()` → `game_settings.<game_id>`. API: `GET/PUT /api/games/:id/settings`.

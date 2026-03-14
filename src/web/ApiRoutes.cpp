@@ -441,6 +441,19 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         res.set_content(R"({"success":true})", "application/json");
     });
 
+    // Manually trigger platform info update (Twitch/YouTube title/category)
+    server.Post(R"(/api/streams/([^/]+)/update-metadata)", [&app](const httplib::Request& req, httplib::Response& res) {
+        std::string id = pathParam(req);
+        auto* stream = app.streamManager().getStream(id);
+        if (!stream) {
+            res.status = 404;
+            res.set_content(R"({"error":"Stream not found"})", "application/json");
+            return;
+        }
+        stream->triggerPlatformInfoUpdate();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
     // Switch the game running on a specific stream
     server.Post(R"(/api/streams/([^/]+)/game)", [&app](const httplib::Request& req, httplib::Response& res) {
         try {

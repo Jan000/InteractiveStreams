@@ -362,25 +362,31 @@ export default function GamesPage() {
                           </Select>
 
                           {/* Color */}
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="color"
-                              value={el.color ? (el.color.length >= 7 ? el.color.slice(0, 7) : "#ffffff") : "#ffffff"}
-                              onChange={(e) => {
-                                const hex = e.target.value.toUpperCase();
-                                // Preserve existing alpha or default to FF
-                                const alpha = el.color && el.color.length === 9 ? el.color.slice(7) : "FF";
-                                updateTextElement(game.id, el.id, "color", hex + alpha);
-                              }}
-                              className="h-8 w-8 rounded border cursor-pointer p-0.5"
-                            />
-                            <Input
-                              value={el.color || ""}
-                              onChange={(e) => updateTextElement(game.id, el.id, "color", e.target.value)}
-                              placeholder="#RGBA"
-                              className="h-8 text-xs w-[60px] font-mono"
-                            />
-                          </div>
+                          {(() => {
+                            const defaultEl = (textDefaults[game.id] || []).find(d => d.id === el.id);
+                            const defaultColor = defaultEl?.color || "";
+                            const displayColor = el.color || defaultColor;
+                            return (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="color"
+                                  value={displayColor ? (displayColor.length >= 7 ? displayColor.slice(0, 7) : "#ffffff") : "#ffffff"}
+                                  onChange={(e) => {
+                                    const hex = e.target.value.toUpperCase();
+                                    const alpha = el.color && el.color.length === 9 ? el.color.slice(7) : "FF";
+                                    updateTextElement(game.id, el.id, "color", hex + alpha);
+                                  }}
+                                  className="h-8 w-8 rounded border cursor-pointer p-0.5"
+                                />
+                                <Input
+                                  value={el.color || ""}
+                                  onChange={(e) => updateTextElement(game.id, el.id, "color", e.target.value)}
+                                  placeholder={defaultColor || "Game default"}
+                                  className="h-8 text-xs w-[80px] font-mono"
+                                />
+                              </div>
+                            );
+                          })()}
 
                           {/* Visible toggle */}
                           <div className="flex justify-center">

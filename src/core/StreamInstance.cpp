@@ -645,11 +645,14 @@ void StreamInstance::renderGlobalScoreboard() {
     sf::Color ptsColor    = hexToColor(pc->pointsColor, alpha);
     sf::Color nameBaseCol = hexToColor(pc->nameColor, alpha);
 
-    // Rank-specific name colors (gold/silver/bronze for top 3)
+    // Rank-specific name colors (configurable gold/silver/bronze for top 3)
+    sf::Color goldCol   = hexToColor(pc->goldColor, alpha);
+    sf::Color silverCol = hexToColor(pc->silverColor, alpha);
+    sf::Color bronzeCol = hexToColor(pc->bronzeColor, alpha);
     auto nameColorForRank = [&](int rank) -> sf::Color {
-        if (rank == 1) return sf::Color(255, 215, 0, alpha);   // Gold
-        if (rank == 2) return sf::Color(200, 200, 200, alpha); // Silver
-        if (rank == 3) return sf::Color(205, 127, 50, alpha);  // Bronze
+        if (rank == 1) return goldCol;
+        if (rank == 2) return silverCol;
+        if (rank == 3) return bronzeCol;
         return nameBaseCol;
     };
 
@@ -841,7 +844,36 @@ void StreamInstance::sendScoreboardToChat() {
 
 // ── Platform info update (Twitch / YouTube) ───────────────────────────────────
 
+/// Replace placeholders like {game_name}, {game_id}, {stream_name}, {player_count}
+static std::string resolvePlaceholders(const std::string& text,
+                                        const std::string& gameId,
+                                        const std::string& gameName,
+                                        const std::string& streamName,
+                                        int playerCount) {
+    if (text.empty()) return text;
+    std::string result = text;
+    auto replaceAll = [&](const std::string& from, const std::string& to) {
+        size_t pos = 0;
+        while ((pos = result.find(from, pos)) != std::string::npos) {
+            result.replace(pos, from.length(), to);
+            pos += to.length();
+        }
+    };
+    replaceAll("{game_name}", gameName);
+    replaceAll("{game_id}", gameId);
+    replaceAll("{stream_name}", streamName);
+    replaceAll("{player_count}", std::to_string(playerCount));
+    return result;
+}
+
 void StreamInstance::updatePlatformInfo(const std::string& gameId) {
+    // Resolve game display name for placeholders
+    auto* activeGame = m_gameManager->activeGame();
+    std::string gameName = activeGame ? activeGame->displayName() : gameId;
+    int playerCount = activeGame
+        ? static_cast<int>(activeGame->getLeaderboard().size())
+        : 0;
+
     // Look up per-game platform names from config
     std::string twitchCategory, twitchTitle, youtubeTitle;
     {
@@ -869,6 +901,11 @@ void StreamInstance::updatePlatformInfo(const std::string& gameId) {
     }
     if (youtubeDescription.empty() && !m_config.description.empty())
         youtubeDescription = m_config.description;
+
+    // Resolve placeholders in all text fields
+    twitchTitle = resolvePlaceholders(twitchTitle, gameId, gameName, m_config.name, playerCount);
+    youtubeTitle = resolvePlaceholders(youtubeTitle, gameId, gameName, m_config.name, playerCount);
+    youtubeDescription = resolvePlaceholders(youtubeDescription, gameId, gameName, m_config.name, playerCount);
 
     // If no platform names configured, nothing to do
     if (twitchCategory.empty() && twitchTitle.empty() && youtubeTitle.empty()) {

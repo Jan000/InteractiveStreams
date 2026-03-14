@@ -22,6 +22,9 @@ struct ScoreboardPanelConfig {
     std::string titleColor   = "#FFD700";
     std::string nameColor    = "#AAAABC";
     std::string pointsColor  = "#58A6FF";
+    std::string goldColor    = "#FFD700";
+    std::string silverColor  = "#C8C8C8";
+    std::string bronzeColor  = "#CD7F32";
 
     nlohmann::json toJson() const {
         return {
@@ -38,7 +41,10 @@ struct ScoreboardPanelConfig {
             {"border_color",  borderColor},
             {"title_color",   titleColor},
             {"name_color",    nameColor},
-            {"points_color",  pointsColor}
+            {"points_color",  pointsColor},
+            {"gold_color",    goldColor},
+            {"silver_color",  silverColor},
+            {"bronze_color",  bronzeColor}
         };
     }
 
@@ -63,6 +69,9 @@ inline ScoreboardPanelConfig ScoreboardPanelConfig::fromJson(
     c.titleColor   = j.value("title_color",   def.titleColor);
     c.nameColor    = j.value("name_color",     def.nameColor);
     c.pointsColor  = j.value("points_color",  def.pointsColor);
+    c.goldColor    = j.value("gold_color",    def.goldColor);
+    c.silverColor  = j.value("silver_color",  def.silverColor);
+    c.bronzeColor  = j.value("bronze_color",  def.bronzeColor);
     return c;
 }
 

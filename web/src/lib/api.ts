@@ -128,6 +128,9 @@ export interface ScoreboardPanelConfig {
   title_color: string;
   name_color: string;
   points_color: string;
+  gold_color: string;
+  silver_color: string;
+  bronze_color: string;
 }
 
 export interface ScoreboardConfig {
@@ -334,6 +337,8 @@ export const api = {
     post<{ success: boolean }>(`/api/streams/${id}/game`, { game, mode }),
   cancelSwitch: (id: string) =>
     post<{ success: boolean }>(`/api/streams/${id}/cancel-switch`),
+  triggerMetadataUpdate: (id: string) =>
+    post<{ success: boolean }>(`/api/streams/${id}/update-metadata`),
 
   // Games
   getGames: () => get<GameInfo[]>("/api/games"),

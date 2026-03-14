@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Link as LinkIcon,
   Layers,
+  Upload,
 } from "lucide-react";
 import type { StreamState, GameInfo, ChannelState, StreamProfile } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -356,6 +357,15 @@ export function StreamCard({
       onRefresh?.();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleUpdateMetadata = async () => {
+    try {
+      await api.triggerMetadataUpdate(stream.id);
+      toast.success("Metadata update triggered");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update metadata");
     }
   };
 
@@ -721,14 +731,18 @@ export function StreamCard({
             <div className="space-y-2 rounded-md border p-3">
               <Label className="text-xs font-semibold">Per-Game Settings <ProfileBadge field="game_descriptions" /></Label>
               <p className="text-[10px] text-muted-foreground">
-                Set per-game descriptions, info messages, font scales, and player limits.
+                Set per-game descriptions, titles, and platform names.
+                Placeholders: <code className="text-[9px] font-mono bg-muted px-1 rounded">{"{game_name}"}</code>{" "}
+                <code className="text-[9px] font-mono bg-muted px-1 rounded">{"{game_id}"}</code>{" "}
+                <code className="text-[9px] font-mono bg-muted px-1 rounded">{"{stream_name}"}</code>{" "}
+                <code className="text-[9px] font-mono bg-muted px-1 rounded">{"{player_count}"}</code>
               </p>
               {games.map((g) => (
                 <div key={g.id} className="space-y-1 rounded border p-2">
                   <span className="text-xs font-medium">{g.name}</span>
                   <Textarea
                     className="min-h-[60px] text-xs"
-                    placeholder="Stream description for this game…"
+                    placeholder={`Stream description (e.g. Playing {game_name} live!)`}
                     value={gameDescriptions[g.id] ?? ""}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -813,7 +827,7 @@ export function StreamCard({
                     />
                     <Input
                       className="h-7 text-xs"
-                      placeholder="Twitch Stream Title"
+                      placeholder={`Twitch Title (e.g. 🎮 {game_name} Live!)`}
                       value={gameTwitchTitles[g.id] ?? ""}
                       onChange={(e) => {
                         const v = e.target.value;
@@ -827,7 +841,7 @@ export function StreamCard({
                     />
                     <Input
                       className="h-7 text-xs"
-                      placeholder="YouTube Stream Title"
+                      placeholder={`YouTube Title (e.g. 🎮 {game_name} Live!)`}
                       value={gameYoutubeTitles[g.id] ?? ""}
                       onChange={(e) => {
                         const v = e.target.value;
@@ -1077,16 +1091,34 @@ export function StreamCard({
               </div>
             </div>
 
-            {/* Save button */}
-            <Button
-              size="sm"
-              className="w-full gap-1"
-              disabled={!dirty || saving}
-              onClick={handleSave}
-            >
-              <Save className="size-3.5" />
-              {saving ? "Saving…" : "Save Settings"}
-            </Button>
+            {/* Save + Update Metadata */}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 gap-1"
+                disabled={!dirty || saving}
+                onClick={handleSave}
+              >
+                <Save className="size-3.5" />
+                {saving ? "Saving…" : "Save Settings"}
+              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={handleUpdateMetadata}
+                  >
+                    <Upload className="size-3.5" />
+                    Update Metadata
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Push current title/description/category to Twitch &amp; YouTube now
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         )}
 
