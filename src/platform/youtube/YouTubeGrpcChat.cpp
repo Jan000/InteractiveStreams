@@ -52,15 +52,13 @@ void YouTubeGrpcChat::start(const std::string& apiKey,
 }
 
 void YouTubeGrpcChat::stop() {
-    if (!m_running.load()) return;
+    m_running = false;  // Signal streamLoop to exit (idempotent)
 
-    m_running = false;
+    std::lock_guard<std::mutex> lock(m_stopMutex);
     if (m_thread.joinable()) {
         m_thread.join();
     }
     m_connected = false;
-
-    spdlog::info("[YouTube gRPC] Stopped.");
 }
 
 void YouTubeGrpcChat::updateToken(const std::string& newToken) {
@@ -333,6 +331,7 @@ void YouTubeGrpcChat::streamLoop() {
         }
     }
 
+    m_running = false;  // Ensure isRunning() reflects that the thread has exited
     m_connected = false;
     spdlog::info("[YouTube gRPC] Stream loop exited.");
 }

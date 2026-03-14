@@ -118,17 +118,27 @@ void YoutubePlatform::disconnect() {
     m_shouldRun = false;
 
 #ifdef IS_YOUTUBE_GRPC_ENABLED
-    // Stop gRPC streaming first (it may be blocking the poll thread)
+    m_grpcActive = false;
+#endif
+
+    // Join the poll thread first.  tryGrpcStream() on that thread owns the
+    // m_grpcChat lifecycle and will call stop() + reset() before returning.
+    // Touching m_grpcChat from this (web) thread before the join would be a
+    // data race with the poll thread.
+    if (m_thread.joinable()) {
+        m_thread.join();
+    }
+
+#ifdef IS_YOUTUBE_GRPC_ENABLED
+    // Safety net: the poll thread should have cleaned up already, but
+    // ensure m_grpcChat is released.  This is safe because the poll
+    // thread has been joined above.
     if (m_grpcChat) {
         m_grpcChat->stop();
         m_grpcChat.reset();
     }
-    m_grpcActive = false;
 #endif
 
-    if (m_thread.joinable()) {
-        m_thread.join();
-    }
     m_connected = false;
     m_nextPageToken.clear();
 

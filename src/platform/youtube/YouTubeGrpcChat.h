@@ -99,6 +99,7 @@ private:
     std::atomic<bool>   m_quotaExhausted{false};
     std::atomic<size_t> m_messagesReceived{0};
     std::thread         m_thread;
+    std::mutex          m_stopMutex;  ///< Serialises concurrent stop() calls
 
     // Pagination – carried across reconnects
     std::string m_nextPageToken;

@@ -55,6 +55,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ENV CCACHE_DIR=/ccache
 ENV CCACHE_MAXSIZE=2G
 ENV CCACHE_COMPRESS=1
+ENV CCACHE_BASEDIR=/app
+ENV CCACHE_NOHASHDIR=1
 ENV CMAKE_C_COMPILER_LAUNCHER=ccache
 ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
 
@@ -72,7 +74,10 @@ COPY cmake/ cmake/
 # FETCHCONTENT_BASE_DIR points to a persistent BuildKit cache volume so that
 # all external dependencies (SFML, Box2D, spdlog, gRPC, etc.) are downloaded
 # and compiled ONCE and reused across every subsequent build.
+# ccache is also mounted here because FetchContent may compile dependencies
+# (e.g. try_compile checks) during configure.
 RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
+    --mount=type=cache,id=is-ccache,target=/ccache \
     export EFFECTIVE_GIT_HASH="${GIT_COMMIT_HASH:-${SOURCE_COMMIT:-${COOLIFY_GIT_COMMIT_SHA:-${COMMIT_SHA:-${GITHUB_SHA}}}}}" && \
     cmake -B build \
           -DCMAKE_BUILD_TYPE=Release \
@@ -92,7 +97,10 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
 # config/ are not present – that's expected; we copy them in the runtime stage.
 RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
     --mount=type=cache,id=is-ccache,target=/ccache \
-    cmake --build build --config Release -j$(nproc)
+    ccache --zero-stats > /dev/null 2>&1 || true && \
+    cmake --build build --config Release -j$(nproc) && \
+    echo "=== ccache statistics ===" && \
+    ccache --show-stats 2>/dev/null || true
 
 # ── Stage 3: Runtime image ───────────────────────────────────────────────────
 FROM ubuntu:24.04 AS runtime

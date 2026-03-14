@@ -8,3 +8,10 @@ web/.next/
 *.obj
 *.pdb
 data/
+logs/
+docs/
+tests/
+*.txt
+.github/
+.vscode/
+.env*
