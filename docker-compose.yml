@@ -23,7 +23,7 @@ services:
     #   - "8080:8080"
     volumes:
       - streams-data:/home/streams/app/data          # SQLite databases (persistent)
-      - streams-audio:/home/streams/app/audio        # External audio files (music + SFX)
+      - /home/streams/audio:/home/streams/app/audio   # External audio files (music + SFX)
     environment:
       - DISPLAY=:99
       - GIT_COMMIT_HASH=${GIT_COMMIT_HASH:-}
@@ -37,6 +37,4 @@ services:
 
 volumes:
   streams-data:
-    driver: local
-  streams-audio:
     driver: local
