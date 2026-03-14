@@ -44,7 +44,7 @@ void AudioManager::scanMusicDirectory(const std::string& directory) {
         return;
     }
 
-    for (const auto& entry : fs::recursive_directory_iterator(directory)) {
+    for (const auto& entry : fs::directory_iterator(directory)) {
         if (!entry.is_regular_file()) continue;
         auto ext = entry.path().extension().string();
         if (isMusicFile(ext)) {
