@@ -51,9 +51,17 @@ void Background::update(float dt) {
     }
 }
 
-void Background::render(sf::RenderTarget& target) {
-    // Single batched draw call for all stars — no per-star overhead
-    target.draw(m_vertices);
+void Background::render(sf::RenderTarget& target, float zoom,
+                        float cx, float cy) {
+    if (zoom != 1.0f && zoom > 0.0f) {
+        sf::Transform xf;
+        xf.translate(cx, cy);
+        xf.scale(zoom, zoom);
+        xf.translate(-cx, -cy);
+        target.draw(m_vertices, sf::RenderStates(xf));
+    } else {
+        target.draw(m_vertices);
+    }
 }
 
 } // namespace is::rendering

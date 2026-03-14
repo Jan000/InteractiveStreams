@@ -17,7 +17,10 @@ public:
     void update(float dt);
 
     /// Render the background.
-    void render(sf::RenderTarget& target);
+    /// @param zoom   Camera zoom factor (1.0 = default, >1 = zoomed in).
+    /// @param cx, cy Screen-space center for zoom pivot.
+    void render(sf::RenderTarget& target, float zoom = 1.0f,
+                float cx = 0.0f, float cy = 0.0f);
 
 private:
     struct BackgroundStar {

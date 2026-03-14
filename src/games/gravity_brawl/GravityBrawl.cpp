@@ -2072,9 +2072,23 @@ void GravityBrawl::updateCameraZoom(float dt) {
     float zoomV   = (neededV > 0.01f) ? (halfH / neededV) : m_cameraMaxZoom;
 
     float rawZoom = std::min(zoomH, zoomV);
-    // Amplify deviation from 1.0 so the zoom effect is perceptible on stream
-    float amplified = 1.0f + (rawZoom - 1.0f) * m_cameraZoomAmplify;
-    m_cameraTargetZoom = std::clamp(amplified, m_cameraMinZoom, m_cameraMaxZoom);
+
+    // The "neutral" zoom at normal orbit spread.  When all players orbit
+    // at the standard radius the camera should produce zoom ≈ 1.0 so the
+    // default view is unchanged.  Deviations (cluster / spread) are then
+    // amplified around this reference.
+    const float orbitExtent = ARENA_RADIUS * m_spawnRadiusFactor
+                            + 0.5f              // average planet visual radius
+                            + m_cameraBufferMeters;
+    const float refZoom = std::min(halfW / orbitExtent, halfH / orbitExtent);
+
+    // Ratio: 1.0 = players at orbit, >1 = clustered, <1 = spread
+    float ratio = (refZoom > 0.01f) ? (rawZoom / refZoom) : 1.0f;
+
+    // Amplify the deviation from the orbit reference
+    float amplifiedRatio = 1.0f + (ratio - 1.0f) * m_cameraZoomAmplify;
+
+    m_cameraTargetZoom = std::clamp(amplifiedRatio, m_cameraMinZoom, m_cameraMaxZoom);
 
     // Smooth interpolation toward target
     float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);
@@ -2086,8 +2100,9 @@ void GravityBrawl::updateCameraZoom(float dt) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
-    // Background
-    m_background.render(target);
+    // Background (zoomed with camera for parallax immersion)
+    m_background.render(target, m_cameraZoom,
+                        SCREEN_W / 2.0f, SCREEN_H / 2.0f);
 
     // Orbit guides (faint circle showing safe orbit)
     renderOrbitTrails(target);

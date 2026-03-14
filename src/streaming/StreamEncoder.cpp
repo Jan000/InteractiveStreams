@@ -295,9 +295,13 @@ bool StreamEncoder::start() {
         return false;
     }
 
-    // Set a stdio buffer – large enough to batch small writes, small enough
-    // to avoid accumulating latency in the pipe.
-    setvbuf(m_pipe, nullptr, _IOFBF, 256 * 1024); // 256 KB buffered I/O
+    // Set a stdio buffer large enough to hold at least one full YUV420P
+    // frame.  This prevents the encoder thread from blocking on the very
+    // first fwrite() while FFmpeg is still opening its audio input, which
+    // could delay the m_streamSyncReady flag and keep YouTube in "preparing."
+    const size_t yuvSize = static_cast<size_t>(m_width) * m_height * 3 / 2;
+    const size_t pipeBuffer = std::max<size_t>(yuvSize + 4096, 256 * 1024);
+    setvbuf(m_pipe, nullptr, _IOFBF, pipeBuffer);
 
     m_running = true;
     m_streamSyncReady = false;
