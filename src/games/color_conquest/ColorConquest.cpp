@@ -94,39 +94,43 @@ void ColorConquest::onChatMessage(const platform::ChatMessage& msg) {
     // Handle stream events (subscribe, superchat, etc.)
     handleStreamEvent(msg);
 
-    if (msg.text.empty() || msg.text[0] != '!') return;
+    if (msg.text.empty()) return;
 
     std::istringstream iss(msg.text);
     std::string cmd;
     iss >> cmd;
+
+    // Strip optional leading '!' so commands work with or without it
+    if (!cmd.empty() && cmd[0] == '!') cmd = cmd.substr(1);
+
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
     bool validCommand = false;
 
-    if (cmd == "!join" || cmd == "!play") {
+    if (cmd == "join" || cmd == "play") {
         std::string teamArg;
         iss >> teamArg;
         std::transform(teamArg.begin(), teamArg.end(), teamArg.begin(), ::tolower);
         cmdJoin(msg.userId, msg.displayName, teamArg);
         validCommand = true;
     }
-    else if (cmd == "!up"    || cmd == "!u" || cmd == "!w" || cmd == "!north") {
+    else if (cmd == "up"    || cmd == "u" || cmd == "w" || cmd == "north") {
         cmdVote(msg.userId, Direction::Up);
         validCommand = m_playerTeam.count(msg.userId) > 0;
     }
-    else if (cmd == "!down"  || cmd == "!d" || cmd == "!s" || cmd == "!south") {
+    else if (cmd == "down"  || cmd == "d" || cmd == "s" || cmd == "south") {
         cmdVote(msg.userId, Direction::Down);
         validCommand = m_playerTeam.count(msg.userId) > 0;
     }
-    else if (cmd == "!left"  || cmd == "!l" || cmd == "!a" || cmd == "!west") {
+    else if (cmd == "left"  || cmd == "l" || cmd == "a" || cmd == "west") {
         cmdVote(msg.userId, Direction::Left);
         validCommand = m_playerTeam.count(msg.userId) > 0;
     }
-    else if (cmd == "!right" || cmd == "!r" || cmd == "!e" || cmd == "!east") {
+    else if (cmd == "right" || cmd == "r" || cmd == "e" || cmd == "east") {
         cmdVote(msg.userId, Direction::Right);
         validCommand = m_playerTeam.count(msg.userId) > 0;
     }
-    else if (cmd == "!emote") {
+    else if (cmd == "emote") {
         std::string emote;
         iss >> emote;
         cmdEmote(msg.userId, emote);

@@ -117,49 +117,52 @@ void ChaosArena::onChatMessage(const platform::ChatMessage& msg) {
     // Handle stream events (subscribe, superchat, etc.)
     handleStreamEvent(msg);
 
-    if (msg.text.empty() || msg.text[0] != '!') return;
+    if (msg.text.empty()) return;
 
     // Parse command
     std::istringstream iss(msg.text);
     std::string cmd;
     iss >> cmd;
 
+    // Strip optional leading '!' so commands work with or without it
+    if (!cmd.empty() && cmd[0] == '!') cmd = cmd.substr(1);
+
     // Convert to lowercase
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
 
     bool validCommand = false;
 
-    if (cmd == "!join" || cmd == "!play") {
+    if (cmd == "join" || cmd == "play") {
         cmdJoin(msg.userId, msg.displayName);
         validCommand = true;
-    } else if (cmd == "!left" || cmd == "!l" || cmd == "!a") {
+    } else if (cmd == "left" || cmd == "l" || cmd == "a") {
         cmdLeft(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!right" || cmd == "!r" || cmd == "!d") {
+    } else if (cmd == "right" || cmd == "r" || cmd == "d") {
         cmdRight(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!jump" || cmd == "!j" || cmd == "!w" || cmd == "!up") {
+    } else if (cmd == "jump" || cmd == "j" || cmd == "w" || cmd == "up") {
         cmdJump(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!jumpleft" || cmd == "!jl") {
+    } else if (cmd == "jumpleft" || cmd == "jl") {
         cmdJumpLeft(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!jumpright" || cmd == "!jr") {
+    } else if (cmd == "jumpright" || cmd == "jr") {
         cmdJumpRight(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!attack" || cmd == "!hit" || cmd == "!atk") {
+    } else if (cmd == "attack" || cmd == "hit" || cmd == "atk") {
         cmdAttack(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!special" || cmd == "!sp" || cmd == "!ult") {
+    } else if (cmd == "special" || cmd == "sp" || cmd == "ult") {
         cmdSpecial(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!dash" || cmd == "!dodge") {
+    } else if (cmd == "dash" || cmd == "dodge") {
         cmdDash(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!block" || cmd == "!shield" || cmd == "!def") {
+    } else if (cmd == "block" || cmd == "shield" || cmd == "def") {
         cmdBlock(msg.userId);
         validCommand = m_players.count(msg.userId) > 0;
-    } else if (cmd == "!emote") {
+    } else if (cmd == "emote") {
         std::string emote;
         iss >> emote;
         cmdEmote(msg.userId, emote);
