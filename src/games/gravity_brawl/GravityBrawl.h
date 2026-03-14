@@ -91,6 +91,9 @@ struct Planet {
     // Orbit direction: +1 = counter-clockwise, -1 = clockwise
     int         orbitDirection = 1;
 
+    // Post-collision immunity: reduces orbital force so new trajectory persists
+    float       collisionImmunity = 0.0f;
+
     // Visual timers
     float       hitFlashTimer  = 0.0f;
     float       trailTimer     = 0.0f;
@@ -114,7 +117,8 @@ struct Planet {
     bool isBot() const { return userId.rfind("__bot_", 0) == 0; }
 
     void updateTimers(float dt) {
-        smashCooldown  = std::max(0.0f, smashCooldown - dt);
+        smashCooldown     = std::max(0.0f, smashCooldown - dt);
+        collisionImmunity = std::max(0.0f, collisionImmunity - dt);
         hitFlashTimer  = std::max(0.0f, hitFlashTimer - dt);
         trailTimer     = std::max(0.0f, trailTimer    - dt);
         supernovaTimer = std::max(0.0f, supernovaTimer - dt);
@@ -418,15 +422,16 @@ private:
 
     // ── Collision & Combat Settings ────────────────────────────────────
     float  m_hitCooldown          = 0.5f;   // min seconds between scoring hits for the same planet pair
-    float  m_minKnockback         = 3.0f;   // minimum impulse applied on collision (even at low relative velocity)
+    float  m_minKnockback         = 5.0f;   // base knockback impulse (mass-weighted in elastic formula)
     float  m_collisionMinImpulse  = 2.0f;   // relative velocity threshold to count as a "hit"
+    float  m_collisionImmunityTime = 0.6f;  // seconds of reduced orbital force after collision
     float  m_smashCooldown        = 0.8f;   // seconds between dashes (overrides Planet::SMASH_COOLDOWN)
     float  m_smashImpulse         = 12.0f;  // base smash impulse
     float  m_supernovaRadius      = 8.0f;   // supernova blast radius (meters)
     float  m_supernovaForce       = 30.0f;  // supernova max impulse
     float  m_maxSpeed             = 25.0f;  // velocity clamp
-    float  m_restitution          = 0.7f;   // bounciness (Box2D fixture)
-    float  m_linearDamping        = 0.5f;   // velocity decay (Box2D body)
+    float  m_restitution          = 0.85f;  // bounciness (Box2D fixture)
+    float  m_linearDamping        = 0.25f;  // velocity decay (Box2D body)
     float  m_respawnCooldown      = 45.0f;  // seconds before a dead player can rejoin
 
     // Per-pair hit cooldown tracking: sorted pair key -> last hit time

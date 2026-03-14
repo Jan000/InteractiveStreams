@@ -455,6 +455,9 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("collision_min_impulse") && settings["collision_min_impulse"].is_number()) {
         m_collisionMinImpulse = std::max(0.0f, settings["collision_min_impulse"].get<float>());
     }
+    if (settings.contains("collision_immunity_time") && settings["collision_immunity_time"].is_number()) {
+        m_collisionImmunityTime = std::max(0.0f, settings["collision_immunity_time"].get<float>());
+    }
     if (settings.contains("smash_cooldown") && settings["smash_cooldown"].is_number()) {
         m_smashCooldown = std::max(0.0f, settings["smash_cooldown"].get<float>());
     }
@@ -538,6 +541,7 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"hit_cooldown", m_hitCooldown},
         {"min_knockback", m_minKnockback},
         {"collision_min_impulse", m_collisionMinImpulse},
+        {"collision_immunity_time", m_collisionImmunityTime},
         {"smash_cooldown", m_smashCooldown},
         {"smash_impulse", m_smashImpulse},
         {"supernova_radius", m_supernovaRadius},
@@ -1388,17 +1392,43 @@ void GravityBrawl::triggerSupernova(Planet& p) {
 void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
     if (impulse < m_collisionMinImpulse) return; // Ignore gentle touches
 
-    // Always apply minimum knockback on every qualifying contact,
-    // independent of the scoring cooldown, so planets separate immediately.
-    if (m_minKnockback > 0.0f) {
+    // Elastic collision knockback: mass-weighted impulse exchange along the
+    // collision normal so lighter planets bounce away harder and heavier
+    // ones barely budge — feels much more realistic than a fixed push.
+    if (m_minKnockback > 0.0f && a.body && b.body) {
         b2Vec2 diff = b.body->GetPosition() - a.body->GetPosition();
         float dist = diff.Length();
         if (dist > 0.01f) {
-            b2Vec2 dir(diff.x / dist, diff.y / dist);
-            float halfKnock = m_minKnockback * 0.5f;
-            a.body->ApplyLinearImpulseToCenter(b2Vec2(-dir.x * halfKnock, -dir.y * halfKnock), true);
-            b.body->ApplyLinearImpulseToCenter(b2Vec2( dir.x * halfKnock,  dir.y * halfKnock), true);
+            b2Vec2 normal(diff.x / dist, diff.y / dist);
+
+            b2Vec2 relVel = a.body->GetLinearVelocity() - b.body->GetLinearVelocity();
+            float relVelAlongNormal = relVel.x * normal.x + relVel.y * normal.y;
+
+            // Only resolve if objects are approaching
+            if (relVelAlongNormal > 0.0f) {
+                float massA = a.body->GetMass();
+                float massB = b.body->GetMass();
+                float invMassSum = 1.0f / (massA + massB);
+
+                // Elastic impulse magnitude (restitution-scaled)
+                float j = (1.0f + m_restitution) * relVelAlongNormal * invMassSum;
+
+                // Ensure minimum knockback so even slow collisions feel impactful
+                float minJ = m_minKnockback * invMassSum;
+                j = std::max(j, minJ);
+
+                b2Vec2 impulseVec(normal.x * j, normal.y * j);
+                a.body->ApplyLinearImpulseToCenter(
+                    b2Vec2(-impulseVec.x * massB, -impulseVec.y * massB), true);
+                b.body->ApplyLinearImpulseToCenter(
+                    b2Vec2( impulseVec.x * massA,  impulseVec.y * massA), true);
+            }
         }
+
+        // Grant collision immunity: orbital forces are temporarily reduced
+        // so the new post-collision trajectory is visible.
+        a.collisionImmunity = m_collisionImmunityTime;
+        b.collisionImmunity = m_collisionImmunityTime;
     }
 
     // Per-pair hit cooldown: prevent rapid-fire scoring from repeated bounces
@@ -1753,6 +1783,15 @@ void GravityBrawl::applyOrbitalForces(float dt) {
         if (p.isAFK) {
             pullStrength *= 0.5f;
             orbitalSpeed *= 0.5f;
+        }
+
+        // After a collision, temporarily reduce orbital forces so the new
+        // trajectory is visible before the orbit reasserts itself.
+        if (p.collisionImmunity > 0.0f) {
+            float t = p.collisionImmunity / m_collisionImmunityTime;
+            float reduction = 0.15f + 0.85f * (1.0f - t); // ramps 0.15 → 1.0
+            pullStrength *= reduction;
+            orbitalSpeed *= reduction;
         }
 
         // Apply forces
