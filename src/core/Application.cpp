@@ -137,7 +137,8 @@ void Application::initialize() {
 
     // ── Audio manager ────────────────────────────────────────────────────
     m_impl->audioManager = std::make_unique<AudioManager>();
-    m_impl->audioManager->scanMusicDirectory("assets/audio");
+    m_impl->audioManager->scanMusicDirectory(
+        cfg.get<std::string>("audio.music_directory", "assets/audio"));
     m_impl->audioManager->setMusicVolume(
         cfg.get<float>("audio.music_volume", 50.0f));
     m_impl->audioManager->setSfxVolume(

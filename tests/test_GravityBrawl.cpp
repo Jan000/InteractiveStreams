@@ -14,6 +14,7 @@
 
 #include "core/Application.h"
 #include "core/AudioManager.h"
+#include "core/Config.h"
 #include "core/PlayerDatabase.h"
 #include "games/gravity_brawl/GravityBrawl.h"
 #include "platform/ChatMessage.h"
@@ -49,6 +50,11 @@ nlohmann::json PlayerDatabase::getPlayerStats(const std::string&) const {
         {"total_wins", 0},
         {"games_played", 0}
     };
+}
+
+Config& Application::config() {
+    static Config cfg("config/default.json");
+    return cfg;
 }
 
 } // namespace is::core

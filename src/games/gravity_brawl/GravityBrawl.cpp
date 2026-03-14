@@ -1,6 +1,7 @@
 #include "games/gravity_brawl/GravityBrawl.h"
 #include "games/GameRegistry.h"
 #include "core/Application.h"
+#include "core/Config.h"
 #include "core/AudioManager.h"
 #include "core/PlayerDatabase.h"
 
@@ -246,7 +247,9 @@ void GravityBrawl::loadSfx() {
     if (m_sfxLoaded) return;
     m_sfxLoaded = true;
 
-    const std::string sfxDir = "assets/audio/sfx/gravity_brawl/";
+    const std::string sfxBase = is::core::Application::instance().config()
+        .get<std::string>("audio.sfx_directory", "assets/audio/sfx");
+    const std::string sfxDir = sfxBase + "/gravity_brawl/";
     const std::vector<std::string> names = {
         "gb_join", "gb_smash", "gb_supernova", "gb_hit",
         "gb_death", "gb_kill", "gb_cosmic_event", "gb_cosmic_end",

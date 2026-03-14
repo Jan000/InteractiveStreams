@@ -9,6 +9,7 @@ import {
   Volume2,
   VolumeX,
   RefreshCw,
+  FolderOpen,
 } from "lucide-react";
 import { api, AudioState } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,8 @@ export default function AudioPage() {
   const [fadeIn, setFadeIn] = useState(2.0);
   const [fadeOut, setFadeOut] = useState(2.0);
   const [crossfadeOverlap, setCrossfadeOverlap] = useState(1.5);
+  const [musicDirectory, setMusicDirectory] = useState("assets/audio");
+  const [sfxDirectory, setSfxDirectory] = useState("assets/audio/sfx");
 
   // Debounce timer ref for auto-save
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,6 +50,8 @@ export default function AudioPage() {
         setFadeIn(data.fadeInSeconds);
         setFadeOut(data.fadeOutSeconds);
         setCrossfadeOverlap(data.crossfadeOverlap);
+        setMusicDirectory(data.musicDirectory ?? "assets/audio");
+        setSfxDirectory(data.sfxDirectory ?? "assets/audio/sfx");
         initialLoad.current = false;
       }
     } catch (e) {
@@ -107,6 +112,15 @@ export default function AudioPage() {
   const handleCrossfadeOverlap = (v: number) => {
     setCrossfadeOverlap(v);
     saveSettings({ crossfadeOverlap: v });
+  };
+
+  const saveDirectories = async () => {
+    try {
+      await api.updateAudio({ musicDirectory, sfxDirectory });
+      toast.success("Directories saved. Rescan the music library if needed.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save directories");
+    }
   };
 
   if (loading) {
@@ -376,6 +390,64 @@ export default function AudioPage() {
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Directories ─────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FolderOpen className="size-5" />
+            Directories
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-sm text-muted-foreground">
+            Configure the file-system paths where audio files are stored. Use
+            absolute paths to keep files outside the repository.
+          </p>
+
+          {/* Music directory */}
+          <div className="space-y-2">
+            <Label htmlFor="music-dir">Music Directory</Label>
+            <p className="text-xs text-muted-foreground">
+              Directory scanned for background music tracks (.mp3, .ogg, .wav,
+              .flac). Applied immediately on save.
+            </p>
+            <input
+              id="music-dir"
+              type="text"
+              value={musicDirectory}
+              onChange={(e) => setMusicDirectory(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+              placeholder="assets/audio"
+            />
+          </div>
+
+          {/* SFX directory */}
+          <div className="space-y-2">
+            <Label htmlFor="sfx-dir">SFX Base Directory</Label>
+            <p className="text-xs text-muted-foreground">
+              Base directory for sound effects. Game-specific sub-folders are
+              appended automatically (e.g.{" "}
+              <code className="text-xs bg-muted px-1 rounded">
+                /gravity_brawl/
+              </code>
+              ). Takes effect the next time a game is (re-)initialized.
+            </p>
+            <input
+              id="sfx-dir"
+              type="text"
+              value={sfxDirectory}
+              onChange={(e) => setSfxDirectory(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+              placeholder="assets/audio/sfx"
+            />
+          </div>
+
+          <Button onClick={saveDirectories} className="w-full sm:w-auto">
+            Save Directories
+          </Button>
         </CardContent>
       </Card>
     </div>

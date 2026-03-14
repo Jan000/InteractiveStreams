@@ -1492,6 +1492,8 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         j["fadeInSeconds"]      = audio.fadeInDuration();
         j["fadeOutSeconds"]     = audio.fadeOutDuration();
         j["crossfadeOverlap"]   = audio.crossfadeOverlap();
+        j["musicDirectory"]     = app.config().get<std::string>("audio.music_directory", "assets/audio");
+        j["sfxDirectory"]       = app.config().get<std::string>("audio.sfx_directory", "assets/audio/sfx");
         res.set_content(j.dump(), "application/json");
     });
 
@@ -1519,8 +1521,20 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         if (body.contains("crossfadeOverlap"))
             audio.setCrossfadeOverlap(body["crossfadeOverlap"].get<float>());
 
-        // Persist to config
+        // Audio directory changes – apply immediately
         auto& cfg = app.config();
+        if (body.contains("musicDirectory")) {
+            std::string dir = body["musicDirectory"].get<std::string>();
+            cfg.set("audio.music_directory", dir);
+            audio.scanMusicDirectory(dir);
+            if (audio.isMusicPlaying()) audio.playMusic();
+        }
+        if (body.contains("sfxDirectory")) {
+            cfg.set("audio.sfx_directory", body["sfxDirectory"].get<std::string>());
+            // SFX are reloaded when games reinitialize; no immediate action needed.
+        }
+
+        // Persist to config
         cfg.set("audio.music_volume",      audio.musicVolume());
         cfg.set("audio.sfx_volume",        audio.sfxVolume());
         cfg.set("audio.muted",             audio.isMuted());

@@ -233,6 +233,8 @@ export interface AudioState {
   fadeInSeconds: number;
   fadeOutSeconds: number;
   crossfadeOverlap: number;
+  musicDirectory: string;
+  sfxDirectory: string;
 }
 
 export interface StreamProfile {

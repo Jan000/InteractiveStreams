@@ -81,6 +81,8 @@
         }
     ],
     "audio": {
+        "music_directory": "assets/audio",
+        "sfx_directory": "assets/audio/sfx",
         "music_volume": 50,
         "sfx_volume": 70,
         "muted": false,
