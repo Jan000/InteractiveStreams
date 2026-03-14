@@ -108,12 +108,6 @@ set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sfml box2d json httplib spdlog)
 set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
 
-# Early OpenSSL detection – must happen BEFORE gRPC FetchContent so that
-# OPENSSL_INCLUDE_DIR / OPENSSL_VERSION reflect the system OpenSSL, not
-# gRPC's bundled BoringSSL (which reports as OpenSSL 1.1.x and is incompatible
-# with cpp-httplib's OpenSSL 3.0+ requirement).
-find_package(OpenSSL QUIET)
-
 # stb has no CMakeLists.txt – populate only (no add_subdirectory)
 # CMP0169 was introduced in CMake 3.30; guard to support older versions (e.g. Ubuntu 24.04 ships 3.28)
 if(POLICY CMP0169)
@@ -305,21 +299,12 @@ if(IS_USE_YOUTUBE_GRPC)
     target_compile_definitions(${PROJECT_NAME} PRIVATE IS_YOUTUBE_GRPC_ENABLED)
 endif()
 
-# ─── HTTPS support for AvatarCache (OpenSSL / WinHTTP) ───────────────────────
-# OpenSSL was found earlier (before gRPC) so the version reflects the real
-# system OpenSSL, not gRPC's bundled BoringSSL.
-if(OpenSSL_FOUND AND OPENSSL_VERSION VERSION_GREATER_EQUAL "3.0.0")
-    message(STATUS "OpenSSL ${OPENSSL_VERSION} found – enabling HTTPS in AvatarCache")
-    # SYSTEM BEFORE ensures system OpenSSL headers take priority over any
-    # bundled SSL headers that gRPC might propagate (BoringSSL).
-    target_include_directories(${PROJECT_NAME} SYSTEM BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
-    target_compile_definitions(${PROJECT_NAME} PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
-    target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-elseif(OpenSSL_FOUND)
-    message(STATUS "OpenSSL ${OPENSSL_VERSION} found but < 3.0 – skipping (httplib requires 3.0+)")
-else()
-    message(STATUS "OpenSSL not found – AvatarCache will use platform-native HTTPS fallback")
-endif()
+# ─── HTTPS support for AvatarCache ───────────────────────────────────────────
+# We do NOT use httplib's CPPHTTPLIB_OPENSSL_SUPPORT because gRPC bundles
+# BoringSSL (OpenSSL 1.1.x-compatible headers) which shadows system OpenSSL 3.x
+# and causes compile errors in httplib.  Instead we use platform-native fallbacks:
+#   - Windows: WinHTTP API
+#   - Linux:   curl subprocess (curl is in the Docker runtime image)
 if(WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE winhttp)
 endif()

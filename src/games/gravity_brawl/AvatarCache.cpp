@@ -15,6 +15,12 @@
 #include <winhttp.h>
 #endif
 
+// Linux: use curl subprocess for HTTPS (avoids BoringSSL/OpenSSL conflicts)
+#if !defined(_WIN32) && !defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+#define AVATAR_USE_CURL 1
+#include <cstdio>
+#endif
+
 namespace is::games::gravity_brawl {
 
 #ifdef AVATAR_USE_WINHTTP
@@ -78,6 +84,32 @@ static std::optional<std::string> downloadHttpsWinHttp(const std::string& host,
 
     if (body.empty()) return std::nullopt;
     return body;
+}
+#endif
+
+#ifdef AVATAR_USE_CURL
+/// Download HTTPS content via curl subprocess.
+/// Safe against shell injection: URL is validated by parseUrl() and we reject
+/// any URL containing characters that could escape single-quote shells.
+static std::optional<std::string> downloadHttpsCurl(const std::string& url) {
+    // Reject URLs with characters that could break out of single-quoted shell arg
+    for (char c : url) {
+        if (c == '\'' || c == '\\' || c == '\n' || c == '\r' || c == '\0')
+            return std::nullopt;
+    }
+    std::string cmd = "curl -sL --max-time 5 '" + url + "'";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return std::nullopt;
+
+    std::string result;
+    char buffer[4096];
+    size_t n;
+    while ((n = fread(buffer, 1, sizeof(buffer), pipe)) > 0) {
+        result.append(buffer, n);
+    }
+    int status = pclose(pipe);
+    if (status != 0 || result.empty()) return std::nullopt;
+    return result;
 }
 #endif
 
@@ -228,6 +260,13 @@ std::optional<AvatarCache::PreparedAvatar> AvatarCache::downloadAndPrepare(const
         auto result = downloadHttpsWinHttp(host, port, path);
         if (!result) {
             spdlog::debug("[AvatarCache] WinHTTP download failed: {}", url);
+            return std::nullopt;
+        }
+        body = std::move(*result);
+#elif defined(AVATAR_USE_CURL)
+        auto result = downloadHttpsCurl(url);
+        if (!result) {
+            spdlog::debug("[AvatarCache] curl download failed: {}", url);
             return std::nullopt;
         }
         body = std::move(*result);

@@ -65,11 +65,6 @@ target_link_libraries(InteractiveStreams_Tests PRIVATE
     spdlog::spdlog
 )
 
-if(OpenSSL_FOUND AND OPENSSL_VERSION VERSION_GREATER_EQUAL "3.0.0")
-    target_include_directories(InteractiveStreams_Tests SYSTEM BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
-    target_compile_definitions(InteractiveStreams_Tests PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
-    target_link_libraries(InteractiveStreams_Tests PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-endif()
 if(WIN32)
     target_link_libraries(InteractiveStreams_Tests PRIVATE winhttp)
 endif()
