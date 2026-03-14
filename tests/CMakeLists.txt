@@ -65,6 +65,14 @@ target_link_libraries(InteractiveStreams_Tests PRIVATE
     spdlog::spdlog
 )
 
+if(OpenSSL_FOUND)
+    target_compile_definitions(InteractiveStreams_Tests PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+    target_link_libraries(InteractiveStreams_Tests PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+endif()
+if(WIN32)
+    target_link_libraries(InteractiveStreams_Tests PRIVATE winhttp)
+endif()
+
 # Precompiled header (same as main project)
 target_precompile_headers(InteractiveStreams_Tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/pch.h

@@ -44,7 +44,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates mold ccache \
     libx11-dev libxrandr-dev libxcursor-dev libxi-dev \
-    libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev
+    libudev-dev libgl1-mesa-dev libfreetype-dev libopenal-dev libvorbis-dev libflac-dev \
+    libssl-dev
 
 # ── ccache: dramatically speeds up recompilation ──────────────────────────
 # ccache intercepts compiler calls and returns cached results when the

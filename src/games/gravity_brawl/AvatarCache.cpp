@@ -5,7 +5,81 @@
 
 #include <cmath>
 
+// Windows-native HTTPS when OpenSSL is not linked
+#if defined(_WIN32) && !defined(CPPHTTPLIB_OPENSSL_SUPPORT)
+#define AVATAR_USE_WINHTTP 1
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <winhttp.h>
+#endif
+
 namespace is::games::gravity_brawl {
+
+#ifdef AVATAR_USE_WINHTTP
+static std::optional<std::string> downloadHttpsWinHttp(const std::string& host,
+                                                       int port,
+                                                       const std::string& path) {
+    // Convert narrow strings to wide strings for WinHTTP
+    auto toWide = [](const std::string& s) {
+        if (s.empty()) return std::wstring();
+        int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+        std::wstring w(len, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), len);
+        return w;
+    };
+
+    std::wstring wHost = toWide(host);
+    std::wstring wPath = toWide(path);
+
+    HINTERNET hSession = WinHttpOpen(L"InteractiveStreams/1.0",
+                                     WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                     WINHTTP_NO_PROXY_NAME,
+                                     WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) return std::nullopt;
+
+    HINTERNET hConnect = WinHttpConnect(hSession, wHost.c_str(),
+                                        static_cast<INTERNET_PORT>(port), 0);
+    if (!hConnect) { WinHttpCloseHandle(hSession); return std::nullopt; }
+
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", wPath.c_str(),
+                                            nullptr, WINHTTP_NO_REFERER,
+                                            WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                            WINHTTP_FLAG_SECURE);
+    if (!hRequest) {
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return std::nullopt;
+    }
+
+    BOOL ok = WinHttpSendRequest(hRequest,
+                                 WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                 WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    if (ok) ok = WinHttpReceiveResponse(hRequest, nullptr);
+
+    std::string body;
+    if (ok) {
+        DWORD dwSize = 0;
+        do {
+            dwSize = 0;
+            if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
+            if (dwSize == 0) break;
+            std::vector<char> buf(dwSize);
+            DWORD dwRead = 0;
+            if (WinHttpReadData(hRequest, buf.data(), dwSize, &dwRead))
+                body.append(buf.data(), dwRead);
+        } while (dwSize > 0);
+    }
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+
+    if (body.empty()) return std::nullopt;
+    return body;
+}
+#endif
 
 AvatarCache::AvatarCache() {
     m_running = true;
@@ -139,7 +213,7 @@ std::optional<AvatarCache::PreparedAvatar> AvatarCache::downloadAndPrepare(const
         return std::nullopt;
     }
 
-    httplib::Result response;
+    std::string body;
 
     if (scheme == "https") {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -147,7 +221,16 @@ std::optional<AvatarCache::PreparedAvatar> AvatarCache::downloadAndPrepare(const
         client.set_follow_location(true);
         client.set_connection_timeout(2, 0);
         client.set_read_timeout(3, 0);
-        response = client.Get(path.c_str());
+        auto response = client.Get(path.c_str());
+        if (!response || response->status != 200) return std::nullopt;
+        body = std::move(response->body);
+#elif defined(AVATAR_USE_WINHTTP)
+        auto result = downloadHttpsWinHttp(host, port, path);
+        if (!result) {
+            spdlog::debug("[AvatarCache] WinHTTP download failed: {}", url);
+            return std::nullopt;
+        }
+        body = std::move(*result);
 #else
         spdlog::debug("[AvatarCache] HTTPS not supported by httplib build: {}", url);
         return std::nullopt;
@@ -157,15 +240,13 @@ std::optional<AvatarCache::PreparedAvatar> AvatarCache::downloadAndPrepare(const
         client.set_follow_location(true);
         client.set_connection_timeout(2, 0);
         client.set_read_timeout(3, 0);
-        response = client.Get(path.c_str());
-    }
-
-    if (!response || response->status != 200) {
-        return std::nullopt;
+        auto response = client.Get(path.c_str());
+        if (!response || response->status != 200) return std::nullopt;
+        body = std::move(response->body);
     }
 
     sf::Image source;
-    if (!source.loadFromMemory(response->body.data(), response->body.size())) {
+    if (!source.loadFromMemory(body.data(), body.size())) {
         return std::nullopt;
     }
 

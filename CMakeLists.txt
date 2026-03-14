@@ -299,6 +299,19 @@ if(IS_USE_YOUTUBE_GRPC)
     target_compile_definitions(${PROJECT_NAME} PRIVATE IS_YOUTUBE_GRPC_ENABLED)
 endif()
 
+# ─── HTTPS support for AvatarCache (OpenSSL / WinHTTP) ───────────────────────
+find_package(OpenSSL QUIET)
+if(OpenSSL_FOUND)
+    message(STATUS "OpenSSL found – enabling HTTPS in AvatarCache via httplib SSLClient")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+else()
+    message(STATUS "OpenSSL not found – AvatarCache will use platform-native HTTPS fallback")
+endif()
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE winhttp)
+endif()
+
 # ─── Speed: Precompiled Header ────────────────────────────────────────────────
 # Alle schweren Headers (SFML, Box2D, nlohmann/json, spdlog, STL) werden einmal
 # vorkompiliert. Das spart bei inkrementellen Builds mehrere Sekunden pro TU.

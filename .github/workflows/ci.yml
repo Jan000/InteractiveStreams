@@ -64,6 +64,7 @@ jobs:
             build-essential cmake git ccache \
             libx11-dev libxrandr-dev libxcursor-dev libxi-dev \
             libudev-dev libgl1-mesa-dev libfreetype-dev \
+            libssl-dev \
             xvfb
       - name: Cache FetchContent dependencies
         uses: actions/cache@v4
