@@ -362,22 +362,19 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
         m_orbitalTangentialStrength = std::max(0.0f, settings["orbital_tangential_strength"].get<float>());
     }
     if (settings.contains("black_hole_gravity_strength") && settings["black_hole_gravity_strength"].is_number()) {
-        m_blackHoleBaseGravity = std::max(0.0f, settings["black_hole_gravity_strength"].get<float>());
-    }
-    if (settings.contains("black_hole_time_growth_factor") && settings["black_hole_time_growth_factor"].is_number()) {
-        m_blackHoleTimeGrowthFactor = std::max(0.0f, settings["black_hole_time_growth_factor"].get<float>());
+        m_blackHoleBaseGravity = settings["black_hole_gravity_strength"].get<float>();
     }
     if (settings.contains("black_hole_consume_size_factor") && settings["black_hole_consume_size_factor"].is_number()) {
-        m_blackHoleConsumeSizeFactor = std::max(0.0f, settings["black_hole_consume_size_factor"].get<float>());
+        m_blackHoleConsumeSizeFactor = settings["black_hole_consume_size_factor"].get<float>();
     }
     if (settings.contains("black_hole_gravity_cap") && settings["black_hole_gravity_cap"].is_number()) {
-        m_blackHoleGravityCap = std::max(0.0f, settings["black_hole_gravity_cap"].get<float>());
+        m_blackHoleGravityCap = settings["black_hole_gravity_cap"].get<float>();
     }
     if (settings.contains("black_hole_kill_radius_multiplier") && settings["black_hole_kill_radius_multiplier"].is_number()) {
-        m_blackHoleKillRadiusMultiplier = std::max(0.1f, settings["black_hole_kill_radius_multiplier"].get<float>());
+        m_blackHoleKillRadiusMultiplier = std::max(0.01f, settings["black_hole_kill_radius_multiplier"].get<float>());
     }
     if (settings.contains("event_gravity_multiplier") && settings["event_gravity_multiplier"].is_number()) {
-        m_eventGravityMul = std::max(0.0f, settings["event_gravity_multiplier"].get<float>());
+        m_eventGravityMul = settings["event_gravity_multiplier"].get<float>();
     }
     // Sound effect settings
     if (settings.contains("sfx_enabled") && settings["sfx_enabled"].is_boolean()) {
@@ -397,13 +394,10 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
         m_cameraBufferMeters = std::max(0.0f, settings["camera_buffer_meters"].get<float>());
     }
     if (settings.contains("camera_min_zoom") && settings["camera_min_zoom"].is_number()) {
-        m_cameraMinZoom = std::clamp(settings["camera_min_zoom"].get<float>(), 0.1f, 1.0f);
+        m_cameraMinZoom = std::max(0.01f, settings["camera_min_zoom"].get<float>());
     }
     if (settings.contains("camera_max_zoom") && settings["camera_max_zoom"].is_number()) {
-        m_cameraMaxZoom = std::clamp(settings["camera_max_zoom"].get<float>(), 1.0f, 5.0f);
-    }
-    if (settings.contains("camera_zoom_amplify") && settings["camera_zoom_amplify"].is_number()) {
-        m_cameraZoomAmplify = std::clamp(settings["camera_zoom_amplify"].get<float>(), 1.0f, 5.0f);
+        m_cameraMaxZoom = std::max(0.01f, settings["camera_max_zoom"].get<float>());
     }
     // Per-tier size/mass settings (array form)
     if (settings.contains("tier_radius") && settings["tier_radius"].is_array() && settings["tier_radius"].size() == 4) {
@@ -445,6 +439,40 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("bot_event_smash_chance") && settings["bot_event_smash_chance"].is_number()) {
         m_botEventSmashChance = std::clamp(settings["bot_event_smash_chance"].get<float>(), 0.0f, 1.0f);
     }
+    // Combat & physics settings
+    if (settings.contains("hit_cooldown") && settings["hit_cooldown"].is_number()) {
+        m_hitCooldown = std::max(0.0f, settings["hit_cooldown"].get<float>());
+    }
+    if (settings.contains("min_knockback") && settings["min_knockback"].is_number()) {
+        m_minKnockback = std::max(0.0f, settings["min_knockback"].get<float>());
+    }
+    if (settings.contains("collision_min_impulse") && settings["collision_min_impulse"].is_number()) {
+        m_collisionMinImpulse = std::max(0.0f, settings["collision_min_impulse"].get<float>());
+    }
+    if (settings.contains("smash_cooldown") && settings["smash_cooldown"].is_number()) {
+        m_smashCooldown = std::max(0.0f, settings["smash_cooldown"].get<float>());
+    }
+    if (settings.contains("smash_impulse") && settings["smash_impulse"].is_number()) {
+        m_smashImpulse = std::max(0.0f, settings["smash_impulse"].get<float>());
+    }
+    if (settings.contains("supernova_radius") && settings["supernova_radius"].is_number()) {
+        m_supernovaRadius = std::max(0.1f, settings["supernova_radius"].get<float>());
+    }
+    if (settings.contains("supernova_force") && settings["supernova_force"].is_number()) {
+        m_supernovaForce = std::max(0.0f, settings["supernova_force"].get<float>());
+    }
+    if (settings.contains("max_speed") && settings["max_speed"].is_number()) {
+        m_maxSpeed = std::max(0.0f, settings["max_speed"].get<float>());
+    }
+    if (settings.contains("restitution") && settings["restitution"].is_number()) {
+        m_restitution = std::max(0.0f, settings["restitution"].get<float>());
+    }
+    if (settings.contains("linear_damping") && settings["linear_damping"].is_number()) {
+        m_linearDamping = std::max(0.0f, settings["linear_damping"].get<float>());
+    }
+    if (settings.contains("respawn_cooldown") && settings["respawn_cooldown"].is_number()) {
+        m_respawnCooldown = std::max(0.0f, settings["respawn_cooldown"].get<float>());
+    }
     // Text element overrides
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
@@ -466,6 +494,7 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"afk_timeout_seconds", m_afkTimeoutSeconds},
         {"anomaly_spawn_interval", m_anomalySpawnInterval},
         {"epoch_duration_seconds", m_epochDuration},
+        {"epoch_duration", m_epochDuration},
         {"cosmic_event_cooldown", m_cosmicEventCooldown},
         {"spawn_radius_factor", m_spawnRadiusFactor},
         {"spawn_orbit_speed", m_spawnOrbitSpeed},
@@ -475,7 +504,6 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"orbital_safe_zone_pull_multiplier", m_orbitalSafeZonePullMultiplier},
         {"orbital_tangential_strength", m_orbitalTangentialStrength},
         {"black_hole_gravity_strength", m_blackHoleBaseGravity},
-        {"black_hole_time_growth_factor", m_blackHoleTimeGrowthFactor},
         {"black_hole_consume_size_factor", m_blackHoleConsumeSizeFactor},
         {"black_hole_gravity_cap", m_blackHoleGravityCap},
         {"black_hole_kill_radius_multiplier", m_blackHoleKillRadiusMultiplier},
@@ -500,8 +528,18 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"bot_smash_chance", m_botSmashChance},
         {"bot_danger_smash_chance", m_botDangerSmashChance},
         {"bot_event_smash_chance", m_botEventSmashChance},
+        {"hit_cooldown", m_hitCooldown},
+        {"min_knockback", m_minKnockback},
+        {"collision_min_impulse", m_collisionMinImpulse},
+        {"smash_cooldown", m_smashCooldown},
+        {"smash_impulse", m_smashImpulse},
+        {"supernova_radius", m_supernovaRadius},
+        {"supernova_force", m_supernovaForce},
+        {"max_speed", m_maxSpeed},
+        {"restitution", m_restitution},
+        {"linear_damping", m_linearDamping},
+        {"respawn_cooldown", m_respawnCooldown},
         {"text_elements", textElementsJson()},
-        {"epoch_duration", m_epochDuration}
     };
 }
 
@@ -1065,6 +1103,7 @@ void GravityBrawl::cmdSmash(const std::string& userId) {
     // Normal smash with cooldown
     if (p.smashCooldown > 0.0f) return;
     triggerSmash(p);
+    p.smashCooldown = m_smashCooldown;
 }
 
 // ── Spawn ────────────────────────────────────────────────────────────────────
@@ -1124,7 +1163,7 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
     b2BodyDef bodyDef;
     bodyDef.type = b2_dynamicBody;
     bodyDef.position.Set(x, y);
-    bodyDef.linearDamping = 0.5f;
+    bodyDef.linearDamping = m_linearDamping;
     bodyDef.angularDamping = 1.0f;
     bodyDef.fixedRotation = true;
     bodyDef.userData.pointer = reinterpret_cast<uintptr_t>(&p);
@@ -1138,7 +1177,7 @@ void GravityBrawl::spawnPlanetBody(Planet& p) {
     fixDef.shape = &shape;
     fixDef.density = 1.0f;
     fixDef.friction = 0.3f;
-    fixDef.restitution = 0.7f; // Bouncy!
+    fixDef.restitution = m_restitution; // Bouncy!
 
     p.body->CreateFixture(&fixDef);
 
@@ -1221,8 +1260,6 @@ void GravityBrawl::updatePlanetTier(Planet& p) {
 void GravityBrawl::triggerSmash(Planet& p) {
     if (!p.body) return;
 
-    p.smashCooldown = Planet::SMASH_COOLDOWN;
-
     // Auto-aim: find the nearest alive enemy and dash toward them
     b2Vec2 myPos = p.body->GetPosition();
     float bestDist = 999999.0f;
@@ -1241,7 +1278,7 @@ void GravityBrawl::triggerSmash(Planet& p) {
         }
     }
 
-    float impulse = 12.0f + p.getMassScale() * 2.0f;
+    float impulse = m_smashImpulse + p.getMassScale() * 2.0f;
     b2Vec2 dashDir(1.0f, 0.0f);  // captured for slash visualisation
 
     if (foundTarget) {
@@ -1258,7 +1295,7 @@ void GravityBrawl::triggerSmash(Planet& p) {
             if (len > 0.01f) { dir.x /= len; dir.y /= len; }
             dashDir = dir;
             p.body->ApplyLinearImpulseToCenter(
-                b2Vec2(dashDir.x * 15.0f, dashDir.y * 15.0f), true);
+                b2Vec2(dashDir.x * (m_smashImpulse + 3.0f), dashDir.y * (m_smashImpulse + 3.0f)), true);
         } else {
             dashDir = b2Vec2(vel.x / speed, vel.y / speed);
             p.body->ApplyLinearImpulseToCenter(
@@ -1291,7 +1328,6 @@ void GravityBrawl::triggerSupernova(Planet& p) {
     b2Vec2 pos = p.body->GetPosition();
 
     // Apply radial impulse to all nearby planets
-    float supernovaRadius = 8.0f; // meters
     for (auto& [id, other] : m_planets) {
         if (!other.alive || !other.body || id == p.userId) continue;
 
@@ -1299,9 +1335,9 @@ void GravityBrawl::triggerSupernova(Planet& p) {
         b2Vec2 diff(otherPos.x - pos.x, otherPos.y - pos.y);
         float dist = diff.Length();
 
-        if (dist < supernovaRadius && dist > 0.1f) {
+        if (dist < m_supernovaRadius && dist > 0.1f) {
             b2Vec2 dir(diff.x / dist, diff.y / dist);
-            float force = (1.0f - dist / supernovaRadius) * 30.0f;
+            float force = (1.0f - dist / m_supernovaRadius) * m_supernovaForce;
             other.body->ApplyLinearImpulseToCenter(
                 b2Vec2(dir.x * force, dir.y * force), true);
 
@@ -1323,11 +1359,35 @@ void GravityBrawl::triggerSupernova(Planet& p) {
 // ── Collision Handler ────────────────────────────────────────────────────────
 
 void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
-    if (impulse < 2.0f) return; // Ignore gentle touches
+    if (impulse < m_collisionMinImpulse) return; // Ignore gentle touches
+
+    // Per-pair hit cooldown: prevent rapid-fire scoring from repeated low-velocity bounces
+    // Use a deterministic key from the two body pointers (order-independent)
+    auto ptrA = reinterpret_cast<uintptr_t>(a.body);
+    auto ptrB = reinterpret_cast<uintptr_t>(b.body);
+    uint64_t pairKey = (std::min(ptrA, ptrB) << 32) ^ std::max(ptrA, ptrB);
+    double now = m_gameTimer;
+    if (m_hitCooldown > 0.0f) {
+        auto it = m_pairHitCooldowns.find(pairKey);
+        if (it != m_pairHitCooldowns.end() && (now - it->second) < static_cast<double>(m_hitCooldown)) {
+            return; // Still on cooldown for this pair
+        }
+        m_pairHitCooldowns[pairKey] = now;
+    }
+
+    // Apply minimum knockback so slow collisions still separate the planets
+    if (m_minKnockback > 0.0f) {
+        b2Vec2 diff = b.body->GetPosition() - a.body->GetPosition();
+        float dist = diff.Length();
+        if (dist > 0.01f) {
+            b2Vec2 dir(diff.x / dist, diff.y / dist);
+            float halfKnock = m_minKnockback * 0.5f;
+            a.body->ApplyLinearImpulseToCenter(b2Vec2(-dir.x * halfKnock, -dir.y * halfKnock), true);
+            b.body->ApplyLinearImpulseToCenter(b2Vec2( dir.x * halfKnock,  dir.y * halfKnock), true);
+        }
+    }
 
     // Both planets get pushed — mark last-hit-by for kill attribution
-    double now = m_gameTimer;
-
     // a hit b and b hit a
     b.lastHitBy = a.userId;
     b.lastHitTime = now;
@@ -1516,7 +1576,7 @@ void GravityBrawl::update(double dt) {
 
             // Clamp velocity to prevent crazy speeds
             b2Vec2 vel = p.body->GetLinearVelocity();
-            float maxSpeed = 25.0f;
+            float maxSpeed = m_maxSpeed;
             if (vel.Length() > maxSpeed) {
                 vel.Normalize();
                 vel = b2Vec2(vel.x * maxSpeed, vel.y * maxSpeed);
@@ -1537,7 +1597,7 @@ void GravityBrawl::update(double dt) {
                 fixDef.shape = &shape;
                 fixDef.density = 1.0f * p.getMassScale();
                 fixDef.friction = 0.3f;
-                fixDef.restitution = 0.7f;
+                fixDef.restitution = m_restitution;
                 p.body->CreateFixture(&fixDef);
             }
         }
@@ -1747,8 +1807,8 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
 
     p.alive = false;
     p.deaths++;
-    // Respawn cooldown: prevent immediate re-join for 45 s
-    p.nextJoinTime = m_gameTimer + 45.0;
+    // Respawn cooldown: prevent immediate re-join
+    p.nextJoinTime = m_gameTimer + static_cast<double>(m_respawnCooldown);
     playSfx("gb_death");
 
     bool victimIsBot = isBot(p.userId);

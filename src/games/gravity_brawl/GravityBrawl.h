@@ -155,8 +155,8 @@ struct Planet {
     float massByTier   = 1.0f;   // mass multiplier assigned by current tier
     float massScale    = 1.0f;   // effective mass scale (massByTier + per-kill bonus)
 
-    // Combo constants
-    static constexpr float  SMASH_COOLDOWN    = 0.8f;  // seconds between dashes
+    // Combo defaults (overridable via game settings)
+    static constexpr float  SMASH_COOLDOWN    = 0.8f;  // default seconds between dashes
     static constexpr double COMBO_WINDOW      = 3.0;   // seconds for combo tracking
     static constexpr int    SUPERNOVA_COMBO   = 5;     // !s count for supernova
 };
@@ -385,7 +385,6 @@ private:
     float  m_orbitalSafeZonePullMultiplier = 0.35f;
     float  m_orbitalTangentialStrength    = 8.75f;
     float  m_blackHoleBaseGravity         = 6.0f;
-    float  m_blackHoleTimeGrowthFactor    = 0.02f;
     float  m_blackHoleConsumeSizeFactor   = 1.75f;
     float  m_blackHoleConsumedGravityBonus = 0.0f;
     float  m_blackHoleGravityCap          = 30.0f;
@@ -404,7 +403,6 @@ private:
     float  m_cameraBufferMeters   = 1.5f;   // buffer beyond outermost player before zoom kicks in
     float  m_cameraMinZoom        = 0.3f;   // minimum allowed zoom (max zoom-out)
     float  m_cameraMaxZoom        = 2.5f;   // maximum allowed zoom (max zoom-in)
-    float  m_cameraZoomAmplify    = 2.0f;   // amplifies deviation from neutral zoom (1=off)
 
     /// Recompute m_cameraTargetZoom from current player positions.
     void   updateCameraZoom(float dt);
@@ -416,6 +414,22 @@ private:
 
     // King tracking
     std::string m_currentKingId;
+
+    // ── Collision & Combat Settings ────────────────────────────────────
+    float  m_hitCooldown          = 0.5f;   // min seconds between scoring hits for the same planet pair
+    float  m_minKnockback         = 3.0f;   // minimum impulse applied on collision (even at low relative velocity)
+    float  m_collisionMinImpulse  = 2.0f;   // relative velocity threshold to count as a "hit"
+    float  m_smashCooldown        = 0.8f;   // seconds between dashes (overrides Planet::SMASH_COOLDOWN)
+    float  m_smashImpulse         = 12.0f;  // base smash impulse
+    float  m_supernovaRadius      = 8.0f;   // supernova blast radius (meters)
+    float  m_supernovaForce       = 30.0f;  // supernova max impulse
+    float  m_maxSpeed             = 25.0f;  // velocity clamp
+    float  m_restitution          = 0.7f;   // bounciness (Box2D fixture)
+    float  m_linearDamping        = 0.5f;   // velocity decay (Box2D body)
+    float  m_respawnCooldown      = 45.0f;  // seconds before a dead player can rejoin
+
+    // Per-pair hit cooldown tracking: sorted pair key -> last hit time
+    std::unordered_map<uint64_t, double> m_pairHitCooldowns;
 
     // ── Sound Effects ───────────────────────────────────────────────────
     bool  m_sfxEnabled     = true;   ///< Master toggle for game SFX
