@@ -428,6 +428,7 @@ void StreamEncoder::encoderThread() {
         // Write YUV420P frame to FFmpeg's stdin (outside lock)
         if (m_pipe) {
             size_t written = fwrite(yuvBuffer.data(), 1, yuvFrameSize, m_pipe);
+            fflush(m_pipe);  // Flush immediately to keep video in sync with audio
 
             if (written != yuvFrameSize) {
                 if (written == 0 || ferror(m_pipe)) {

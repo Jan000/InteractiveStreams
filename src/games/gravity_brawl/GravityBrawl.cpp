@@ -405,7 +405,7 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("camera_zoom_amplify") && settings["camera_zoom_amplify"].is_number()) {
         m_cameraZoomAmplify = std::clamp(settings["camera_zoom_amplify"].get<float>(), 1.0f, 5.0f);
     }
-    // Per-tier size/mass settings
+    // Per-tier size/mass settings (array form)
     if (settings.contains("tier_radius") && settings["tier_radius"].is_array() && settings["tier_radius"].size() == 4) {
         for (int i = 0; i < 4; i++)
             m_tierRadius[i] = std::max(0.1f, settings["tier_radius"][i].get<float>());
@@ -414,6 +414,15 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
         for (int i = 0; i < 4; i++)
             m_tierMass[i] = std::max(0.1f, settings["tier_mass"][i].get<float>());
     }
+    // Per-tier size settings (individual keys from web dashboard)
+    if (settings.contains("tier_radius_asteroid") && settings["tier_radius_asteroid"].is_number())
+        m_tierRadius[0] = std::max(0.1f, settings["tier_radius_asteroid"].get<float>());
+    if (settings.contains("tier_radius_ice") && settings["tier_radius_ice"].is_number())
+        m_tierRadius[1] = std::max(0.1f, settings["tier_radius_ice"].get<float>());
+    if (settings.contains("tier_radius_gas") && settings["tier_radius_gas"].is_number())
+        m_tierRadius[2] = std::max(0.1f, settings["tier_radius_gas"].get<float>());
+    if (settings.contains("tier_radius_star") && settings["tier_radius_star"].is_number())
+        m_tierRadius[3] = std::max(0.1f, settings["tier_radius_star"].get<float>());
     // Bot behavior settings
     if (settings.contains("bot_kill_feed") && settings["bot_kill_feed"].is_boolean()) {
         m_botKillFeed = settings["bot_kill_feed"].get<bool>();
@@ -478,9 +487,12 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"camera_buffer_meters", m_cameraBufferMeters},
         {"camera_min_zoom", m_cameraMinZoom},
         {"camera_max_zoom", m_cameraMaxZoom},
-        {"camera_zoom_amplify", m_cameraZoomAmplify},
         {"tier_radius", {m_tierRadius[0], m_tierRadius[1], m_tierRadius[2], m_tierRadius[3]}},
         {"tier_mass",   {m_tierMass[0],   m_tierMass[1],   m_tierMass[2],   m_tierMass[3]}},
+        {"tier_radius_asteroid", m_tierRadius[0]},
+        {"tier_radius_ice", m_tierRadius[1]},
+        {"tier_radius_gas", m_tierRadius[2]},
+        {"tier_radius_star", m_tierRadius[3]},
         {"bot_kill_feed", m_botKillFeed},
         {"bot_respawn", m_botRespawn},
         {"bot_respawn_delay", m_botRespawnDelay},
@@ -2036,10 +2048,7 @@ void GravityBrawl::updateCameraZoom(float dt) {
         return;
     }
 
-    // Per-axis maximum extent (absolute offset from world center) over all alive planets.
-    // Using per-axis bounding box instead of a radial approximation gives correct results
-    // for the portrait 9:16 screen: vertical screen space is ~1.78x the horizontal space,
-    // so a player far above/below center should trigger zoom-in, not zoom-out.
+    // Find maximum extent of all alive players from world center (per axis)
     float maxExtentH = 0.0f;
     float maxExtentV = 0.0f;
     int aliveCount = 0;
@@ -2052,45 +2061,25 @@ void GravityBrawl::updateCameraZoom(float dt) {
         maxExtentV = std::max(maxExtentV, std::abs(pos.y - WORLD_CENTER_Y) + r);
     }
 
-    // No alive players — reset to default zoom
     if (aliveCount == 0) {
         m_cameraTargetZoom = 1.0f;
-        float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);
-        m_cameraZoom += (m_cameraTargetZoom - m_cameraZoom) * t;
-        return;
+    } else {
+        // Add buffer zone (mobile safe area margin)
+        float neededH = maxExtentH + m_cameraBufferMeters;
+        float neededV = maxExtentV + m_cameraBufferMeters;
+
+        // Available screen space in world meters at zoom=1
+        const float halfW = SCREEN_W / (2.0f * PIXELS_PER_METER);
+        const float halfH = SCREEN_H / (2.0f * PIXELS_PER_METER);
+
+        // Zoom that fits all players: min of horizontal and vertical fit
+        float zoomH = (neededH > 0.01f) ? (halfW / neededH) : m_cameraMaxZoom;
+        float zoomV = (neededV > 0.01f) ? (halfH / neededV) : m_cameraMaxZoom;
+
+        m_cameraTargetZoom = std::clamp(std::min(zoomH, zoomV), m_cameraMinZoom, m_cameraMaxZoom);
     }
 
-    // Full half-extents of the screen in world units at zoom=1
-    const float halfW = SCREEN_W / 2.0f / PIXELS_PER_METER;  // 20 m
-    const float halfH = SCREEN_H / 2.0f / PIXELS_PER_METER;  // ~35.6 m
-
-    // Required zoom to fit all players with buffer on each independent axis.
-    // Taking the minimum of the two ensures no player clips off either edge.
-    float neededH = maxExtentH + m_cameraBufferMeters;
-    float neededV = maxExtentV + m_cameraBufferMeters;
-    float zoomH   = (neededH > 0.01f) ? (halfW / neededH) : m_cameraMaxZoom;
-    float zoomV   = (neededV > 0.01f) ? (halfH / neededV) : m_cameraMaxZoom;
-
-    float rawZoom = std::min(zoomH, zoomV);
-
-    // The "neutral" zoom at normal orbit spread.  When all players orbit
-    // at the standard radius the camera should produce zoom ≈ 1.0 so the
-    // default view is unchanged.  Deviations (cluster / spread) are then
-    // amplified around this reference.
-    const float orbitExtent = ARENA_RADIUS * m_spawnRadiusFactor
-                            + 0.5f              // average planet visual radius
-                            + m_cameraBufferMeters;
-    const float refZoom = std::min(halfW / orbitExtent, halfH / orbitExtent);
-
-    // Ratio: 1.0 = players at orbit, >1 = clustered, <1 = spread
-    float ratio = (refZoom > 0.01f) ? (rawZoom / refZoom) : 1.0f;
-
-    // Amplify the deviation from the orbit reference
-    float amplifiedRatio = 1.0f + (ratio - 1.0f) * m_cameraZoomAmplify;
-
-    m_cameraTargetZoom = std::clamp(amplifiedRatio, m_cameraMinZoom, m_cameraMaxZoom);
-
-    // Smooth interpolation toward target
+    // Smooth exponential interpolation toward target
     float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);
     m_cameraZoom += (m_cameraTargetZoom - m_cameraZoom) * t;
 }
@@ -2327,7 +2316,70 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
     }
 
     // ── Main body ─────────────────────────────────────────────────────────
-    if (p.tier == PlanetTier::Asteroid) {
+    // If we have an avatar texture, the profile picture IS the planet body.
+    // The tier is then shown only as a colored outline ring.
+    const sf::Texture* avatarTex = (!p.avatarUrl.empty())
+        ? m_avatarCache.getTexture(p.avatarUrl) : nullptr;
+
+    if (avatarTex) {
+        // ── Avatar as planet body ─────────────────────────────────────────
+        sf::Sprite avatar(*avatarTex);
+        avatar.setOrigin(32.0f, 32.0f);
+        float diameter = std::max(2.0f, pixelRadius * 2.0f);
+        float avatarScale = diameter / 64.0f;
+        avatar.setScale(avatarScale, avatarScale);
+        avatar.setPosition(screenPos);
+        if (p.hitFlashTimer > 0.0f) {
+            avatar.setColor(sf::Color(255, 255, 255, 255));
+        } else if (p.isAFK) {
+            avatar.setColor(sf::Color(150, 150, 150, 255));
+        } else {
+            avatar.setColor(sf::Color(255, 255, 255, 255));
+        }
+        target.draw(avatar);
+
+        // ── Tier-colored outline ring around the avatar ───────────────────
+        float outlineThickness = 2.0f * m_cameraZoom;
+        sf::Color ringColor = baseColor;
+        switch (p.tier) {
+        case PlanetTier::Asteroid:  outlineThickness = 1.5f * m_cameraZoom; break;
+        case PlanetTier::IcePlanet: outlineThickness = 2.5f * m_cameraZoom; break;
+        case PlanetTier::GasGiant:  outlineThickness = 3.0f * m_cameraZoom; break;
+        case PlanetTier::Star:      outlineThickness = 3.5f * m_cameraZoom; break;
+        }
+        if (p.isKing) {
+            ringColor = sf::Color(255, 215, 0);
+            outlineThickness = 4.0f * m_cameraZoom;
+        }
+        sf::CircleShape tierRing(pixelRadius, 24);
+        tierRing.setOrigin(pixelRadius, pixelRadius);
+        tierRing.setPosition(screenPos);
+        tierRing.setFillColor(sf::Color::Transparent);
+        tierRing.setOutlineColor(ringColor);
+        tierRing.setOutlineThickness(outlineThickness);
+        target.draw(tierRing);
+
+        // ── Tier-specific decorations extending beyond the avatar ─────────
+        if (p.tier == PlanetTier::IcePlanet) {
+            for (int i = 0; i < 6; ++i) {
+                float ang      = (i * 60.0f + anim * 10.0f) * (3.14159f / 180.0f);
+                float spikeLen = pixelRadius * (0.28f + 0.08f * std::sin(anim * 1.8f + i));
+                float hw       = 2.5f * m_cameraZoom;
+                sf::ConvexShape spike(3);
+                spike.setPoint(0, sf::Vector2f(-hw, 0.f));
+                spike.setPoint(1, sf::Vector2f( hw, 0.f));
+                spike.setPoint(2, sf::Vector2f(0.f, -spikeLen));
+                spike.setRotation(ang * (180.0f / 3.14159f) + 90.0f);
+                spike.setPosition(
+                    screenPos.x + std::cos(ang) * pixelRadius,
+                    screenPos.y + std::sin(ang) * pixelRadius);
+                spike.setFillColor(sf::Color(180, 230, 255));
+                target.draw(spike);
+            }
+        }
+    } else {
+        // ── No avatar — render tier-based planet body ─────────────────────
+        if (p.tier == PlanetTier::Asteroid) {
         // Bumpy polygon that slowly tumbles (~12 deg/s)
         const int SIDES = 11;
         sf::ConvexShape rocky(SIDES);
@@ -2450,6 +2502,7 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
             target.draw(core);
         }
     }
+    } // end if(avatarTex) else
 
     if (p.hasShield) {
         sf::CircleShape shield(pixelRadius * 1.12f, 16); // reduced polygon count
@@ -2459,20 +2512,6 @@ void GravityBrawl::renderPlanet(sf::RenderTarget& target, const Planet& p, sf::V
         shield.setOutlineColor(sf::Color(120, 190, 255, 220));
         shield.setOutlineThickness(2.5f * m_cameraZoom);
         target.draw(shield);
-    }
-
-    // ── Pre-baked avatar overlay (64x64 circular alpha) ──────────────────
-    if (!p.avatarUrl.empty()) {
-        if (const sf::Texture* avatarTex = m_avatarCache.getTexture(p.avatarUrl)) {
-            sf::Sprite avatar(*avatarTex);
-            avatar.setOrigin(32.0f, 32.0f);
-            float diameter = std::max(2.0f, pixelRadius * 2.0f);
-            float scale = diameter / 64.0f;
-            avatar.setScale(scale, scale);
-            avatar.setPosition(screenPos);
-            avatar.setColor(sf::Color(255, 255, 255)); // opaque — no alpha blend cost
-            target.draw(avatar);
-        }
     }
 
     // ── Specular highlight removed — barely visible alpha=45, not worth CPU cost ──
