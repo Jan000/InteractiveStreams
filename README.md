@@ -59,6 +59,8 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - **Power-Ups** – Heilung, Geschwindigkeit, Schaden, Schild, Doppelsprung
 - **Kill-Feed** – Echtzeit-Anzeige von Eliminierungen
 - **Chat-Feedback** – Automatische Bestätigungsnachrichten an Zuschauer (Join, Win, Game Over)
+- **Stream-Event-Reactions** – Spiele reagieren auf Subscriptions, Super Chats, Bits und Channel Points mit Spiel-Boni (Schild, Heilung, God Mode, Gebietserweiterung)
+- **Text-Layout-System** – Dashboard-konfigurierbare Positionen, Größen und RGBA-Farben für alle In-Game-UI-Elemente
 
 ### DevOps & Sicherheit
 - **Docker-Container** – Multi-Stage-Build mit Dockerfile und docker-compose für Server-Deployment
@@ -197,38 +199,38 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 
 ## 🌌 Drittes Spiel: Gravity Brawl
 
-**Gravity Brawl** ist ein physikbasierter Plattform-Brawler mit wechselnder Schwerkraft und kosmischen Events.
+**Gravity Brawl** ist ein physikbasierter Orbital-Brawler mit wechselnder Schwerkraft, kosmischen Events und einem Planeten-Tier-System.
 
 ### Konzept
 
-Ähnlich wie Chaos Arena nutzt Gravity Brawl Box2D-Physik für Nahkampf, Projektile und Knockback. Das Alleinstellungsmerkmal sind **periodische Gravitationsänderungen** (Cosmic Events), die die Schwerkraftrichtung im Laufe der Runde verändern und für chaotische Kämpfe sorgen.
+Spieler sind Planeten, die in einem Gravitationsfeld um ein zentrales Schwarzes Loch kreisen. Durch Smash-Angriffe stoßen sie andere Spieler Richtung Schwarzes Loch – wer hineinfällt, wird eliminiert. Kills erhöhen den Planeten-Tier (Asteroid → Ice Planet → Gas Giant → Star), was Radius und Masse vergrößert.
 
 ### Features
+- **Planeten-Tier-System** – Kills erhöhen den Tier (0→Asteroid, 3→Ice Planet, 10→Gas Giant, 25→Star) mit zunehmender Masse und Größe
+- **Schwarzes Loch** – Zentrales Schwarzes Loch als Todeszone mit konfigurierbarem Radius und Abstoßung
 - **Gravity Shifts** – Kosmische Events ändern periodisch die Schwerkraftrichtung (normal, low gravity, reverse, sideways)
+- **Anomaly Pickups** – Periodisch spawnende Power-Ups: Mass Injector, Shield, Score Jackpot
+- **Bounty-System** – Der Spieler mit den meisten Kills wird zum "King" mit 1.5× Masse-Boost
+- **Supernova** – 5 Smashes innerhalb 3s lösen eine große AoE-Explosionswelle aus
+- **Dynamic Camera Zoom** – Kamera zoomt dynamisch, um alle Spieler sichtbar zu halten
 - **Bot Fill System** – Lobby wird automatisch mit KI-Bots auf eine Mindestspielerzahl aufgefüllt
 - **Sound Effects** – 12 SFX-Events (Join, Smash, Supernova, Hit, Death, Kill, Bounty, Cosmic Event, etc.) mit Per-Game-Volume und Toggle
-- **Konfigurierbare Einstellungen** – Spieldauer, Lobby-Dauer, Mindestspielerzahl, Cosmic-Event-Cooldown, SFX-Volume über Web-API einstellbar
+- **Stream-Event-Reactions** – Subscriptions, Super Chats und Bits lösen In-Game-Boni aus (Schild, God Mode, Supernova)
+- **Konfigurierbare Einstellungen** – 40+ Parameter (Spieldauer, Physik, Bots, Kamera, Audio) über Web-API einstellbar
 - **Scoreboard-Integration** – Punkte für Kills und Rundengewinne, persistiert in der Spieler-Datenbank
 
 ### Spielablauf
 1. **Lobby** – Zuschauer treten mit `!join` bei, Bots füllen auf die Mindestzahl auf
 2. **Countdown** – 3-Sekunden-Countdown vor Rundenstart
-3. **Battle** – Spieler kämpfen gegeneinander, periodische Gravity Shifts sorgen für Chaos
-4. **Round End** – Letzter überlebender Spieler gewinnt die Runde
-5. **Game Over** – Nach Ablauf der konfigurierten Spieldauer
+3. **Playing** – Spieler rammen sich gegenseitig Richtung Schwarzes Loch, Cosmic Events sorgen für Chaos
+4. **Game Over** – Nach Ablauf der konfigurierten Epoche (epoch_duration)
 
 ### Chat-Befehle
 
 | Befehl | Aliases | Beschreibung |
 |--------|---------|-------------|
-| `!join` | `!play` | Dem Spiel beitreten |
-| `!left` | `!l`, `!a` | Nach links bewegen |
-| `!right` | `!r`, `!d` | Nach rechts bewegen |
-| `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
-| `!attack` | `!hit`, `!atk` | Nahkampf-Angriff |
-| `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
-| `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
-| `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+| `!join [farbe]` | `!play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
+| `!s` | `!smash` | Dash/Ram-Angriff (0.8s Cooldown) |
 
 ### Sound Effects
 
@@ -315,6 +317,8 @@ InteractiveStreams/
 │   │   ├── SettingsDatabase.h/cpp # SQLite-basierte persistente Einstellungen
 │   │   ├── PerfMonitor.h/cpp    # Performance-Metriken (FPS, Memory, etc.)
 │   │   ├── AudioManager.h/cpp  # Hintergrundmusik-Playlist & SFX-Verwaltung
+│   │   ├── AudioMixer.h/cpp    # PCM-Audio-Muxing für Streams
+│   │   ├── ChannelStats.h/cpp  # Per-Channel Engagement-Metriken
 │   │   ├── ProfileManager.h/cpp # Profil-Verwaltung
 │   │   ├── Sha256.h            # SHA-256 Hashing für Passwort-Auth
 │   │   └── Logger.h/cpp        # Logging (spdlog)
@@ -330,21 +334,26 @@ InteractiveStreams/
 │   │   │   ├── Projectile.h/cpp     # Projektile
 │   │   │   └── PowerUp.h/cpp        # Power-Up Items
 │   │   ├── gravity_brawl/      # Gravity Brawl Spiel
-│   │   │   └── GravityBrawl.h/cpp   # Spiellogik mit Gravity Shifts & Bot Fill
+│   │   │   ├── GravityBrawl.h/cpp   # Spiellogik mit Gravity Shifts & Bot Fill
+│   │   │   └── AvatarCache.h/cpp    # Hintergrund-Avatar-Download & Caching
 │   │   └── color_conquest/     # Color Conquest Spiel
 │   │       ├── ColorConquest.h/cpp  # Haupt-Spiellogik
 │   │       ├── Grid.h/cpp           # Spielfeld-Grid (24×40)
 │   │       └── Team.h               # Team-Datenstruktur
 │   ├── platform/               # Plattform-Integrationen
 │   │   ├── IPlatform.h         # Plattform-Interface (abstrakt)
-│   │   ├── ChatMessage.h       # Chat-Nachricht Struktur
+│   │   ├── ChatMessage.h       # Chat-Nachricht Struktur (inkl. eventType, amount, currency)
 │   │   ├── PlatformManager.h/cpp # Plattform-Verwaltung
 │   │   ├── local/
 │   │   │   └── LocalPlatform.h/cpp   # Lokale Test-Plattform
 │   │   ├── twitch/
-│   │   │   └── TwitchPlatform.h/cpp  # Twitch IRC Integration
+│   │   │   ├── TwitchPlatform.h/cpp  # Twitch IRC Integration
+│   │   │   └── TwitchApi.h/cpp       # Twitch Helix API (Kategorie, Titel)
 │   │   └── youtube/
-│   │       └── YoutubePlatform.h/cpp # YouTube API Integration
+│   │       ├── YoutubePlatform.h/cpp # YouTube API Integration (REST + gRPC)
+│   │       ├── YouTubeApi.h/cpp      # YouTube Data API Helfer (OAuth, Broadcast)
+│   │       ├── YouTubeQuota.h/cpp    # YouTube API Quota-Tracker
+│   │       └── YouTubeGrpcChat.h/cpp # YouTube gRPC Live-Chat-Streaming
 │   ├── rendering/              # Render-System
 │   │   ├── Renderer.h/cpp      # SFML-Renderer (Window + Offscreen)
 │   │   ├── Camera.h/cpp        # Kamera mit Shake & Zoom
@@ -365,13 +374,14 @@ InteractiveStreams/
 └── tests/                      # Unit-Tests (doctest)
     ├── test_main.cpp           # Test-Runner
     ├── test_Config.cpp         # Config-Tests
-    ├── test_ChatMessage.cpp    # ChatMessage-Tests
+    ├── test_ChatMessage.cpp    # ChatMessage-Tests (inkl. Event-Felder)
     ├── test_Player.cpp         # Player-Tests
     ├── test_PhysicsWorld.cpp   # PhysicsWorld-Tests
     ├── test_GameRegistry.cpp   # GameRegistry-Tests
     ├── test_LocalPlatform.cpp  # LocalPlatform-Tests
     ├── test_Grid.cpp           # Color Conquest Grid-Tests
-    └── test_ColorConquest.cpp  # Color Conquest Team-Tests
+    ├── test_ColorConquest.cpp  # Color Conquest Team-Tests
+    └── test_GravityBrawl.cpp   # Gravity Brawl Mechanics-Tests
 ```
 
 ---
@@ -616,6 +626,8 @@ bun run build        # Erzeugt statischen Export in web/out/
 | GET | `/api/scoreboard/recent?limit=10&hours=24` | Top-Spieler der letzten N Stunden |
 | GET | `/api/scoreboard/alltime?limit=5` | All-Time-Leaderboard |
 | GET | `/api/scoreboard/player/:id` | Einzelne Spieler-Statistiken |
+| GET | `/api/scoreboard/config` | Scoreboard-Overlay-Einstellungen |
+| PUT | `/api/scoreboard/config` | Scoreboard-Overlay-Einstellungen ändern |
 
 #### Performance
 | Methode | Endpunkt | Beschreibung |
@@ -641,6 +653,27 @@ bun run build        # Erzeugt statischen Export in web/out/
 | POST | `/api/audio/pause` | Wiedergabe pausieren |
 | POST | `/api/audio/resume` | Wiedergabe fortsetzen |
 | POST | `/api/audio/rescan` | Musik-Verzeichnis neu scannen |
+
+#### YouTube
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/youtube/quota` | YouTube API Quota-Status |
+| PUT | `/api/youtube/quota` | Quota-Budget setzen oder Reset |
+| POST | `/api/youtube/detect/:channelId` | Manuelle Broadcast-Erkennung |
+
+#### Channels (erweitert)
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/channels/:id/stats` | Per-Channel Engagement-Statistiken (Viewer, Interaktionen) |
+
+#### Profiles
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|-------------|
+| GET | `/api/profiles` | Alle Stream-Konfigurationsprofile auflisten |
+| POST | `/api/profiles` | Neues Profil erstellen |
+| GET | `/api/profiles/:id` | Profil abrufen |
+| PUT | `/api/profiles/:id` | Profil aktualisieren |
+| DELETE | `/api/profiles/:id` | Profil löschen |
 
 ---
 
@@ -674,14 +707,8 @@ bun run build        # Erzeugt statischen Export in web/out/
 
 | Befehl | Aliases | Beschreibung |
 |--------|---------|-------------|
-| `!join` | `!play` | Dem Spiel beitreten |
-| `!left` | `!l`, `!a` | Nach links bewegen |
-| `!right` | `!r`, `!d` | Nach rechts bewegen |
-| `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
-| `!attack` | `!hit`, `!atk` | Nahkampf-Angriff |
-| `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
-| `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
-| `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+| `!join [farbe]` | `!play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
+| `!s` | `!smash` | Dash/Ram-Angriff (0.8s Cooldown, 5× in 3s = Supernova) |
 
 ---
 
@@ -978,6 +1005,22 @@ public:
 - [x] Audio-System mit Musik-Playlist, Crossfade und Web-Steuerung
 - [x] Games-Seite und Audio-Seite im Dashboard
 - [x] Login-Seite im Dashboard
+
+### Phase 3.6 – Stream Events & UI Customization ✅
+- [x] Stream-Event-Reactions (Subscriptions, Super Chats, Bits, Channel Points → Spiel-Boni)
+- [x] YouTube-Event-Mapping via gRPC (proto event types) und REST (snippet.type)
+- [x] `handleStreamEvent()` in allen drei Spielen (Chaos Arena, Color Conquest, Gravity Brawl)
+- [x] Text-Element-Farbüberschreibung (RGBA hex) über Dashboard
+- [x] `parseHexColor()` und `applyTextLayout()` mit automatischer Farbanwendung
+- [x] Planeten-Tier-System in Gravity Brawl (Asteroid → Ice Planet → Gas Giant → Star)
+- [x] Anomaly Pickups (Mass Injector, Shield, Score Jackpot)
+- [x] Dynamic Camera Zoom mit konfigurierbarer Amplifikation
+- [x] Per-Stream Game Overrides (Beschreibungen, Twitch-Kategorien, YouTube-Titel, Font-Skalierung, Spieler-Limits)
+- [x] YouTube Quota Management mit Dashboard-Anzeige
+- [x] Twitch API Integration (automatische Kategorie- und Titeländerung beim Spielwechsel)
+- [x] Channel Stats (Engagement-Metriken pro Kanal)
+- [x] AudioMixer für PCM-Audio-Output in Streams
+- [x] Avatar-Caching mit Hintergrund-Download (Gravity Brawl)
 
 ### Phase 4 – Content
 - [ ] Weiteres Spiel: Marble Race

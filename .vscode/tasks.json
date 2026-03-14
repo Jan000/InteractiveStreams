@@ -2,6 +2,21 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Dashboard: Build (if changed)",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-Command",
+                "$webDir = '${workspaceFolder}/web'; $outDir = \"$webDir/out\"; $srcDir = \"$webDir/src\"; $stamp = \"$outDir/.build-stamp\"; $needsBuild = $false; if (-not (Test-Path $outDir)) { $needsBuild = $true } elseif (-not (Test-Path $stamp)) { $needsBuild = $true } else { $stampTime = (Get-Item $stamp).LastWriteTime; $changed = Get-ChildItem -Path $srcDir -Recurse -File | Where-Object { $_.LastWriteTime -gt $stampTime }; $pkgJson = Get-Item \"$webDir/package.json\"; if ($changed -or $pkgJson.LastWriteTime -gt $stampTime) { $needsBuild = $true } }; if ($needsBuild) { Write-Host '>>> Dashboard sources changed – rebuilding...'; Push-Location $webDir; bun install --frozen-lockfile 2>$null; if ($LASTEXITCODE -ne 0) { bun install }; bun run build; if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }; New-Item -ItemType File -Path $stamp -Force | Out-Null; Pop-Location; Write-Host '>>> Dashboard build complete.' } else { Write-Host '>>> Dashboard is up-to-date, skipping build.' }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
             "label": "CMake: Configure",
             "type": "shell",
             "command": "cmake",
@@ -32,6 +47,7 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
+            "dependsOn": "Dashboard: Build (if changed)",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -57,6 +73,7 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
+            "dependsOn": "Dashboard: Build (if changed)",
             "group": "build",
             "problemMatcher": [
                 "$msCompile"
@@ -80,6 +97,7 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
+            "dependsOn": "Dashboard: Build (if changed)",
             "group": "build",
             "problemMatcher": [
                 "$msCompile"

@@ -49,23 +49,59 @@ Das Projekt nutzt den Root-Namespace `is::` mit folgenden Sub-Namespaces:
 ## Wichtige Interfaces
 
 ### IGame (`src/games/IGame.h`)
-Abstrakte Basisklasse für alle Spiele:
+Abstrakte Basisklasse für alle Spiele mit integriertem Text-Layout-System:
 
 ```cpp
+enum class TextAlign { Left, Center, Right };
+
+/// Beschreibt ein konfigurierbares UI-Text-Element (Positionen in % des Render-Targets)
+struct TextElement {
+    std::string id;              // Eindeutige ID
+    std::string label;           // UI-Label im Dashboard
+    float x = 50.f, y = 5.f;    // Position in % der Breite/Höhe
+    int fontSize = 24;
+    TextAlign align = TextAlign::Center;
+    bool visible = true;
+    std::string color;           // RGBA hex "#RRGGBBAA" oder "#RRGGBB", leer = Spiel-Default
+};
+
+struct ResolvedText {
+    float px, py;        // Pixel-Koordinaten
+    unsigned fontSize;
+    TextAlign align;
+    bool visible;
+    std::string color;   // RGBA hex
+};
+
 class IGame {
 public:
+    // Identifikation
     virtual std::string id() const = 0;
     virtual std::string displayName() const = 0;
     virtual std::string description() const = 0;
+    virtual int maxPlayers() const { return 0; }  // 0 = unbegrenzt
+
+    // Font-Skalierung (per-Stream konfigurierbar)
+    void setFontScale(float scale);
+    float fontScale() const;
+
+    // Lifecycle
     virtual void initialize() = 0;
     virtual void shutdown() = 0;
+
+    // Input/Update/Render
     virtual void onChatMessage(const is::platform::ChatMessage& message) = 0;
     virtual void update(double deltaTime) = 0;
     virtual void render(sf::RenderTarget& target, double interpolationAlpha) = 0;
+
+    // Spielstatus
     virtual bool isRoundComplete() const = 0;   // true wenn Runde/Phase abgeschlossen
     virtual bool isGameOver() const = 0;         // true wenn gesamtes Spiel beendet
     virtual nlohmann::json getState() const = 0;
     virtual nlohmann::json getCommands() const = 0;
+
+    // Leaderboard (für In-Game-Rangliste)
+    virtual std::vector<std::pair<std::string, int>> getLeaderboard() const { return {}; }
 
     // Per-Game Settings
     virtual void configure(const nlohmann::json& settings) {}  // Apply game-specific settings
@@ -74,16 +110,39 @@ public:
     // Chat-Feedback Callback
     using ChatFeedbackCallback = std::function<void(const std::string&)>;
     void setChatFeedback(ChatFeedbackCallback cb);
+
+    // Text-Layout-System (Dashboard-konfigurierbar)
+    const std::vector<TextElement>& textElements() const;
+    void applyTextOverrides(const nlohmann::json& arr);  // Übernimmt Dashboard-Overrides
+    nlohmann::json textElementsJson() const;              // Serialisiert aktuelle Elemente
+
 protected:
     void sendChatFeedback(const std::string& message);
+
+    // Text-Element registrieren (im Konstruktor aufrufen)
+    void registerTextElement(const std::string& id, const std::string& label,
+                             float x, float y, int fontSize,
+                             TextAlign align = TextAlign::Center,
+                             bool visible = true,
+                             const std::string& defaultColor = "");
+
+    // Hex-Farbe parsen ("#RRGGBBAA" oder "#RRGGBB" → sf::Color)
+    static bool parseHexColor(const std::string& hex, sf::Color& out);
+
+    // Element auflösen zu Pixel-Koordinaten
+    ResolvedText resolve(const std::string& id, float targetW, float targetH) const;
+
+    // Layout auf sf::Text anwenden (Position, Ausrichtung, Farbe)
+    static void applyTextLayout(sf::Text& text, const ResolvedText&);
 };
 ```
 
 Neue Spiele:
 1. Erstelle Unterordner in `src/games/`
 2. Erbe von `is::games::IGame`
-3. Nutze `REGISTER_GAME(DeinSpiel)` Makro für automatische Registrierung
+3. Nutze `REGISTER_GAME(DeinSpiel, "spiel_id")` Makro für automatische Registrierung
 4. Keine manuelle Registrierung nötig – das Makro erzeugt einen statischen `GameRegistrar`
+5. Registriere Text-Elemente im Konstruktor via `registerTextElement()`
 
 ### IPlatform (`src/platform/IPlatform.h`)
 Abstrakte Basisklasse für Chat-Plattformen:
@@ -100,8 +159,41 @@ public:
     virtual bool sendMessage(const std::string& text) = 0;
     virtual nlohmann::json getStatus() const = 0;
     virtual void configure(const nlohmann::json& settings) = 0;
+    virtual nlohmann::json getCurrentSettings() { return {}; }  // Aktuelle Settings für Dashboard
 };
 ```
+
+### ChatMessage (`src/platform/ChatMessage.h`)
+Struktur für Chat-Nachrichten und Stream-Events:
+
+```cpp
+struct ChatMessage {
+    std::string platformId;       // "twitch", "youtube", "local"
+    std::string channelId;        // Kanal-ID
+    std::string userId;           // Plattform-spezifische User-ID
+    std::string displayName;
+    std::string avatarUrl;        // Optionales Profilbild (URL)
+    std::string text;             // Nachrichtentext
+    std::string eventType;        // Stream-Event-Typ (leer = normale Nachricht)
+    int amount = 0;               // Monetärer Betrag (Micros/Cents)
+    std::string currency;         // Währungscode (z.B. "USD")
+    bool isModerator = false;
+    bool isSubscriber = false;
+    double timestamp = 0.0;
+
+    static std::string makeUserId(const std::string& platform, const std::string& rawId);
+};
+```
+
+**Event-Typen:**
+| eventType | Quelle | Beschreibung |
+|-----------|--------|-------------|
+| `"yt_subscribe"` | YouTube gRPC/REST | Neuer Abonnent |
+| `"yt_superchat"` | YouTube gRPC/REST | Super Chat (monetär) |
+| `"twitch_sub"` | Twitch IRC | Neues Abo |
+| `"twitch_bits"` | Twitch IRC | Bits-Spende |
+| `"twitch_channel_points"` | Twitch IRC | Kanalpunkte-Einlösung |
+| `""` (leer) | Alle | Normale Chat-Nachricht |
 
 ---
 
@@ -112,9 +204,9 @@ public:
 // In deinem Spiel-Header:
 #include "games/GameRegistry.h"
 class MeinSpiel : public is::games::IGame { /* ... */ };
-REGISTER_GAME(MeinSpiel);
+REGISTER_GAME(MeinSpiel, "mein_spiel");
 ```
-Das `REGISTER_GAME` Makro erzeugt ein statisches `GameRegistrar`-Objekt, das beim Programmstart den Konstruktor aufruft und das Spiel beim `GameRegistry`-Singleton anmeldet.
+Das `REGISTER_GAME(GameClass, GameId)` Makro erzeugt ein statisches `GameRegistrar`-Objekt, das beim Programmstart den Konstruktor aufruft und das Spiel beim `GameRegistry`-Singleton anmeldet.
 
 ### Pimpl-Idiom (Application)
 `Application` nutzt das Pimpl-Idiom (`struct Impl`) um Kompilierungsabhängigkeiten zu reduzieren.
@@ -209,9 +301,20 @@ struct StreamConfig {
     std::vector<std::string> channels; // Subscribed channel IDs
     std::vector<std::string> enabledGames; // Game filter for Vote/Random (empty = all)
     EncoderSettings encoderSettings;
+
+    // Scoreboard Overlay
     double scoreboardCycleSecs = 10.0;   // Seconds per scoreboard panel
     double scoreboardFadeSecs = 1.0;     // Crossfade duration between panels
     int scoreboardChatInterval = 120;    // Seconds between chat scoreboard posts (0=disabled)
+
+    // Per-Game Overrides (per Stream konfigurierbar)
+    std::map<std::string, std::string> gameDescriptions;  // game_id → custom description
+    std::map<std::string, std::string> gameTwitchCategories; // game_id → Twitch category
+    std::map<std::string, std::string> gameYoutubeTitles;   // game_id → YouTube stream title
+    std::map<std::string, float> gameFontScales;    // game_id → font scale multiplier
+    std::map<std::string, int> gamePlayerLimits;    // game_id → max players
+    std::map<std::string, nlohmann::json> gameTextOverrides; // game_id → text element overrides
+
     int width() const;  // 1080 or 1920
     int height() const; // 1920 or 1080
 };
@@ -242,6 +345,19 @@ struct EncoderSettings {
     int bitrate = 4500;
     std::string preset = "veryfast";
     std::string codec = "libx264";
+    std::string profile = "baseline";
+    std::string tune = "zerolatency";
+    int keyframeInterval = 2;
+    int threads = 2;
+    bool cbr = true;
+    float maxrateFactor = 1.2f;
+    float bufsizeFactor = 1.0f;
+
+    // Audio
+    int audioBitrate = 128;
+    int audioSampleRate = 44100;
+    std::string audioCodec = "aac";
+    AudioMixer* audioMixer = nullptr;  // Optional: echtes Spiel-Audio
 };
 ```
 Jeder Stream hat eigene EncoderSettings; `StreamEncoder` akzeptiert diesen Struct im Konstruktor.
@@ -280,10 +396,20 @@ Befehle in `ChaosArena::onChatMessage()`:
 - `!left` / `!l` / `!a` → Spieler nach links impulsen
 - `!right` / `!r` / `!d` → Spieler nach rechts impulsen
 - `!jump` / `!j` / `!w` / `!up` → Springen / Doppelsprung
+- `!jumpleft` / `!jl` → Springen nach links
+- `!jumpright` / `!jr` → Springen nach rechts
 - `!attack` / `!hit` / `!atk` → Melee-Angriff
 - `!special` / `!sp` / `!ult` → Projektil (5s Cooldown)
 - `!dash` / `!dodge` → Dash mit I-Frames (3s Cooldown)
 - `!block` / `!shield` / `!def` → Block aktivieren
+- `!emote [text]` → Kosmetisches Emote
+
+### Stream-Event-Handling
+Bei `eventType`-Nachrichten in `handleStreamEvent()`:
+- **yt_subscribe / twitch_sub**: Schild (10s) + 50 HP Heilung + 300 Punkte
+- **yt_superchat / twitch_bits** (>100): Volle Heilung + Schadens-Boost (15s) + Unverwundbarkeit (5s) + 500 Punkte
+- **twitch_channel_points**: Schild (5s) + Geschwindigkeits-Boost (10s) + 100 Punkte
+- Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
 
 ---
 
@@ -307,20 +433,47 @@ Befehle in `ColorConquest::onChatMessage()`:
 - `!right` / `!r` / `!e` / `!east` → Stimme für Expansion nach rechts
 - `!emote [text]` → Team-Emote
 
+### Stream-Event-Handling
+Bei `eventType`-Nachrichten in `handleStreamEvent()`:
+- **yt_subscribe / twitch_sub**: Doppelte Gebiets-Expansion in zufälliger Richtung
+- **yt_superchat / twitch_bits** (>100): Doppelte Expansion in ALLEN 4 Richtungen
+- Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
+
 ---
 
 ## Gravity Brawl – Interna
 
 ### Übersicht
-Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic Events). Ähnlich wie ChaosArena, nutzt Box2D. Namespace: `is::games::gravity_brawl`. Dateien: `GravityBrawl.h/cpp`, `GBPlayer.h/cpp`, etc.
+Physik-basierter Orbital-Brawler mit dynamischen Gravitations-Shifts (Cosmic Events), Planeten-Tier-System und schwarzem Loch. Namespace: `is::games::gravity_brawl`. Dateien: `GravityBrawl.h/cpp`, `AvatarCache.h/cpp`.
 
 ### Spielphasen
-`GamePhase::Lobby` → `Countdown` → `Battle` → `RoundEnd` → `GameOver`
+`GamePhase::Lobby` → `Countdown` → `Playing` → `GameOver`
+
+### Planeten-Tier-System
+```cpp
+enum class PlanetTier { Asteroid, IcePlanet, GasGiant, Star };
+// Basierend auf Kill-Anzahl: 0→Asteroid, 3→IcePlanet, 10→GasGiant, 25→Star
+// Tier bestimmt Radius, Masse und visuelle Effekte
+```
+
+### Physik
+- ARENA_RADIUS = 18.0m (sicherer Orbit)
+- BLACK_HOLE_RADIUS = 2.5m (Todeszone, konfigurierbar via `black_hole_radius`)
+- PIXELS_PER_METER = 27.0f
+- WORLD_CENTER = (20m, 35.5m)
+- Orbitale Gravitation + Schwarzes-Loch-Gravitation + konfigurierbare Abstoßung (`black_hole_repulsion_strength`)
+
+### Anomaly Pickups
+```cpp
+enum class AnomalyType { MassInjector, Shield, ScoreJackpot };
+// Spawnen periodisch (anomaly_spawn_interval), aktivieren bei Kollision
+```
 
 ### Cosmic Events (Gravitations-Shifts)
-- Periodische Gravitationsänderungen während der Battle-Phase
+- Periodische Gravitationsänderungen während der Playing-Phase
 - Richtung und Stärke der Schwerkraft ändern sich dynamisch
 - Spieler müssen sich an neue Physik-Bedingungen anpassen
+- Konfigurierbar: `cosmic_event_cooldown`, `cosmic_event_duration`, `event_gravity_mul`
 
 ### Bot Fill System
 - Füllt die Lobby automatisch mit KI-Bots auf, um einen Mindest-Spielerstand zu erreichen
@@ -366,7 +519,23 @@ Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic E
 - Enthält u.a. `sfx_enabled`, `sfx_volume`, Bot-Verhalten, Kamera-Zoom
 
 ### Chat-Befehl-Parsing
-Identische Befehle wie ChaosArena (`!join`, `!left`, `!right`, `!jump`, `!attack`, `!special`, `!dash`, `!block` etc.)
+Befehle in `GravityBrawl::onChatMessage()`:
+- `!join [farbe]` / `!play` → Spieler hinzufügen (Farbe optional: red, blue, green, yellow, #RRGGBB)
+- `!s` / `!smash` → Dash/Ram-Angriff (0.8s Cooldown)
+- 5 aufeinanderfolgende Smashes innerhalb 3s → Supernova (großer AoE-Knockback)
+
+### Stream-Event-Handling
+Bei `eventType`-Nachrichten wird `triggerLivestreamReward()` aufgerufen:
+- **yt_subscribe / twitch_sub**: Schild + Tier-Bonus + 300 Punkte
+- **twitch_channel_points**: Supernova-Auslösung
+- **yt_superchat / twitch_bits** (>100): God Mode (30s) + 3× Masse
+- Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
+
+### Per-Game Settings
+- Konfigurierbare Parameter über `configure()` / `getSettings()`
+- Gespeichert unter `game_settings.gravity_brawl` in Config
+- API: `GET/PUT /api/games/gravity_brawl/settings`
+- Enthalt u.a.: `epoch_duration`, `enable_post_processing`, `background_stars`, Physik-Settings (`orbital_gravity_strength`, `black_hole_gravity_strength`, `restitution`, `black_hole_radius`, `black_hole_repulsion_strength`), Gameplay (`smash_cooldown`, `supernova_radius`, `max_speed`, `respawn_cooldown`), Audio (`sfx_enabled`, `sfx_volume`), Kamera-Zoom, Bot-Verhalten, Anomalien (`anomaly_spawn_interval`) und ~40+ weitere Parameter
 
 ---
 
@@ -624,6 +793,11 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 17. **Bot Fill System**: Spiele können Bot-Spawning auslösen, um Mindest-Spielerzahlen zu erreichen. Bots haben KI-Verhalten mit konfigurierbaren Smash-Wahrscheinlichkeiten und Aktionsintervallen. Bots erscheinen standardmäßig nicht im Kill-Feed (`bot_kill_feed`). Tote Bots können automatisch respawnen (`bot_respawn`, `bot_respawn_delay`). Konfigurierbar per Game-Settings. Aktuell in Gravity Brawl implementiert.
 18. **Scoreboard Overlay**: Streams zeigen ein rotierendes Scoreboard-Overlay (Recent/All-Time Panels) mit konfigurierbarer Zykluszeit und Crossfade. Optional: automatischer Chat-Post des Scoreboards in konfigurierbarem Intervall.
 19. **YouTube Quota Management** (`src/platform/youtube/YouTubeQuota.h/cpp`): Singleton-Tracker für YouTube Data API v3 Quota (10.000 Units/Tag, Mitternacht Pacific Time Reset). Kosten: `COST_LIST=1`, `COST_SEARCH=100`, `COST_INSERT=50`, `COST_UPDATE=50`. `consume(cost)` blockiert bei erschöpftem Budget. Auto-Rollover via `pacificDayNumber()`. Alle `YouTubeApi`-Methoden rufen `consume()` vor jeder API-Anfrage auf. REST-Chat-Polling ebenfalls quota-geschützt. Dashboard zeigt Quota-Bar in YouTube-Channel-Karten. API: `GET /api/youtube/quota`, `PUT /api/youtube/quota` (budget setzen, reset). Broadcast-Erkennung: Keine automatischen Versuche ohne gestarteten Stream. Nach Stream-Start: 10s Wartezeit, dann max. 2 Versuche (30s Abstand). Danach nur noch manuell via `POST /api/youtube/detect/:channelId` (Dashboard-Button).
+20. **Stream-Event-Reactions**: Spiele reagieren auf Stream-Events (Subscriptions, Super Chats, Bits, Channel Points) über `ChatMessage::eventType`. YouTube-Events werden sowohl via gRPC (proto event types: NEW_SPONSOR_EVENT=7, SUPER_CHAT_EVENT=15, SUPER_STICKER_EVENT=16) als auch via REST (snippet.type) gemappt. Twitch-Events via IRC-Tags. Alle drei Spiele implementieren `handleStreamEvent()` mit spielspezifischen Belohnungen (Schild, Heilung, God Mode, Gebietserweiterung). Events lösen automatisch `!join` aus.
+21. **Text-Layout-System mit Farbüberschreibung**: Spiele registrieren Text-Elemente via `registerTextElement()` mit optionaler `defaultColor` (RGBA hex). Dashboard erlaubt Überschreiben von Position, Größe, Sichtbarkeit und Farbe pro Element. `parseHexColor()` konvertiert "#RRGGBBAA" oder "#RRGGBB" zu `sf::Color`. `applyTextLayout()` wendet automatisch die konfigurierte Farbe an.
+22. **AudioMixer** (`src/core/AudioMixer.h/cpp`): Erzeugt PCM-Audio-Output für Streams. Mixt Musik und SFX in 44100 Hz Stereo S16LE. Wird als `audioMixer` Pointer in `EncoderSettings` übergeben. `StreamEncoder` piped den Audio-Output parallel zum Video an FFmpeg.
+23. **ChannelStats** (`src/core/ChannelStats.h/cpp`): Per-Channel Engagement-Metriken (unique viewers, total interactions, active sessions, top users). API: `GET /api/channels/:id/stats`.
+24. **TwitchApi** (`src/platform/twitch/TwitchApi.h/cpp`): Statische Helfer für Twitch Helix API via curl. `getBroadcasterId()`, `getGameId()`, `updateChannelInfo()`. Ermöglicht automatisches Setzen von Twitch-Kategorie und Titel beim Spielwechsel.
 
 ---
 

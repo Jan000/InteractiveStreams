@@ -121,12 +121,19 @@ Nach dem ersten erfolgreichen Deploy:
    - RTMP-URL wird über die Channel-Settings konfiguriert
 4. **Stream starten**: Im Stream-Card auf „Start Streaming" klicken
 
-### API-Key (optional)
+### Authentifizierung (empfohlen)
 
-Für produktive Deployments einen API-Key setzen:
+Für produktive Deployments sollte die Zugangssteuerung aktiviert werden:
+
+**Passwort-Login (empfohlen):**
+1. Dashboard öffnen → Setup-Seite erscheint automatisch beim ersten Zugriff
+2. Passwort setzen → Session-basierte Authentifizierung ist aktiv
+3. Passwort kann über Dashboard → **Settings** → **Change Password** geändert werden
+4. Für Recovery: Container neustarten mit `--reset-password` Flag
+
+**API-Key (Legacy):**
 1. Dashboard → **Settings** → **API Key** Feld ausfüllen
-2. Den gleichen Key im Browser unter **Settings** eingeben
-3. Alle API-Aufrufe werden dann authentifiziert
+2. Alle API-Aufrufe werden dann per `Authorization: Bearer <key>` authentifiziert
 
 ---
 

@@ -285,6 +285,8 @@ foreach ($p in $players) {
 | `!left` | `!l`, `!a` | Nach links bewegen |
 | `!right` | `!r`, `!d` | Nach rechts bewegen |
 | `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
+| `!jumpleft` | `!jl` | Springen nach links |
+| `!jumpright` | `!jr` | Springen nach rechts |
 | `!attack` | `!hit`, `!atk` | Nahkampfangriff (0.5s Cooldown) |
 | `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
 | `!dash` | `!dodge` | Dash mit I-Frames (3s Cooldown) |
@@ -301,6 +303,15 @@ foreach ($p in $players) {
 | `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
 | `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
 | `!emote [text]` | — | Team-Emote senden |
+
+### Chat-Befehle (Gravity Brawl)
+
+| Befehl | Aliase | Beschreibung |
+|--------|--------|-------------|
+| `!join [farbe]` | `!play` | Beitreten (optional: red, blue, green, yellow, #RRGGBB) |
+| `!smash` | `!s` | Dash/Ram-Angriff (0.8s Cooldown) |
+
+> **Supernova:** 5 aufeinanderfolgende Smashes innerhalb von 3 Sekunden lösen eine Supernova (großer AoE-Knockback) aus.
 
 ### Spielphasen (Chaos Arena)
 
@@ -322,6 +333,15 @@ foreach ($p in $players) {
 | **RoundEnd** | Ergebnis der Expansion anzeigen | Abstimmungszeit vorbei |
 | **GameOver** | Endergebnis – Team mit meisten Zellen gewinnt | 30 Runden gespielt |
 
+### Spielphasen (Gravity Brawl)
+
+| Phase | Beschreibung | Trigger |
+|-------|-------------|--------|
+| **Lobby** | Warten auf Spieler, Bots füllen auf | Start / nach GameOver |
+| **Countdown** | 3s Countdown vor dem Kampf | ≥ 2 Spieler (inkl. Bots) |
+| **Playing** | Orbitaler Kampf, Cosmic Events, Black-Hole-Gravitation | Countdown abgelaufen |
+| **GameOver** | Letzter Planet überlebt – Gewinner | ≤ 1 Planet übrig oder Epoch-Timer abgelaufen |
+
 ### Was du testen solltest
 1. **Join-Mechanik:** Tritt mit mehreren Spielern bei, prüfe Leaderboard
 2. **Bewegung:** Links/Rechts/Jump, Doppelsprung, Plattform-Interaktion
@@ -339,6 +359,19 @@ foreach ($p in $players) {
 5. **Team-Balance:** Auto-Zuweisung weist kleinsten Teams zu
 6. **Skalierung:** Viele Spieler über Auto-Play testen (500+)
 7. **Spielwechsel:** Während Color Conquest zu Chaos Arena wechseln und umgekehrt
+
+### Gravity Brawl – Was du testen solltest
+1. **Join-Mechanik:** `!join`, `!join red`, `!join #FF0000` (Farb-Auswahl)
+2. **Smash:** `!smash` / `!s` – Impulse, Cooldown (0.8s), Richtung
+3. **Supernova:** 5 schnelle Smashes → AoE-Knockback
+4. **Orbitale Physik:** Planeten kreisen um das schwarze Loch, bleiben im stabilen Band
+5. **Black-Hole-Gravitation:** Wächst über Zeit, zieht Planeten langsam rein
+6. **Planet-Tier-System:** Kills → Asteroid → IcePlanet → GasGiant → Star
+7. **King/Bounty:** Planet mit meisten Kills bekommt Krone und Bounty
+8. **Cosmic Events:** Gravitationsänderungen während des Spiels
+9. **Bot Fill:** Bots füllen Lobby auf Minimum-Spielerzahl auf
+10. **Stream-Events:** Subscribe/Bits/Super Chat → Belohnungen (Schild, God Mode)
+11. **Per-Game Settings:** `GET/PUT /api/games/gravity_brawl/settings` – 40+ Parameter
 
 ---
 
@@ -413,6 +446,11 @@ ctest --output-on-failure -C Debug
 | **LocalPlatform** | Message-Injection, Polling, Konsolen-Format-Parsing |
 | **Grid** | Grid-Erstellung, Zell-Zuordnung, Expansion, Grenzerkennung |
 | **ColorConquest** | TeamData-Voting, Vote-Tallying, Tie-Break, clearVotes |
+| **GravityBrawl – Config** | Settings Round-Trip, Clamping, Bot Fill, getState/getCommands |
+| **GravityBrawl – Physics** | Orbit-Stabilität, Black-Hole-Gravitation, Velocity-Clamping, Kollisionen, Cosmic Events |
+| **GravityBrawl – Gameplay** | Lifecycle, Join/Smash-Commands, Supernova, King/Bounty, Kill-Attribution, Tier-Evolution, Leaderboard |
+| **GravityBrawl – Rendering** | Pixel-Output, Partikel-Erzeugung, Partikel-Limits, Multi-Frame-Stabilität |
+| **GravityBrawl – Stress** | 12/20/30-Spieler-Simulationen über 45s bis 2 Minuten |
 
 ---
 
@@ -438,7 +476,12 @@ docker compose down
 
 ## API-Authentifizierung testen
 
-### API-Key setzen
+### Password-Login (empfohlen)
+1. Öffne Dashboard → beim ersten Start wird automatisch Setup-Seite gezeigt
+2. Erstelle ein Passwort → Session-Token wird automatisch gespeichert
+3. Alle API-Requests enthalten automatisch `Authorization: Bearer <token>`
+
+### API-Key setzen (Legacy)
 1. Öffne Dashboard → **Settings → Web Server**
 2. Gib einen API-Key ein und klicke **Save**
 3. Oder direkt in der Config: `"web": { "api_key": "test-key" }`
