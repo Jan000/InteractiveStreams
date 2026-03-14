@@ -105,6 +105,12 @@ FetchContent_Declare(
 
 # Suppress deprecation warnings from older CMakeLists in dependencies
 set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
+# Prevent httplib from auto-detecting OpenSSL. gRPC bundles BoringSSL whose
+# headers masquerade as OpenSSL 1.1.x — httplib's find_package(OpenSSL) finds
+# them and adds CPPHTTPLIB_OPENSSL_SUPPORT as an INTERFACE definition, which
+# then fails because httplib requires OpenSSL >= 3.0.
+# We handle HTTPS via platform-native fallbacks (WinHTTP / curl) instead.
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sfml box2d json httplib spdlog)
 set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
 
