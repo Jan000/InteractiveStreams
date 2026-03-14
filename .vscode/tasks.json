@@ -17,6 +17,20 @@
             "problemMatcher": []
         },
         {
+            "label": "Stop InteractiveStreams (if running)",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-Command",
+                "Stop-Process -Name InteractiveStreams -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "CMake: Configure",
             "type": "shell",
             "command": "cmake",
@@ -47,7 +61,8 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "Dashboard: Build (if changed)",
+            "dependsOn": ["Dashboard: Build (if changed)", "Stop InteractiveStreams (if running)"],
+            "dependsOrder": "parallel",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -73,7 +88,8 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "Dashboard: Build (if changed)",
+            "dependsOn": ["Dashboard: Build (if changed)", "Stop InteractiveStreams (if running)"],
+            "dependsOrder": "parallel",
             "group": "build",
             "problemMatcher": [
                 "$msCompile"
@@ -97,7 +113,8 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "Dashboard: Build (if changed)",
+            "dependsOn": ["Dashboard: Build (if changed)", "Stop InteractiveStreams (if running)"],
+            "dependsOrder": "parallel",
             "group": "build",
             "problemMatcher": [
                 "$msCompile"
