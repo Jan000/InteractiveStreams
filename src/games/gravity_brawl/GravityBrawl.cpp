@@ -367,6 +367,9 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("black_hole_gravity_strength") && settings["black_hole_gravity_strength"].is_number()) {
         m_blackHoleBaseGravity = settings["black_hole_gravity_strength"].get<float>();
     }
+    if (settings.contains("black_hole_radius") && settings["black_hole_radius"].is_number()) {
+        m_blackHoleRadius = std::max(0.5f, settings["black_hole_radius"].get<float>());
+    }
     if (settings.contains("black_hole_consume_size_factor") && settings["black_hole_consume_size_factor"].is_number()) {
         m_blackHoleConsumeSizeFactor = settings["black_hole_consume_size_factor"].get<float>();
     }
@@ -507,6 +510,7 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"orbital_safe_zone_pull_multiplier", m_orbitalSafeZonePullMultiplier},
         {"orbital_tangential_strength", m_orbitalTangentialStrength},
         {"black_hole_gravity_strength", m_blackHoleBaseGravity},
+        {"black_hole_radius", m_blackHoleRadius},
         {"black_hole_consume_size_factor", m_blackHoleConsumeSizeFactor},
         {"black_hole_gravity_cap", m_blackHoleGravityCap},
         {"black_hole_kill_radius_multiplier", m_blackHoleKillRadiusMultiplier},
@@ -931,7 +935,7 @@ void GravityBrawl::spawnAnomaly() {
 
     std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * b2_pi);
     std::uniform_real_distribution<float> radiusDist(
-        BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier + 4.0f,
+        m_blackHoleRadius * m_blackHoleKillRadiusMultiplier + 4.0f,
         ARENA_RADIUS * 0.92f);
     std::uniform_int_distribution<int> typeDist(0, 2);
 
@@ -1364,21 +1368,8 @@ void GravityBrawl::triggerSupernova(Planet& p) {
 void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
     if (impulse < m_collisionMinImpulse) return; // Ignore gentle touches
 
-    // Per-pair hit cooldown: prevent rapid-fire scoring from repeated low-velocity bounces
-    // Use a deterministic key from the two body pointers (order-independent)
-    auto ptrA = reinterpret_cast<uintptr_t>(a.body);
-    auto ptrB = reinterpret_cast<uintptr_t>(b.body);
-    uint64_t pairKey = (std::min(ptrA, ptrB) << 32) ^ std::max(ptrA, ptrB);
-    double now = m_gameTimer;
-    if (m_hitCooldown > 0.0f) {
-        auto it = m_pairHitCooldowns.find(pairKey);
-        if (it != m_pairHitCooldowns.end() && (now - it->second) < static_cast<double>(m_hitCooldown)) {
-            return; // Still on cooldown for this pair
-        }
-        m_pairHitCooldowns[pairKey] = now;
-    }
-
-    // Apply minimum knockback so slow collisions still separate the planets
+    // Always apply minimum knockback on every qualifying contact,
+    // independent of the scoring cooldown, so planets separate immediately.
     if (m_minKnockback > 0.0f) {
         b2Vec2 diff = b.body->GetPosition() - a.body->GetPosition();
         float dist = diff.Length();
@@ -1388,6 +1379,19 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
             a.body->ApplyLinearImpulseToCenter(b2Vec2(-dir.x * halfKnock, -dir.y * halfKnock), true);
             b.body->ApplyLinearImpulseToCenter(b2Vec2( dir.x * halfKnock,  dir.y * halfKnock), true);
         }
+    }
+
+    // Per-pair hit cooldown: prevent rapid-fire scoring from repeated bounces
+    auto ptrA = reinterpret_cast<uintptr_t>(a.body);
+    auto ptrB = reinterpret_cast<uintptr_t>(b.body);
+    uint64_t pairKey = (std::min(ptrA, ptrB) << 32) ^ std::max(ptrA, ptrB);
+    double now = m_gameTimer;
+    if (m_hitCooldown > 0.0f) {
+        auto it = m_pairHitCooldowns.find(pairKey);
+        if (it != m_pairHitCooldowns.end() && (now - it->second) < static_cast<double>(m_hitCooldown)) {
+            return; // Still on cooldown — skip scoring/effects but knockback was already applied
+        }
+        m_pairHitCooldowns[pairKey] = now;
     }
 
     // Both planets get pushed — mark last-hit-by for kill attribution
@@ -1698,6 +1702,11 @@ void GravityBrawl::applyOrbitalForces(float dt) {
         float targetDist = ARENA_RADIUS * m_safeOrbitRadiusFactor;
         float pullStrength = m_orbitalGravityStrength * eventBoost;
 
+        // Compute fade factor for orbital outward push near the black hole,
+        // so the push doesn't fight the black hole gravity.
+        float killZone = m_blackHoleRadius * m_blackHoleKillRadiusMultiplier;
+        float bhFade = std::clamp((dist - killZone * 1.5f) / (killZone * 3.0f), 0.0f, 1.0f);
+
         if (dist > targetDist * 1.2f) {
             // Too far out → stronger inward pull
             pullStrength *= m_orbitalOuterPullMultiplier;
@@ -1705,16 +1714,14 @@ void GravityBrawl::applyOrbitalForces(float dt) {
             // In safe band → gentle inward pull
             pullStrength *= m_orbitalSafeZonePullMultiplier;
         } else {
-            // Inside safe orbit: gentle velocity-dependent outward nudge.
-            // When a planet is nearly stationary the push is small (fixes the
-            // "black hole feels repulsive" / "nearly-still planets fly away" bug).
+            // Inside safe orbit: velocity-dependent outward nudge,
+            // fading near the black hole so it doesn't cause repulsion.
             float penetration = std::min(1.0f,
                 (targetDist * 0.8f - dist) / (targetDist * 0.4f));
             b2Vec2 vel = p.body->GetLinearVelocity();
-            // radialInwardVel > 0  ↔  planet is falling toward the center
             float radialInwardVel = vel.x * dir.x + vel.y * dir.y;
             float velFactor = std::clamp(radialInwardVel / 5.0f + 0.2f, 0.2f, 1.0f);
-            pullStrength *= -(0.45f + 0.85f * penetration) * velFactor;
+            pullStrength *= -(0.45f + 0.85f * penetration) * velFactor * bhFade;
         }
 
         // Tangential force for orbit (perpendicular to radial direction)
@@ -1754,7 +1761,7 @@ void GravityBrawl::applyBlackHoleGravity(float dt) {
 
         if (dist < 0.5f) continue;
 
-        float distanceFromKillZone = std::max(1.0f, dist - BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier);
+        float distanceFromKillZone = std::max(1.0f, dist - m_blackHoleRadius * m_blackHoleKillRadiusMultiplier);
         float pullForce = effectiveGravity / distanceFromKillZone;
         pullForce = std::min(pullForce, m_blackHoleGravityCap);
         // Anti-snowball: heavier planets are pulled harder; the king gets extra pull
@@ -1782,7 +1789,7 @@ void GravityBrawl::checkBlackHoleDeaths() {
         float dist = std::sqrt(dx * dx + dy * dy);
 
         // Kill zone is 20% larger than the visual radius
-        if (dist < BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier) {
+        if (dist < m_blackHoleRadius * m_blackHoleKillRadiusMultiplier) {
             eliminatePlanet(p);
         }
     }
@@ -2201,7 +2208,7 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
 
 void GravityBrawl::renderBlackHole(sf::RenderTarget& target) {
     sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
-    float baseRadius = BLACK_HOLE_RADIUS * PIXELS_PER_METER * m_cameraZoom;
+    float baseRadius = m_blackHoleRadius * PIXELS_PER_METER * m_cameraZoom;
 
     // Pulsing during cosmic event
     float pulseScale = 1.0f;
@@ -2282,7 +2289,7 @@ void GravityBrawl::renderOrbitTrails(sf::RenderTarget& target) {
     target.draw(orbit);
 
     // Danger zone ring (inner)
-    float dangerR = BLACK_HOLE_RADIUS * m_blackHoleKillRadiusMultiplier * PIXELS_PER_METER * m_cameraZoom;
+    float dangerR = m_blackHoleRadius * m_blackHoleKillRadiusMultiplier * PIXELS_PER_METER * m_cameraZoom;
     sf::CircleShape danger(dangerR, 24); // reduced polygon count
     danger.setOrigin(dangerR, dangerR);
     danger.setPosition(center);
@@ -2902,7 +2909,7 @@ void GravityBrawl::renderCosmicEventWarning(sf::RenderTarget& target) {
 
             // Position near black hole
             sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
-            timerText.setPosition(center.x, center.y - BLACK_HOLE_RADIUS * PIXELS_PER_METER - 30.0f);
+            timerText.setPosition(center.x, center.y - m_blackHoleRadius * PIXELS_PER_METER - 30.0f);
             target.draw(timerText);
         }
     }

@@ -384,6 +384,7 @@ private:
     float  m_orbitalOuterPullMultiplier   = 1.25f;
     float  m_orbitalSafeZonePullMultiplier = 0.35f;
     float  m_orbitalTangentialStrength    = 8.75f;
+    float  m_blackHoleRadius              = 2.5f;  // meters (visual + physics base)
     float  m_blackHoleBaseGravity         = 6.0f;
     float  m_blackHoleConsumeSizeFactor   = 1.75f;
     float  m_blackHoleConsumedGravityBonus = 0.0f;

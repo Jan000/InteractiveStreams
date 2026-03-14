@@ -48,6 +48,7 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "orbital_safe_zone_pull_multiplier", label: "Safe Zone Pull Multiplier", description: "Reduced inward pull while planets are near the safe orbit", type: "float", min: 0, step: 0.05, defaultValue: 0.35 },
     { key: "orbital_tangential_strength", label: "Orbital Tangential Strength", description: "Sideways force that keeps planets circling instead of dropping inward", type: "float", min: 0, step: 0.1, defaultValue: 8.75 },
     // --- Black Hole ---
+    { key: "black_hole_radius", label: "Black Hole Radius (m)", description: "Visual and physics radius of the black hole in meters", type: "float", min: 0.5, step: 0.25, defaultValue: 2.5 },
     { key: "black_hole_gravity_strength", label: "Black Hole Gravity Strength", description: "Base pull strength of the black hole", type: "float", min: 0, step: 0.1, defaultValue: 6.0 },
     { key: "black_hole_consume_size_factor", label: "Consume Size Growth", description: "Additional black hole pull gained when it consumes a player, scaled by player size", type: "float", min: 0, step: 0.05, defaultValue: 1.75 },
     { key: "black_hole_gravity_cap", label: "Black Hole Gravity Cap", description: "Maximum black hole pull applied in a single physics step", type: "float", min: 0, step: 0.5, defaultValue: 30.0 },

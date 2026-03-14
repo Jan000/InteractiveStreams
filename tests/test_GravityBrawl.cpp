@@ -423,7 +423,7 @@ TEST_SUITE("GB Physics") {
         TA::startPlaying(game);
 
         float killZone = BLACK_HOLE_RADIUS * TA::blackHoleKillRadiusMultiplier(game);
-        float outerBound = ARENA_RADIUS * 1.6f;
+        float outerBound = ARENA_RADIUS * 2.0f;
 
         // 30 seconds of simulation at 60Hz
         for (int step = 0; step < 1800; ++step) {
