@@ -12,6 +12,7 @@ logs/
 docs/
 tests/
 *.txt
+!CMakeLists.txt
 .github/
 .vscode/
 .env*
