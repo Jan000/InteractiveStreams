@@ -404,6 +404,7 @@ private:
     float  m_cameraBufferMeters   = 1.5f;   // buffer beyond outermost player before zoom kicks in
     float  m_cameraMinZoom        = 0.3f;   // minimum allowed zoom (max zoom-out)
     float  m_cameraMaxZoom        = 2.5f;   // maximum allowed zoom (max zoom-in)
+    float  m_cameraZoomAmplify    = 2.0f;   // amplifies deviation from neutral zoom (1=off)
 
     /// Recompute m_cameraTargetZoom from current player positions.
     void   updateCameraZoom(float dt);

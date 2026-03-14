@@ -402,6 +402,9 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("camera_max_zoom") && settings["camera_max_zoom"].is_number()) {
         m_cameraMaxZoom = std::clamp(settings["camera_max_zoom"].get<float>(), 1.0f, 5.0f);
     }
+    if (settings.contains("camera_zoom_amplify") && settings["camera_zoom_amplify"].is_number()) {
+        m_cameraZoomAmplify = std::clamp(settings["camera_zoom_amplify"].get<float>(), 1.0f, 5.0f);
+    }
     // Per-tier size/mass settings
     if (settings.contains("tier_radius") && settings["tier_radius"].is_array() && settings["tier_radius"].size() == 4) {
         for (int i = 0; i < 4; i++)
@@ -475,6 +478,7 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"camera_buffer_meters", m_cameraBufferMeters},
         {"camera_min_zoom", m_cameraMinZoom},
         {"camera_max_zoom", m_cameraMaxZoom},
+        {"camera_zoom_amplify", m_cameraZoomAmplify},
         {"tier_radius", {m_tierRadius[0], m_tierRadius[1], m_tierRadius[2], m_tierRadius[3]}},
         {"tier_mass",   {m_tierMass[0],   m_tierMass[1],   m_tierMass[2],   m_tierMass[3]}},
         {"bot_kill_feed", m_botKillFeed},
@@ -2067,7 +2071,10 @@ void GravityBrawl::updateCameraZoom(float dt) {
     float zoomH   = (neededH > 0.01f) ? (halfW / neededH) : m_cameraMaxZoom;
     float zoomV   = (neededV > 0.01f) ? (halfH / neededV) : m_cameraMaxZoom;
 
-    m_cameraTargetZoom = std::clamp(std::min(zoomH, zoomV), m_cameraMinZoom, m_cameraMaxZoom);
+    float rawZoom = std::min(zoomH, zoomV);
+    // Amplify deviation from 1.0 so the zoom effect is perceptible on stream
+    float amplified = 1.0f + (rawZoom - 1.0f) * m_cameraZoomAmplify;
+    m_cameraTargetZoom = std::clamp(amplified, m_cameraMinZoom, m_cameraMaxZoom);
 
     // Smooth interpolation toward target
     float t = 1.0f - std::exp(-m_cameraZoomSpeed * dt);

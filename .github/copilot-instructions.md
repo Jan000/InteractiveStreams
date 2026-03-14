@@ -334,6 +334,7 @@ Physik-basierter Plattform-Brawler mit dynamischen Gravitations-Shifts (Cosmic E
 - Kamera zoomt dynamisch, um alle Spieler sichtbar zu halten
 - Zoomt rein wenn Spieler nah beieinander (`camera_max_zoom`, Default: 2.0), raus wenn weit verstreut (`camera_min_zoom`, Default: 0.4)
 - `camera_zoom_enabled` (bool, Default: true), `camera_zoom_speed` (float, Default: 2.0), `camera_buffer_meters` (float, Default: 3.0)
+- `camera_zoom_amplify` (float 1–5, Default: 2.0): Verstärkt die Abweichung vom neutralen Zoom (1.0), damit der Effekt auf dem Stream deutlich sichtbar wird
 - Alle Einstellungen im Web-Dashboard konfigurierbar
 
 ### Sound Effects (SFX)
