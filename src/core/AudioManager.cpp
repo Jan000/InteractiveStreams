@@ -306,6 +306,41 @@ void AudioManager::update(double dt) {
         }
     }
 
+    // ── Mixer track-ended: start next track promptly ────────────────────
+    // The AudioMixer decodes independently and may reach EOF before SFML.
+    // Polling this flag avoids a silence gap in the stream audio.
+    if (m_audioMixer && m_audioMixer->consumeTrackEnded()) {
+        if (m_fadeState == FadeState::None && m_currentIndex >= 0 && !m_musicPaused) {
+            // Mixer's music ended — kick off the next track / crossfade
+            if (m_crossfadeOverlap > 0.01f) {
+                beginCrossfade();
+            } else {
+                int next = nextTrackIndex();
+                if (next < 0) {
+                    shufflePlaylist();
+                    next = 0;
+                }
+                m_currentIndex = next;
+                m_musicCurrent = std::make_unique<sf::Music>();
+                if (loadTrackInto(*m_musicCurrent, next)) {
+                    if (m_fadeInSeconds > 0.01f) {
+                        m_musicCurrent->setVolume(0.0f);
+                        m_fadeState = FadeState::FadingIn;
+                        m_fadeTimer = 0.0f;
+                    } else {
+                        m_musicCurrent->setVolume(m_muted ? 0.0f : m_musicVolume);
+                    }
+                    m_musicCurrent->play();
+                    m_audioMixer->playTrack(m_playlist[next]);
+
+                    spdlog::info("[Audio] Mixer track ended → Now playing: {} ({}/{})",
+                        fs::path(m_playlist[next]).filename().string(),
+                        next + 1, m_playlist.size());
+                }
+            }
+        }
+    }
+
     // ── Auto-advance: detect when current track is about to end ──────────
     if (m_fadeState == FadeState::None && m_musicCurrent && !m_musicPaused &&
         m_currentIndex >= 0) {

@@ -61,6 +61,10 @@ public:
     /// @param volume  Per-sound volume multiplier (0–100), combined with global SFX volume.
     void playSfx(const sf::SoundBuffer& buffer, float volume = 100.0f);
 
+    /// Returns true (once) when the mixer's music file reached EOF.
+    /// AudioManager should poll this to trigger the next track promptly.
+    bool consumeTrackEnded();
+
     // ── PCM output ───────────────────────────────────────────────────────
 
     /// Pull mixed PCM samples (stereo interleaved, s16le, 44100 Hz).
@@ -96,10 +100,13 @@ private:
         size_t       totalSamples = 0;
         unsigned int channels    = 0;
         unsigned int sampleRate  = 0;
-        size_t       position    = 0;    ///< Current read position (in samples)
+        size_t       position    = 0;    ///< Output frames generated so far
         float        volume      = 100.0f; ///< Per-sound volume (0–100)
     };
     std::vector<SfxInstance>  m_activeSfx;
+
+    // Track-ended notification
+    bool  m_trackEnded = false;
 
     // Volume
     float m_musicVolume = 50.0f;  // 0–100

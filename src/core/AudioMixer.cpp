@@ -207,6 +207,13 @@ void AudioMixer::setMuted(bool muted) {
     m_muted = muted;
 }
 
+bool AudioMixer::consumeTrackEnded() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    bool ended = m_trackEnded;
+    m_trackEnded = false;
+    return ended;
+}
+
 void AudioMixer::playSfx(const sf::SoundBuffer& buffer, float volume) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -227,11 +234,13 @@ size_t AudioMixer::pullSamples(sf::Int16* output, size_t frameCount) {
     const size_t totalSamples = frameCount * CHANNELS;
     std::memset(output, 0, totalSamples * sizeof(sf::Int16));
 
-    if (m_muted || !m_playing || m_paused) {
+    // Muted → complete silence for everything
+    if (m_muted) {
         return frameCount;
     }
 
-    if (m_musicFile) {
+    // ── Music (requires playing + not paused + file open) ────────────────
+    if (m_playing && !m_paused && m_musicFile) {
         const float musicGain = m_musicVolume / 100.0f;
 
         if (m_isCrossfading && m_musicNext) {
@@ -272,7 +281,8 @@ size_t AudioMixer::pullSamples(sf::Int16* output, size_t frameCount) {
                     m_musicFile.reset();
                     m_musicChannels = 0;
                     m_musicSampleRate = 0;
-                    m_playing = false;
+                    // Signal track ended — AudioManager will start next track
+                    m_trackEnded = true;
                 }
             } else if (m_isCrossfading && m_musicNext) {
                 m_crossfadeTimer += static_cast<float>(frameCount) / static_cast<float>(SAMPLE_RATE);
@@ -295,53 +305,69 @@ size_t AudioMixer::pullSamples(sf::Int16* output, size_t frameCount) {
                 m_musicFile.reset();
                 m_musicChannels = 0;
                 m_musicSampleRate = 0;
-                m_playing = false;
+                // Signal track ended — AudioManager will start next track.
+                // Do NOT set m_playing = false: SFX must keep mixing during
+                // the brief gap before the next track starts.
+                m_trackEnded = true;
             }
         }
     }
 
-    const float sfxGain = m_sfxVolume / 100.0f;
-    for (auto it = m_activeSfx.begin(); it != m_activeSfx.end(); ) {
-        auto& sfx = *it;
+    // ── SFX (always mixed unless muted or paused) ────────────────────────
+    if (!m_paused) {
+        const float sfxGain = m_sfxVolume / 100.0f;
+        for (auto it = m_activeSfx.begin(); it != m_activeSfx.end(); ) {
+            auto& sfx = *it;
 
-        if (!sfx.samples || sfx.totalSamples == 0) {
-            it = m_activeSfx.erase(it);
-            continue;
-        }
-
-        bool done = false;
-        for (size_t i = 0; i < frameCount; ++i) {
-            if (sfx.position >= sfx.totalSamples) {
-                done = true;
-                break;
+            if (!sfx.samples || sfx.totalSamples == 0) {
+                it = m_activeSfx.erase(it);
+                continue;
             }
 
-            int left = 0;
-            int right = 0;
-            if (sfx.channels == 1) {
-                left = right = sfx.samples[sfx.position];
-                sfx.position += 1;
-            } else {
-                left = sfx.samples[sfx.position];
-                right = (sfx.position + 1 < sfx.totalSamples)
-                    ? sfx.samples[sfx.position + 1]
-                    : left;
-                sfx.position += 2;
-            }
-
-            // Global SFX volume is applied exactly once here; per-sound volume
-            // is provided by the caller (AudioManager).
+            const size_t totalSourceFrames = sfx.totalSamples / std::max(1u, sfx.channels);
             const float gain = sfxGain * (sfx.volume / 100.0f);
-            const int l = output[i * 2] + static_cast<int>(left * gain);
-            const int r = output[i * 2 + 1] + static_cast<int>(right * gain);
-            output[i * 2] = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
-            output[i * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
-        }
+            bool done = false;
 
-        if (done) {
-            it = m_activeSfx.erase(it);
-        } else {
-            ++it;
+            for (size_t i = 0; i < frameCount; ++i) {
+                // Compute source frame with sample-rate conversion
+                const size_t outFrame = sfx.position + i;
+                size_t srcFrame;
+                if (sfx.sampleRate == SAMPLE_RATE) {
+                    srcFrame = outFrame;
+                } else {
+                    srcFrame = static_cast<size_t>(
+                        static_cast<double>(outFrame) * sfx.sampleRate / SAMPLE_RATE);
+                }
+
+                if (srcFrame >= totalSourceFrames) {
+                    done = true;
+                    break;
+                }
+
+                const size_t srcIdx = srcFrame * sfx.channels;
+                int left = 0;
+                int right = 0;
+                if (sfx.channels == 1) {
+                    left = right = sfx.samples[srcIdx];
+                } else {
+                    left = sfx.samples[srcIdx];
+                    right = (srcIdx + 1 < sfx.totalSamples)
+                        ? sfx.samples[srcIdx + 1]
+                        : left;
+                }
+
+                const int l = output[i * 2] + static_cast<int>(left * gain);
+                const int r = output[i * 2 + 1] + static_cast<int>(right * gain);
+                output[i * 2] = static_cast<sf::Int16>(std::clamp(l, -32768, 32767));
+                output[i * 2 + 1] = static_cast<sf::Int16>(std::clamp(r, -32768, 32767));
+            }
+
+            sfx.position += frameCount;   // advance by output frames consumed
+            if (done) {
+                it = m_activeSfx.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
 
