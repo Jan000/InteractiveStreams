@@ -678,10 +678,21 @@ void GravityBrawl::respawnDeadBots(float dt) {
         }
     }
 
-    // Tick timers and respawn when ready
+    // Count currently alive planets (humans + bots)
+    int currentAlive = 0;
+    for (const auto& [_, p] : m_planets) {
+        if (p.alive) currentAlive++;
+    }
+
+    // Tick timers and respawn when ready (respecting the fill target)
     for (auto it = m_botRespawnTimers.begin(); it != m_botRespawnTimers.end();) {
         it->second -= dt;
         if (it->second <= 0.0f) {
+            // Only respawn if we're still below the target
+            if (currentAlive >= m_botFillTarget) {
+                it = m_botRespawnTimers.erase(it);
+                continue;
+            }
             auto pit = m_planets.find(it->first);
             if (pit != m_planets.end() && !pit->second.alive) {
                 Planet& p = pit->second;
@@ -713,6 +724,7 @@ void GravityBrawl::respawnDeadBots(float dt) {
                 p.massByTier = m_tierMass[0];
                 p.massScale = m_tierMass[0];
                 spawnPlanetBody(p);
+                currentAlive++;
             }
             it = m_botRespawnTimers.erase(it);
         } else {
