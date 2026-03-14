@@ -329,6 +329,7 @@ private:
         sf::Color color;
         float timer;
         float maxTime;
+        float startScale = 1.0f;  // initial scale (for emphasis effects)
     };
     void addFloatingText(const std::string& text, sf::Vector2f pos, sf::Color color, float duration = 1.5f);
 
@@ -476,6 +477,18 @@ private:
 
     // Process a collision between two planets
     void onPlanetCollision(Planet& a, Planet& b, float impulse);
+
+    // ── Sub Goal System ──────────────────────────────────────────────────
+    void onSubReceived(const std::string& displayName);
+    void checkSubGoal();
+    void triggerSubGoalReward();
+    void renderSubGoalBar(sf::RenderTarget& target);
+    int    m_subCount            = 0;       ///< Current sub count in this epoch
+    int    m_subGoalTarget       = 0;       ///< Current goal target (0 = auto-calc on first sub)
+    bool   m_subGoalReached      = false;   ///< Whether current goal was reached
+    float  m_subGoalCelebration  = 0.0f;    ///< Celebration animation timer
+    bool   m_subGoalEnabled      = true;    ///< Feature toggle
+    int    m_subGoalBaseTarget   = 5;       ///< Minimum sub goal target
 };
 
 } // namespace is::games::gravity_brawl

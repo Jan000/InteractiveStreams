@@ -165,6 +165,9 @@ void GravityBrawl::initialize() {
         registerTextElement("player_name",     "Player Name Label",           50.f, 50.f,  11, TextAlign::Center);
         registerTextElement("player_score",    "Player Score Label",          50.f, 50.f,   9, TextAlign::Center);
         registerTextElement("floating_text",   "Floating Score Text",         50.f, 50.f,  16, TextAlign::Center);
+        registerTextElement("sub_info",        "Sub Reward Info",             50.f, 95.5f, 9,  TextAlign::Center, true, "#AAAACC99");
+        registerTextElement("sub_goal",        "Sub Goal Bar",                50.f, 93.0f, 12, TextAlign::Center, true, "#FFD700FF");
+        registerTextElement("combo_text",      "Smash Combo Counter",         50.f, 50.f,  14, TextAlign::Center);
     }
 
     // Create Box2D world with zero gravity (we apply custom forces)
@@ -482,6 +485,13 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("respawn_cooldown") && settings["respawn_cooldown"].is_number()) {
         m_respawnCooldown = std::max(0.0f, settings["respawn_cooldown"].get<float>());
     }
+    // Sub goal settings
+    if (settings.contains("sub_goal_enabled") && settings["sub_goal_enabled"].is_boolean()) {
+        m_subGoalEnabled = settings["sub_goal_enabled"].get<bool>();
+    }
+    if (settings.contains("sub_goal_base_target") && settings["sub_goal_base_target"].is_number_integer()) {
+        m_subGoalBaseTarget = std::max(1, settings["sub_goal_base_target"].get<int>());
+    }
     // Text element overrides
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
@@ -550,6 +560,10 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"restitution", m_restitution},
         {"linear_damping", m_linearDamping},
         {"respawn_cooldown", m_respawnCooldown},
+        {"sub_goal_enabled", m_subGoalEnabled},
+        {"sub_goal_base_target", m_subGoalBaseTarget},
+        {"sub_count", m_subCount},
+        {"sub_goal_target", m_subGoalTarget},
         {"text_elements", textElementsJson()},
     };
 }
@@ -931,6 +945,7 @@ void GravityBrawl::triggerLivestreamReward(const std::string& userId,
         if (p.body) {
             addFloatingText("+300 SUB", worldToScreen(p.body->GetPosition()), sf::Color(120, 220, 255), 2.0f);
         }
+        onSubReceived(displayName);
         return;
     }
 
@@ -1135,6 +1150,14 @@ void GravityBrawl::cmdSmash(const std::string& userId) {
     if (p.smashCooldown > 0.0f) return;
     triggerSmash(p);
     p.smashCooldown = m_smashCooldown;
+
+    // Floating combo feedback
+    if (p.comboCount > 1 && p.body) {
+        std::string comboStr = "COMBO x" + std::to_string(p.comboCount);
+        sf::Vector2f pos = worldToScreen(p.body->GetPosition());
+        pos.y -= 35.0f; // above the planet
+        addFloatingText(comboStr, pos, sf::Color(255, 200, 50, 240), 1.0f);
+    }
 }
 
 // ── Spawn ────────────────────────────────────────────────────────────────────
@@ -1483,6 +1506,130 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
     addFloatingText("+2", worldToScreen(b.body->GetPosition()), sf::Color(100, 255, 100), 0.8f);
 }
 
+// ── Sub Goal System ──────────────────────────────────────────────────────────
+
+void GravityBrawl::onSubReceived(const std::string& displayName) {
+    if (!m_subGoalEnabled) return;
+    m_subCount++;
+
+    // Auto-calculate goal on first sub if not set
+    if (m_subGoalTarget <= 0) {
+        m_subGoalTarget = m_subGoalBaseTarget;
+    }
+
+    checkSubGoal();
+}
+
+void GravityBrawl::checkSubGoal() {
+    if (!m_subGoalEnabled || m_subGoalTarget <= 0) return;
+    if (m_subCount >= m_subGoalTarget && !m_subGoalReached) {
+        m_subGoalReached = true;
+        triggerSubGoalReward();
+    }
+}
+
+void GravityBrawl::triggerSubGoalReward() {
+    m_subGoalCelebration = 5.0f;
+
+    // Award ALL alive players: shield + 500 points + tier boost
+    int buffedCount = 0;
+    for (auto& [id, p] : m_planets) {
+        if (!p.alive || !p.body) continue;
+        buffedCount++;
+        p.hasShield = true;
+        p.score += 500;
+
+        // Tier boost: jump one tier
+        if (p.tier == PlanetTier::Asteroid) p.kills = std::max(p.kills, 3);
+        else if (p.tier == PlanetTier::IcePlanet) p.kills = std::max(p.kills, 10);
+        else if (p.tier == PlanetTier::GasGiant) p.kills = std::max(p.kills, 25);
+        updatePlanetTier(p);
+
+        sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
+        addFloatingText("+500 SUB GOAL!", screenPos, sf::Color(255, 215, 0), 3.0f);
+
+        if (!isBot(id)) {
+            try {
+                is::core::Application::instance().playerDatabase().recordResult(
+                    id, p.displayName, "gravity_brawl", 500, false);
+            } catch (...) {}
+        }
+    }
+
+    // Massive visual celebration
+    sf::Vector2f center = worldToScreen(WORLD_CENTER_X, WORLD_CENTER_Y);
+    emitExplosion(center, sf::Color(255, 215, 0), 200);
+    emitExplosion(center, sf::Color(255, 255, 255), 100);
+    emitSupernovaWave(center, sf::Color(255, 215, 0));
+
+    sendChatFeedback("🎉🎉🎉 SUB GOAL REACHED! (" + std::to_string(m_subGoalTarget) +
+                     " subs!) All " + std::to_string(buffedCount) + " players get +500 pts, shield & tier boost!");
+    playSfx("gb_game_over");
+
+    // Set next goal: increase target
+    int nextTarget = m_subGoalTarget + std::max(m_subGoalBaseTarget, m_subGoalTarget / 2);
+    m_subGoalTarget = nextTarget;
+    m_subGoalReached = false;
+
+    spdlog::info("[GravityBrawl] Sub goal reached! Next target: {}", m_subGoalTarget);
+}
+
+void GravityBrawl::renderSubGoalBar(sf::RenderTarget& target) {
+    if (!m_subGoalEnabled || !m_fontLoaded || m_subGoalTarget <= 0) return;
+
+    auto r = resolve("sub_goal", SCREEN_W, SCREEN_H);
+    if (!r.visible) return;
+
+    float barWidth = SCREEN_W * 0.5f;
+    float barHeight = 18.0f;
+    float barX = r.px - barWidth / 2.0f;
+    float barY = r.py;
+
+    // Background bar
+    sf::RectangleShape bgBar({barWidth, barHeight});
+    bgBar.setPosition(barX, barY);
+    bgBar.setFillColor(sf::Color(40, 30, 60, 160));
+    bgBar.setOutlineColor(sf::Color(100, 80, 140, 200));
+    bgBar.setOutlineThickness(1.0f);
+    target.draw(bgBar);
+
+    // Fill bar
+    float progress = std::min(1.0f, static_cast<float>(m_subCount) / static_cast<float>(m_subGoalTarget));
+    sf::RectangleShape fillBar({barWidth * progress, barHeight});
+    fillBar.setPosition(barX, barY);
+
+    // Color shifts from blue to gold as progress increases
+    sf::Uint8 r_c = static_cast<sf::Uint8>(100 + progress * 155);
+    sf::Uint8 g_c = static_cast<sf::Uint8>(80 + progress * 135);
+    sf::Uint8 b_c = static_cast<sf::Uint8>(200 - progress * 150);
+    fillBar.setFillColor(sf::Color(r_c, g_c, b_c, 220));
+    target.draw(fillBar);
+
+    // Celebration pulse
+    if (m_subGoalCelebration > 0.0f) {
+        float pulse = std::abs(std::sin(m_subGoalCelebration * 4.0f));
+        sf::RectangleShape glow({barWidth, barHeight});
+        glow.setPosition(barX, barY);
+        glow.setFillColor(sf::Color(255, 215, 0, static_cast<sf::Uint8>(pulse * 120)));
+        target.draw(glow);
+    }
+
+    // Text label
+    sf::Text goalText;
+    goalText.setFont(m_font);
+    goalText.setString("SUB GOAL: " + std::to_string(m_subCount) + " / " + std::to_string(m_subGoalTarget));
+    goalText.setCharacterSize(r.fontSize);
+    sf::Color textColor(255, 215, 0);
+    parseHexColor(r.color, textColor);
+    goalText.setFillColor(textColor);
+    goalText.setOutlineColor(sf::Color(0, 0, 0, 220));
+    goalText.setOutlineThickness(1.0f);
+    sf::FloatRect tb = goalText.getLocalBounds();
+    goalText.setOrigin(tb.left + tb.width / 2.0f, tb.top + tb.height / 2.0f);
+    goalText.setPosition(r.px, barY + barHeight / 2.0f);
+    target.draw(goalText);
+}
+
 // ── Phase Management ─────────────────────────────────────────────────────────
 
 void GravityBrawl::startCountdown() {
@@ -1498,6 +1645,8 @@ void GravityBrawl::startPlaying() {
     m_cosmicEventActive = 0.0;
     m_blackHoleConsumedGravityBonus = 0.0f;
     m_survivalAccum = 0.0;
+    m_subGoalReached = false;
+    m_subGoalCelebration = 0.0f;
     spawnBots();
     playSfx("gb_battle_start");
     spdlog::info("[GravityBrawl] Endless game running.");
@@ -1533,6 +1682,9 @@ void GravityBrawl::update(double dt) {
     // Update trail emission rate limiter
     m_trailEmitTimer -= fdt;
     if (m_trailEmitTimer < 0.0f) m_trailEmitTimer = 0.0f;
+
+    // Sub goal celebration timer
+    if (m_subGoalCelebration > 0.0f) m_subGoalCelebration -= fdt;
 
     // Update floating texts
     for (auto it = m_floatingTexts.begin(); it != m_floatingTexts.end();) {
@@ -2247,6 +2399,7 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
 
     // UI overlay (on top of cosmic warning)
     renderUI(target);
+    renderSubGoalBar(target);
     renderKillFeed(target);
     // In-game leaderboard removed; global scoreboard overlay handles it
 
@@ -2833,7 +2986,7 @@ void GravityBrawl::renderFloatingTexts(sf::RenderTarget& target) {
         text.setPosition(ft.position);
 
         // Scale up as it fades
-        float scale = 1.0f + (1.0f - alpha) * 0.5f;
+        float scale = ft.startScale + (1.0f - alpha) * 0.5f;
         text.setScale(scale, scale);
 
         target.draw(text);
@@ -2902,6 +3055,23 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
             joinHint.setOutlineThickness(1.0f);
             applyTextLayout(joinHint, r);
             target.draw(joinHint);
+        }
+    }
+
+    // Sub reward info
+    {
+        auto r = resolve("sub_info", SCREEN_W, SCREEN_H);
+        if (r.visible) {
+            sf::Text subInfo;
+            subInfo.setFont(m_font);
+            subInfo.setString("SUB = Shield + Tier Up + 300pts | BITS/SC > 100 = God Mode 30s | CP = Supernova");
+            sf::Color subInfoColor(170, 170, 204, 153);
+            parseHexColor(r.color, subInfoColor);
+            subInfo.setFillColor(subInfoColor);
+            subInfo.setOutlineColor(sf::Color(0, 0, 0, 120));
+            subInfo.setOutlineThickness(1.0f);
+            applyTextLayout(subInfo, r);
+            target.draw(subInfo);
         }
     }
 
