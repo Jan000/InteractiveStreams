@@ -49,93 +49,17 @@ Das Projekt nutzt den Root-Namespace `is::` mit folgenden Sub-Namespaces:
 ## Wichtige Interfaces
 
 ### IGame (`src/games/IGame.h`)
-Abstrakte Basisklasse für alle Spiele mit integriertem Text-Layout-System:
+Abstrakte Basisklasse für alle Spiele. Vollständige Definition in `src/games/IGame.h`.
 
-```cpp
-enum class TextAlign { Left, Center, Right };
+**Pure virtuals** (Pflicht): `id()`, `displayName()`, `description()`, `initialize()`, `shutdown()`, `onChatMessage()`, `update()`, `render()`, `isRoundComplete()`, `isGameOver()`, `getState()`, `getCommands()`
 
-/// Beschreibt ein konfigurierbares UI-Text-Element (Positionen in % des Render-Targets)
-struct TextElement {
-    std::string id;              // Eindeutige ID
-    std::string label;           // UI-Label im Dashboard
-    float x = 50.f, y = 5.f;    // Position in % der Breite/Höhe
-    int fontSize = 24;
-    TextAlign align = TextAlign::Center;
-    bool visible = true;
-    std::string color;           // RGBA hex "#RRGGBBAA" oder "#RRGGBB", leer = Spiel-Default
-};
+**Optional overrides**: `maxPlayers()` (0=unbegrenzt), `getLeaderboard()`, `configure(json)`, `getSettings()`
 
-struct ResolvedText {
-    float px, py;        // Pixel-Koordinaten
-    unsigned fontSize;
-    TextAlign align;
-    bool visible;
-    std::string color;   // RGBA hex
-};
+**Text-Layout-System**: Im Konstruktor via `registerTextElement(id, label, x%, y%, fontSize, align, visible, defaultColor)` registrieren. Im `render()` via `resolve(id, w, h)` → `ResolvedText`, dann `applyTextLayout(sf::Text&, resolved)`. Farben als RGBA-Hex `#RRGGBBAA`.
 
-class IGame {
-public:
-    // Identifikation
-    virtual std::string id() const = 0;
-    virtual std::string displayName() const = 0;
-    virtual std::string description() const = 0;
-    virtual int maxPlayers() const { return 0; }  // 0 = unbegrenzt
+**Chat-Feedback**: `sendChatFeedback(msg)` sendet Nachricht via Callback an Chat-Kanäle.
 
-    // Font-Skalierung (per-Stream konfigurierbar)
-    void setFontScale(float scale);
-    float fontScale() const;
-
-    // Lifecycle
-    virtual void initialize() = 0;
-    virtual void shutdown() = 0;
-
-    // Input/Update/Render
-    virtual void onChatMessage(const is::platform::ChatMessage& message) = 0;
-    virtual void update(double deltaTime) = 0;
-    virtual void render(sf::RenderTarget& target, double interpolationAlpha) = 0;
-
-    // Spielstatus
-    virtual bool isRoundComplete() const = 0;   // true wenn Runde/Phase abgeschlossen
-    virtual bool isGameOver() const = 0;         // true wenn gesamtes Spiel beendet
-    virtual nlohmann::json getState() const = 0;
-    virtual nlohmann::json getCommands() const = 0;
-
-    // Leaderboard (für In-Game-Rangliste)
-    virtual std::vector<std::pair<std::string, int>> getLeaderboard() const { return {}; }
-
-    // Per-Game Settings
-    virtual void configure(const nlohmann::json& settings) {}  // Apply game-specific settings
-    virtual nlohmann::json getSettings() const { return {}; }  // Return current settings
-
-    // Chat-Feedback Callback
-    using ChatFeedbackCallback = std::function<void(const std::string&)>;
-    void setChatFeedback(ChatFeedbackCallback cb);
-
-    // Text-Layout-System (Dashboard-konfigurierbar)
-    const std::vector<TextElement>& textElements() const;
-    void applyTextOverrides(const nlohmann::json& arr);  // Übernimmt Dashboard-Overrides
-    nlohmann::json textElementsJson() const;              // Serialisiert aktuelle Elemente
-
-protected:
-    void sendChatFeedback(const std::string& message);
-
-    // Text-Element registrieren (im Konstruktor aufrufen)
-    void registerTextElement(const std::string& id, const std::string& label,
-                             float x, float y, int fontSize,
-                             TextAlign align = TextAlign::Center,
-                             bool visible = true,
-                             const std::string& defaultColor = "");
-
-    // Hex-Farbe parsen ("#RRGGBBAA" oder "#RRGGBB" → sf::Color)
-    static bool parseHexColor(const std::string& hex, sf::Color& out);
-
-    // Element auflösen zu Pixel-Koordinaten
-    ResolvedText resolve(const std::string& id, float targetW, float targetH) const;
-
-    // Layout auf sf::Text anwenden (Position, Ausrichtung, Farbe)
-    static void applyTextLayout(sf::Text& text, const ResolvedText&);
-};
-```
+**Font-Skalierung**: `setFontScale()` / `fontScale()` – per-Stream konfigurierbar.
 
 Neue Spiele:
 1. Erstelle Unterordner in `src/games/`
@@ -337,30 +261,7 @@ Verwaltet die Kollektion aller `StreamInstance`-Objekte:
 - **Thread-Safety**: Alle Operationen über `std::mutex` geschützt
 
 #### EncoderSettings (`src/streaming/StreamEncoder.h`)
-```cpp
-struct EncoderSettings {
-    std::string ffmpegPath = "ffmpeg";
-    std::string outputUrl;
-    int width, height, fps = 30;
-    int bitrate = 4500;
-    std::string preset = "veryfast";
-    std::string codec = "libx264";
-    std::string profile = "baseline";
-    std::string tune = "zerolatency";
-    int keyframeInterval = 2;
-    int threads = 2;
-    bool cbr = true;
-    float maxrateFactor = 1.2f;
-    float bufsizeFactor = 1.0f;
-
-    // Audio
-    int audioBitrate = 128;
-    int audioSampleRate = 44100;
-    std::string audioCodec = "aac";
-    AudioMixer* audioMixer = nullptr;  // Optional: echtes Spiel-Audio
-};
-```
-Jeder Stream hat eigene EncoderSettings; `StreamEncoder` akzeptiert diesen Struct im Konstruktor.
+Felder: `ffmpegPath`, `outputUrl`, `width`/`height`/`fps`, `bitrate`, `preset`, `codec`, `profile`, `tune`, `keyframeInterval`, `threads`, `cbr`, `maxrateFactor`, `bufsizeFactor` sowie Audio (`audioBitrate`, `audioSampleRate`, `audioCodec`, `AudioMixer* audioMixer`). Jeder Stream hat eigene `EncoderSettings`; `StreamEncoder` akzeptiert diesen Struct im Konstruktor.
 
 ---
 
@@ -392,16 +293,10 @@ Jeder Stream hat eigene EncoderSettings; `StreamEncoder` akzeptiert diesen Struc
 
 ### Chat-Befehl-Parsing
 Befehle in `ChaosArena::onChatMessage()`:
-- `!join` / `!play` → Spieler hinzufügen
-- `!left` / `!l` / `!a` → Spieler nach links impulsen
-- `!right` / `!r` / `!d` → Spieler nach rechts impulsen
-- `!jump` / `!j` / `!w` / `!up` → Springen / Doppelsprung
-- `!jumpleft` / `!jl` → Springen nach links
-- `!jumpright` / `!jr` → Springen nach rechts
-- `!attack` / `!hit` / `!atk` → Melee-Angriff
-- `!special` / `!sp` / `!ult` → Projektil (5s Cooldown)
-- `!dash` / `!dodge` → Dash mit I-Frames (3s Cooldown)
-- `!block` / `!shield` / `!def` → Block aktivieren
+- `!join`/`!play` | `!left`/`!l`/`!a`, `!right`/`!r`/`!d` → Bewegung
+- `!jump`/`!j`/`!w`/`!up`, `!jumpleft`/`!jl`, `!jumpright`/`!jr` → Springen
+- `!attack`/`!hit`/`!atk` → Melee | `!special`/`!sp`/`!ult` → Projektil (5s CD)
+- `!dash`/`!dodge` → I-Frame Dash (3s CD) | `!block`/`!shield`/`!def` → Block
 - `!emote [text]` → Kosmetisches Emote
 
 ### Stream-Event-Handling
@@ -426,11 +321,8 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 
 ### Chat-Befehl-Parsing
 Befehle in `ColorConquest::onChatMessage()`:
-- `!join [team]` / `!play` → Team beitreten (red/blue/green/yellow oder auto)
-- `!up` / `!u` / `!w` / `!north` → Stimme für Expansion nach oben
-- `!down` / `!d` / `!s` / `!south` → Stimme für Expansion nach unten
-- `!left` / `!l` / `!a` / `!west` → Stimme für Expansion nach links
-- `!right` / `!r` / `!e` / `!east` → Stimme für Expansion nach rechts
+- `!join [team]`/`!play` → Team beitreten (red/blue/green/yellow oder auto)
+- `!up`/`!u`/`!w`/`!north`, `!down`/`!d`/`!s`/`!south`, `!left`/`!l`/`!a`/`!west`, `!right`/`!r`/`!e`/`!east` → Expansion-Vote
 - `!emote [text]` → Team-Emote
 
 ### Stream-Event-Handling
@@ -476,47 +368,17 @@ enum class AnomalyType { MassInjector, Shield, ScoreJackpot };
 - Konfigurierbar: `cosmic_event_cooldown`, `cosmic_event_duration`, `event_gravity_mul`
 
 ### Bot Fill System
-- Füllt die Lobby automatisch mit KI-Bots auf, um einen Mindest-Spielerstand zu erreichen
-- Bots wählen zufällige Aktionen (Smash mit konfigurierbarer Wahrscheinlichkeit)
-- Konfigurierbar per Game-Settings: `bot_fill` (int), `min_players` (int)
-- **Kill Feed**: `bot_kill_feed` (bool, Default: false) – Bots erscheinen standardmäßig nicht im Kill-Feed
-- **Respawn**: `bot_respawn` (bool, Default: false) – tote Bots respawnen nach `bot_respawn_delay` Sekunden (Default: 5.0)
-- **Verhalten**: `bot_action_interval` (float, Default: 0.3s), `bot_smash_chance` (float, Default: 0.2), `bot_danger_smash_chance` (float, Default: 0.6), `bot_event_smash_chance` (float, Default: 0.7)
+- Füllt die Lobby automatisch mit KI-Bots auf, um `min_players` zu erreichen
+- Settings: `bot_fill`, `min_players`, `bot_kill_feed` (default: false), `bot_respawn`, `bot_respawn_delay`, `bot_action_interval`, `bot_smash_chance`, `bot_danger_smash_chance`, `bot_event_smash_chance`
 
 ### Dynamic Camera Zoom
 - Kamera zoomt dynamisch, um alle Spieler sichtbar zu halten
-- Zoomt rein wenn Spieler nah beieinander (`camera_max_zoom`, Default: 2.0), raus wenn weit verstreut (`camera_min_zoom`, Default: 0.4)
-- `camera_zoom_enabled` (bool, Default: true), `camera_zoom_speed` (float, Default: 2.0), `camera_buffer_meters` (float, Default: 3.0)
-- `camera_zoom_amplify` (float 1–5, Default: 2.0): Verstärkt die Abweichung vom neutralen Zoom (1.0), damit der Effekt auf dem Stream deutlich sichtbar wird
-- Alle Einstellungen im Web-Dashboard konfigurierbar
+- Settings: `camera_zoom_enabled`, `camera_zoom_speed`, `camera_min_zoom`, `camera_max_zoom`, `camera_buffer_meters`, `camera_zoom_amplify` (1–5, verstärkt Zoom-Effekt für Sichtbarkeit auf Stream)
 
 ### Sound Effects (SFX)
-- SFX-Dateien werden beim `initialize()` aus `assets/audio/sfx/gravity_brawl/` geladen
-- Unterstützte Formate: `.wav`, `.ogg`, `.mp3` (erste gefundene Extension wird verwendet)
-- Falls eine Datei fehlt, wird der Effekt übersprungen (graceful degradation)
-- Geladen via `AudioManager::loadSfx()`, abgespielt via `AudioManager::playSfx()`
-- Per-Game Settings: `sfx_enabled` (bool, Default: true), `sfx_volume` (float 0–100, Default: 80)
-
-| SFX-Name | Event | Datei |
-|----------|-------|-------|
-| `gb_join` | Spieler tritt bei | `gb_join.wav` |
-| `gb_smash` | Smash-Angriff | `gb_smash.wav` |
-| `gb_supernova` | Supernova-Explosion | `gb_supernova.wav` |
-| `gb_hit` | Planeten-Kollision | `gb_hit.wav` |
-| `gb_death` | Planet eliminiert | `gb_death.wav` |
-| `gb_kill` | Kill-Attribution | `gb_kill.wav` |
-| `gb_bounty` | Bounty-Kill (King) | `gb_bounty.wav` |
-| `gb_cosmic_event` | Cosmic Event Start | `gb_cosmic_event.wav` |
-| `gb_cosmic_end` | Cosmic Event Ende | `gb_cosmic_end.wav` |
-| `gb_countdown` | Countdown startet | `gb_countdown.wav` |
-| `gb_battle_start` | Kampf beginnt | `gb_battle_start.wav` |
-| `gb_game_over` | Spiel vorbei | `gb_game_over.wav` |
-
-### Per-Game Settings
-- Konfigurierbare Parameter über `configure()` / `getSettings()`
-- Gespeichert unter `game_settings.gravity_brawl` in Config
-- API: `GET/PUT /api/games/gravity_brawl/settings`
-- Enthält u.a. `sfx_enabled`, `sfx_volume`, Bot-Verhalten, Kamera-Zoom
+- Dateien in `assets/audio/sfx/gravity_brawl/` (.wav/.ogg/.mp3, graceful degradation wenn fehlend)
+- `AudioManager::loadSfx()` / `playSfx()` | Settings: `sfx_enabled`, `sfx_volume`
+- Events: `gb_join`, `gb_smash`, `gb_supernova`, `gb_hit`, `gb_death`, `gb_kill`, `gb_bounty`, `gb_cosmic_event`, `gb_cosmic_end`, `gb_countdown`, `gb_battle_start`, `gb_game_over`
 
 ### Chat-Befehl-Parsing
 Befehle in `GravityBrawl::onChatMessage()`:
@@ -532,10 +394,9 @@ Bei `eventType`-Nachrichten wird `triggerLivestreamReward()` aufgerufen:
 - Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
 
 ### Per-Game Settings
-- Konfigurierbare Parameter über `configure()` / `getSettings()`
-- Gespeichert unter `game_settings.gravity_brawl` in Config
+- Configure via `configure(json)` / `getSettings()`, gespeichert unter `game_settings.gravity_brawl`
 - API: `GET/PUT /api/games/gravity_brawl/settings`
-- Enthalt u.a.: `epoch_duration`, `enable_post_processing`, `background_stars`, Physik-Settings (`orbital_gravity_strength`, `black_hole_gravity_strength`, `restitution`, `black_hole_radius`, `black_hole_repulsion_strength`), Gameplay (`smash_cooldown`, `supernova_radius`, `max_speed`, `respawn_cooldown`), Audio (`sfx_enabled`, `sfx_volume`), Kamera-Zoom, Bot-Verhalten, Anomalien (`anomaly_spawn_interval`) und ~40+ weitere Parameter
+- 40+ Parameter: Physik (`orbital_gravity_strength`, `black_hole_*`, `restitution`), Gameplay (`smash_cooldown`, `supernova_radius`, `max_speed`, `respawn_cooldown`), Audio, Kamera-Zoom, Bots, `epoch_duration`, `enable_post_processing`, Anomalien
 
 ---
 
@@ -614,13 +475,7 @@ GPU-beschleunigtes Post-Processing mit GLSL-Fragment-Shadern und Software-Fallba
 - **Multi-Pass**: `applyShaderPass()` zeichnet die Quelle durch einen Shader auf `m_tempTarget` (temporäre RenderTexture), dann blit zurück – nötig weil SFML nicht auf die eigene Textur durch einen Shader zeichnen kann
 
 ### Effekte
-| Methode | GPU-Shader | Software-Fallback | Uniforms |
-|---------|-----------|-------------------|----------|
-| `applyVignette()` | ✅ | ✅ (Pixel-Manipulation) | `intensity` |
-| `applyBloom()` | ✅ | ❌ (No-Op) | `threshold`, `intensity`, `resolution` |
-| `applyChromaticAberration()` | ✅ | ❌ (No-Op) | `amount`, `resolution` |
-| `applyCRT()` | ✅ | ❌ (No-Op) | `scanlineIntensity`, `curvature`, `resolution` |
-| `applyScanlines()` | ❌ | ✅ (Software-only) | — |
+GPU-Shader (Software-Fallback für Vignette): `applyVignette()`, `applyBloom()`, `applyChromaticAberration()`, `applyCRT()`. Software-only: `applyScanlines()`.
 
 ### Nutzung in Spielen
 ```cpp
@@ -657,15 +512,7 @@ Zwei Auth-Mechanismen: **API-Key** (legacy) und **Password-Login** (Session-basi
 - `POST /api/auth/change-password` – Passwort ändern (erfordert aktive Session)
 
 ### Auth-Flow (`setupAuth()`)
-1. Pre-Routing-Handler prüft: Ist der Request ein `/api/`-Pfad?
-2. OPTIONS-Requests (CORS-Preflight) werden immer durchgelassen
-3. Statische Dateien (Dashboard) werden immer ausgeliefert
-4. `/api/auth/*`-Pfade werden immer durchgelassen
-5. Auth wird geprüft in dieser Reihenfolge:
-   - API-Key: `Authorization: Bearer <key>`, `X-API-Key`, `?api_key=`
-   - Session-Token: `Authorization: Bearer <session_token>` (via `hasSession()`)
-6. Wenn weder API-Key gesetzt noch Passwort eingerichtet → kein Auth, alles durchlassen
-7. Bei Fehlschlag: HTTP 401 JSON-Response
+OPTIONS, statische Dateien und `/api/auth/*` werden immer durchgelassen. Auth-Prüfung: API-Key (`Authorization: Bearer`, `X-API-Key`, `?api_key=`), dann Session-Token. Falls weder API-Key noch Passwort konfiguriert: kein Auth. Sonst HTTP 401.
 
 ### Dashboard-Integration
 - `web/src/app/login/page.tsx`: Login-Seite mit Setup- und Login-Modus
@@ -677,22 +524,9 @@ Zwei Auth-Mechanismen: **API-Key** (legacy) und **Password-Login** (Session-basi
 
 ## Docker & CI/CD
 
-### Dockerfile (Multi-Stage)
-1. **Stage 1** (`dashboard-builder`): `oven/bun:1` – `bun install && bun run build` → erzeugt `web/out/`
-2. **Stage 2** (`cpp-builder`): `ubuntu:24.04` + CMake + Dependencies – kompiliert nur die Binary (keine Assets/Config/Dashboard)
-3. **Stage 3** (`runtime`): `ubuntu:24.04` + FFmpeg + Xvfb – kopiert Binary aus cpp-builder, Assets/Config direkt aus Build-Context, Dashboard aus dashboard-builder. COPY-Layer nach Änderungshäufigkeit sortiert (Config → Assets → Dashboard → Binary) für optimales Caching.
-
-### docker-compose.yml
-- Service `app` auf Port 8080
-- Named Volume `is-data` für SQLite-Persistenz (`data/`)
-- Config-Bind-Mount für `config/default.json`
-
-### GitHub Actions (`.github/workflows/ci.yml`)
-4 Jobs, getriggert auf Push/PR zu `main`:
-1. **dashboard**: Bun install + build, Dashboard-Artifact hochladen
-2. **build-linux**: Ubuntu + apt deps + CMake + CTest
-3. **build-windows**: MSVC + CMake + CTest (Release-Config)
-4. **docker**: Docker-Image bauen (ohne Push)
+- **Dockerfile**: Multi-Stage (Bun Dashboard-Build → Ubuntu C++-Build → Ubuntu Runtime mit FFmpeg+Xvfb). COPY-Layer nach Änderungshäufigkeit sortiert für optimales Caching.
+- **docker-compose.yml**: Service `app` auf Port 8080, Named Volume `is-data` für SQLite, Config-Bind-Mount.
+- **GitHub Actions** (`.github/workflows/ci.yml`): 4 Jobs auf Push/PR zu `main`: Dashboard-Build, Linux-Build+Test, Windows-Build+Test, Docker-Image.
 
 ---
 
@@ -774,57 +608,31 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 
 ## Wichtige Hinweise
 
-1. **GLSL-Shader**: Post-Processing nutzt GPU-Shader (`assets/shaders/`) mit Software-Fallback. `PostProcessing::initialize()` lädt alle Shader; `applyShaderPass()` rendert über temporäre `sf::RenderTexture`. Verfügbare Effekte: Vignette, Bloom, Chromatic Aberration, CRT, Scanlines.
-2. **Sound-System**: `AudioManager` (`src/core/AudioManager.h/cpp`) verwaltet Hintergrundmusik (Playlist mit Shuffle, auto-advance) und SFX. Musikdateien werden aus `assets/audio/` gescannt (.mp3/.ogg/.wav/.flac). Neue Tracks einfach ins Verzeichnis legen und `rescan()` aufrufen. Web-API: `GET/PUT /api/audio`, `POST /api/audio/next|pause|resume|rescan`. Config-Keys: `audio.music_volume`, `audio.sfx_volume`, `audio.muted`, `audio.fade_in_seconds`, `audio.fade_out_seconds`, `audio.crossfade_overlap`.
-3. **Pixel-Format**: Jeder Stream hat eigene `sf::RenderTexture`, der Encoder erwartet RGBA-Pixeldaten.
-4. **Thread-Sicherheit**: Plattform-Threads und Web-API-Threads nutzen `std::mutex`-geschützte Queues/States. Stream/Channel-CRUD vom Web-Thread durch Mutex geschützt. RenderTextures werden lazy im Main-Thread erstellt.
-5. **FFmpeg-Pfad**: FFmpeg wird via `popen("ffmpeg ...")` aufgerufen – muss im System-PATH sein.
-6. **Config-Pfad**: Standard ist `config/default.json`, überschreibbar per CLI-Argument.
-7. **Config-Persistenz**: Alle Einstellungen werden automatisch in `data/settings.db` (SQLite) persistiert. `POST /api/config/save` schreibt zusätzlich eine JSON-Backup-Datei. SQLite ist die primäre Source of Truth; `config/default.json` dient nur als Erst-Migrations-Template.
-8. **Web-Dashboard**: Statische Dateien werden aus `dashboard/` neben der Executable geladen (Post-Build-Copy in CMake). Dashboard ist ein Next.js-Static-Export (`web/`), gebaut mit `bun run build`. Tab-basiert: Streams, Channels, Statistics, Scoreboard, Performance, Settings. **Immer `bun` verwenden** (nicht npm/yarn).
-9. **API-Authentifizierung**: Zwei Auth-Mechanismen: API-Key (legacy, `web.api_key`) und Password-Login (Session-basiert). `setupAuth()` Pre-Routing-Handler prüft beide. `/api/auth/*` immer erlaubt. `Sha256.h` für Passwort-Hashing. `--reset-password` CLI-Flag für Recovery.
-10. **Docker**: Multi-Stage Dockerfile (Bun Dashboard-Build → Ubuntu C++-Build → Ubuntu Runtime mit FFmpeg+Xvfb). `docker-compose.yml` für einfaches Deployment. Named Volume für SQLite-Daten.
-11. **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`) mit 4 Jobs: Dashboard-Build, Linux-Build+Test, Windows-Build+Test, Docker-Image. Trigger auf Push/PR zu `main`.
-12. **Commits**: Nach jeder Änderung einen beschreibenden Git-Commit erstellen. README.md und diese Datei bei Bedarf aktualisieren.
-13. **Git Hash Version**: CMake extrahiert den Git-Short-Hash via `git rev-parse --short HEAD` → `IS_GIT_HASH` Compile-Definition. `/api/status` gibt `version: "0.2.0+<hash>"` und `gitHash: "<hash>"` zurück. Dashboard-Footer zeigt Version dynamisch an.
-14. **Config Export/Import**: `GET /api/config/export` liefert vollständigen JSON-Snapshot (config, channels, streams, profiles, audio, metadata mit `_export_version: 1`). `POST /api/config/import` stellt aus Snapshot wieder her (schreibt in SQLite, fordert Restart an).
-15. **Per-Game Settings**: Spiele implementieren `configure(const nlohmann::json&)` und `getSettings()`. Gespeichert unter `game_settings.<game_id>` in Config. API: `GET/PUT /api/games/:id/settings`. Angewendet beim Startup via `Application::initialize()` und bei API-Aufruf.
-16. **ProfileManager** (`src/core/ProfileManager.h/cpp`): Verwaltet Stream-Konfigurationsprofile (Presets). CRUD: `addProfile()`, `updateProfile()`, `removeProfile()`, `getProfile()`. Serialisierung via `loadFromJson()` / `toJson()`. Gespeichert in SettingsDatabase unter "profiles" Key. API: `GET/POST /api/profiles`, `GET/PUT/DELETE /api/profiles/:id`.
-17. **Bot Fill System**: Spiele können Bot-Spawning auslösen, um Mindest-Spielerzahlen zu erreichen. Bots haben KI-Verhalten mit konfigurierbaren Smash-Wahrscheinlichkeiten und Aktionsintervallen. Bots erscheinen standardmäßig nicht im Kill-Feed (`bot_kill_feed`). Tote Bots können automatisch respawnen (`bot_respawn`, `bot_respawn_delay`). Konfigurierbar per Game-Settings. Aktuell in Gravity Brawl implementiert.
-18. **Scoreboard Overlay**: Streams zeigen ein rotierendes Scoreboard-Overlay (Recent/All-Time Panels) mit konfigurierbarer Zykluszeit und Crossfade. Optional: automatischer Chat-Post des Scoreboards in konfigurierbarem Intervall.
-19. **YouTube Quota Management** (`src/platform/youtube/YouTubeQuota.h/cpp`): Singleton-Tracker für YouTube Data API v3 Quota (10.000 Units/Tag, Mitternacht Pacific Time Reset). Kosten: `COST_LIST=1`, `COST_SEARCH=100`, `COST_INSERT=50`, `COST_UPDATE=50`. `consume(cost)` blockiert bei erschöpftem Budget. Auto-Rollover via `pacificDayNumber()`. Alle `YouTubeApi`-Methoden rufen `consume()` vor jeder API-Anfrage auf. REST-Chat-Polling ebenfalls quota-geschützt. Dashboard zeigt Quota-Bar in YouTube-Channel-Karten. API: `GET /api/youtube/quota`, `PUT /api/youtube/quota` (budget setzen, reset). Broadcast-Erkennung: Keine automatischen Versuche ohne gestarteten Stream. Nach Stream-Start: 10s Wartezeit, dann max. 2 Versuche (30s Abstand). Danach nur noch manuell via `POST /api/youtube/detect/:channelId` (Dashboard-Button).
-20. **Stream-Event-Reactions**: Spiele reagieren auf Stream-Events (Subscriptions, Super Chats, Bits, Channel Points) über `ChatMessage::eventType`. YouTube-Events werden sowohl via gRPC (proto event types: NEW_SPONSOR_EVENT=7, SUPER_CHAT_EVENT=15, SUPER_STICKER_EVENT=16) als auch via REST (snippet.type) gemappt. Twitch-Events via IRC-Tags. Alle drei Spiele implementieren `handleStreamEvent()` mit spielspezifischen Belohnungen (Schild, Heilung, God Mode, Gebietserweiterung). Events lösen automatisch `!join` aus.
-21. **Text-Layout-System mit Farbüberschreibung**: Spiele registrieren Text-Elemente via `registerTextElement()` mit optionaler `defaultColor` (RGBA hex). Dashboard erlaubt Überschreiben von Position, Größe, Sichtbarkeit und Farbe pro Element. `parseHexColor()` konvertiert "#RRGGBBAA" oder "#RRGGBB" zu `sf::Color`. `applyTextLayout()` wendet automatisch die konfigurierte Farbe an.
-22. **AudioMixer** (`src/core/AudioMixer.h/cpp`): Erzeugt PCM-Audio-Output für Streams. Mixt Musik und SFX in 44100 Hz Stereo S16LE. Wird als `audioMixer` Pointer in `EncoderSettings` übergeben. `StreamEncoder` piped den Audio-Output parallel zum Video an FFmpeg.
-23. **ChannelStats** (`src/core/ChannelStats.h/cpp`): Per-Channel Engagement-Metriken (unique viewers, total interactions, active sessions, top users). API: `GET /api/channels/:id/stats`.
-24. **TwitchApi** (`src/platform/twitch/TwitchApi.h/cpp`): Statische Helfer für Twitch Helix API via curl. `getBroadcasterId()`, `getGameId()`, `updateChannelInfo()`. Ermöglicht automatisches Setzen von Twitch-Kategorie und Titel beim Spielwechsel.
+1. **Sound-System**: `AudioManager` (`src/core/AudioManager.h/cpp`) – Musik (Playlist, Shuffle, auto-advance aus `assets/audio/`) und SFX. API: `GET/PUT /api/audio`, `POST /api/audio/next|pause|resume|rescan`. Config: `audio.music_volume`, `audio.sfx_volume`, `audio.muted`, `audio.fade_in_seconds`, `audio.fade_out_seconds`, `audio.crossfade_overlap`.
+2. **Thread-Sicherheit**: `std::mutex`-geschützte Queues/States in Plattform-Threads und Web-API-Threads. RenderTextures werden lazy im Main-Thread erstellt.
+3. **FFmpeg**: `popen("ffmpeg ...")` – muss im System-PATH sein. RGBA-Frames via `stdin`, Audio parallel via `AudioMixer`.
+4. **Config**: Standard `config/default.json` (CLI-überschreibbar). Persistenz in `data/settings.db` (SQLite, WAL). `POST /api/config/save` schreibt JSON-Backup.
+5. **Web-Dashboard**: Statische Dateien aus `dashboard/` neben Executable. Next.js Static Export, gebaut mit `bun run build`. **Immer `bun` verwenden** (nicht npm/yarn).
+6. **API-Auth**: API-Key (`web.api_key`) oder Password-Login (Session-basiert, `Sha256.h`). `/api/auth/*` immer erlaubt. `--reset-password` für Recovery.
+7. **Docker/CI**: Multi-Stage Dockerfile (Bun → Ubuntu C++ → Ubuntu Runtime + FFmpeg/Xvfb). Named Volume für SQLite. GitHub Actions: 4 Jobs (Dashboard, Linux, Windows, Docker) auf Push/PR zu `main`.
+8. **Commits**: Beschreibende Commits nach jeder Änderung; README.md und diese Datei aktualisieren.
+9. **Git Hash Version**: `IS_GIT_HASH` Compile-Definition. `/api/status` → `version: "0.2.0+<hash>"`, `gitHash`.
+10. **Config Export/Import**: `GET /api/config/export` → JSON-Snapshot (`_export_version: 1`). `POST /api/config/import` → restauriert und fordert Restart.
+11. **Per-Game Settings**: `configure(json)` / `getSettings()` → `game_settings.<game_id>`. API: `GET/PUT /api/games/:id/settings`.
+12. **ProfileManager** (`src/core/ProfileManager.h/cpp`): Stream-Konfigurationsprofile. API: `GET/POST /api/profiles`, `GET/PUT/DELETE /api/profiles/:id`.
+13. **Scoreboard Overlay**: Rotierendes Recent/All-Time-Overlay mit Crossfade. Optionaler Chat-Post via `scoreboardChatInterval`.
+14. **YouTube Quota** (`YouTubeQuota.h/cpp`): 10.000 Units/Tag, Pacific-Time Reset. `consume(cost)` blockiert bei Erschöpfung. API: `GET /api/youtube/quota`, `PUT /api/youtube/quota`. Broadcast-Erkennung: 10s nach Stream-Start, max. 2 Versuche; manuell via `POST /api/youtube/detect/:channelId`.
+15. **Stream-Event-Reactions**: `handleStreamEvent()` in allen 3 Spielen. YouTube gRPC (event types 7/15/16) + REST + Twitch IRC. Events lösen automatisch `!join` aus.
+16. **Text-Layout mit Farbe**: `registerTextElement(..., defaultColor)` + Dashboard-Overrides via `applyTextOverrides(json)`. `parseHexColor()` unterstützt `#RRGGBBAA` und `#RRGGBB`.
+17. **AudioMixer** (`src/core/AudioMixer.h/cpp`): PCM 44100 Hz Stereo S16LE. Pointer in `EncoderSettings::audioMixer`.
+18. **ChannelStats** (`src/core/ChannelStats.h/cpp`): Engagement-Metriken pro Channel. API: `GET /api/channels/:id/stats`.
+19. **TwitchApi** (`src/platform/twitch/TwitchApi.h/cpp`): `getBroadcasterId()`, `getGameId()`, `updateChannelInfo()` – automatisches Setzen von Kategorie/Titel beim Spielwechsel.
 
 ---
 
 ## Lokales Testen
 
-### Local Platform (`src/platform/local/LocalPlatform.h`)
-Die `LocalPlatform` ist standardmäßig aktiviert und bietet drei Wege, Chat-Nachrichten lokal zu injizieren:
-
-1. **Web-Dashboard**: `POST /api/chat` mit `{"username": "...", "text": "..."}`
-   - Das Dashboard hat ein integriertes Chat-UI mit Quick-Buttons
-2. **Konsolen-Input**: Direkteingabe im Terminal (optional, per Config steuerbar)
-   - Format: `!befehl` oder `[username] !befehl`
-3. **REST API**: Programmatisch via curl oder HTTP-Client
-
-### Lokale Vorschau
-- Der `Renderer` erstellt automatisch ein SFML-Fenster als lokale Vorschau
-- Das Fenster zeigt den Frame des ausgewählten Preview-Streams (erster Stream standardmäßig)
-- `Renderer::displayPreview()` skaliert die Textur mit Letterboxing ins Fenster
-- Schließen des Fensters = Shutdown
-
-### Test-Workflow
-```
-1. Anwendung starten
-2. SFML-Fenster zeigt Live-Vorschau des ersten Streams
-3. http://localhost:8080 öffnen
-4. Im Dashboard "Chat Test"-Tab Befehle eingeben (!join, !attack, etc.)
-5. Im Streams-Tab neue Streams erstellen, Game-Modi wählen
-6. Im Channels-Tab Kanäle hinzufügen und verbinden
-7. ODER: Im Terminal direkt Befehle tippen
-```
+- **LocalPlatform**: `POST /api/chat` (`{"username": "...", "text": "..."}`) oder Terminal `[username] !befehl` (Config: `platforms.local.console_input: true`)
+- **Dashboard**: http://localhost:8080 – Chat-Test-UI, Quick-Buttons, 4 vorkonfigurierte Spieler
+- **Vorschau**: SFML-Fenster öffnet automatisch (erster Stream), Letterboxing via `Renderer::displayPreview()`
+- Ausführliche Test-Anleitungen in `TESTING.md`
