@@ -1,5 +1,8 @@
 #include "rendering/Renderer.h"
 #include <spdlog/spdlog.h>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 namespace is::rendering {
 
@@ -168,6 +171,36 @@ void Renderer::setHeadless(bool headless) {
         m_window.setFramerateLimit(0);
         spdlog::info("Renderer: switched to windowed mode ({}x{})", previewW, previewH);
     }
+}
+
+std::string Renderer::takeScreenshot(const sf::Texture& texture) {
+    namespace fs = std::filesystem;
+
+    // Create screenshots directory next to executable
+    fs::path dir = fs::current_path() / "screenshots";
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+
+    // Timestamp filename: screenshot_YYYYMMDD_HHMMSS.png
+    auto now = std::chrono::system_clock::now();
+    auto tt  = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &tt);
+#else
+    localtime_r(&tt, &tm);
+#endif
+    std::ostringstream oss;
+    oss << "screenshot_" << std::put_time(&tm, "%Y%m%d_%H%M%S") << ".png";
+    fs::path filePath = dir / oss.str();
+
+    sf::Image img = texture.copyToImage();
+    if (img.saveToFile(filePath.string())) {
+        spdlog::info("Screenshot saved: {}", filePath.string());
+        return filePath.string();
+    }
+    spdlog::error("Failed to save screenshot: {}", filePath.string());
+    return {};
 }
 
 } // namespace is::rendering

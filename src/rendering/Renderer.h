@@ -4,6 +4,7 @@
 #include <string>
 #include <functional>
 #include <vector>
+#include <filesystem>
 
 namespace is::rendering {
 
@@ -52,6 +53,10 @@ public:
 
     /// Query current headless state.
     bool isHeadless() const { return m_headless; }
+
+    /// Save a full-resolution screenshot of the given texture to screenshots/ dir.
+    /// Returns the file path on success, empty string on failure.
+    std::string takeScreenshot(const sf::Texture& texture);
 
 private:
     int m_width;

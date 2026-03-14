@@ -318,18 +318,21 @@ void Application::mainLoop() {
             stream->encodeFrame();
         }
 
-        // Preview: show selected stream in the SFML window (skip in headless)
+        // Resolve preview stream (used for display + screenshot)
+        StreamInstance* previewStream = nullptr;
         if (!m_impl->renderer->isHeadless()) {
-            auto* previewStream = m_impl->streamManager->getStream(m_impl->previewStreamId);
+            previewStream = m_impl->streamManager->getStream(m_impl->previewStreamId);
             if (!previewStream) {
                 auto all = m_impl->streamManager->allStreams();
                 if (!all.empty()) previewStream = all[0];
             }
-            if (previewStream) {
-                m_impl->renderer->displayPreview(
-                    previewStream->renderTexture().getTexture(),
-                    previewStream->width(), previewStream->height());
-            }
+        }
+
+        // Preview: show selected stream in the SFML window
+        if (previewStream) {
+            m_impl->renderer->displayPreview(
+                previewStream->renderTexture().getTexture(),
+                previewStream->width(), previewStream->height());
         }
 
         // Record performance sample (lightweight – no getState())
@@ -348,8 +351,16 @@ void Application::mainLoop() {
         }
 
         // Handle window events
-        m_impl->renderer->processEvents([this](const sf::Event& event) {
+        m_impl->renderer->processEvents([this, previewStream](const sf::Event& event) {
             if (event.type == sf::Event::Closed) requestShutdown();
+
+            // F12: take a full-resolution screenshot of the current preview stream
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::F12) {
+                if (previewStream) {
+                    m_impl->renderer->takeScreenshot(
+                        previewStream->renderTexture().getTexture());
+                }
+            }
         });
 
         // Live headless toggle: check config flag each frame
