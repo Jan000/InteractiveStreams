@@ -114,6 +114,9 @@ void ChaosArena::shutdown() {
 // ─── Chat Command Processing ─────────────────────────────────────────────────
 
 void ChaosArena::onChatMessage(const platform::ChatMessage& msg) {
+    // Handle stream events (subscribe, superchat, etc.)
+    handleStreamEvent(msg);
+
     if (msg.text.empty() || msg.text[0] != '!') return;
 
     // Parse command
@@ -169,6 +172,40 @@ void ChaosArena::onChatMessage(const platform::ChatMessage& msg) {
             is::core::Application::instance().playerDatabase().recordResult(
                 msg.userId, msg.displayName, "chaos_arena", 1, false);
         } catch (...) {}
+    }
+}
+
+void ChaosArena::handleStreamEvent(const platform::ChatMessage& msg) {
+    if (msg.eventType.empty()) return;
+    if (m_phase != GamePhase::Battle && m_phase != GamePhase::Lobby) return;
+
+    // Auto-join if not in game
+    if (!m_players.count(msg.userId)) {
+        cmdJoin(msg.userId, msg.displayName);
+        if (!m_players.count(msg.userId)) return;
+    }
+
+    Player& p = m_players[msg.userId];
+    if (!p.alive) return;
+
+    if (msg.eventType == "yt_subscribe" || msg.eventType == "twitch_sub") {
+        // Shield + health bonus + score
+        p.shieldTimer = 10.0f;
+        p.health = std::min(p.health + 50.0f, p.maxHealth);
+        p.score += 300;
+        sendChatFeedback("🛡️ " + p.displayName + " got a shield from subscribing! +300");
+    } else if ((msg.eventType == "yt_superchat" || msg.eventType == "twitch_bits") && msg.amount > 100) {
+        // Full heal + damage boost + invuln
+        p.health = p.maxHealth;
+        p.damageBoostTimer = 15.0f;
+        p.invulnTimer = 5.0f;
+        p.score += 500;
+        sendChatFeedback("⚡ " + p.displayName + " activated GOD MODE! +500");
+    } else if (msg.eventType == "twitch_channel_points") {
+        p.shieldTimer = 5.0f;
+        p.speedBoostTimer = 10.0f;
+        p.score += 100;
+        sendChatFeedback("✨ " + p.displayName + " redeemed a power-up! +100");
     }
 }
 

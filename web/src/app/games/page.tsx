@@ -6,6 +6,7 @@ import { api, GameInfo, TextElementData } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { NumericInput } from "@/components/ui/numeric-input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -286,23 +287,24 @@ export default function GamesPage() {
                       Text Layout
                     </h3>
                     <p className="text-xs text-muted-foreground mb-4">
-                      Configure position (%), font size, alignment, and visibility for each text element.
+                      Configure position (%), font size, alignment, color, and visibility for each text element.
                     </p>
                     <div className="space-y-2">
                       {/* Header row */}
-                      <div className="hidden sm:grid sm:grid-cols-[1fr_72px_72px_72px_90px_40px] gap-2 px-2 text-xs text-muted-foreground font-medium">
+                      <div className="hidden sm:grid sm:grid-cols-[1fr_72px_72px_72px_90px_100px_40px] gap-2 px-2 text-xs text-muted-foreground font-medium">
                         <span>Element</span>
                         <span>X %</span>
                         <span>Y %</span>
                         <span>Size</span>
                         <span>Align</span>
+                        <span>Color</span>
                         <span className="text-center">Vis</span>
                       </div>
                       {elements.map((el) => (
                         <div
                           key={el.id}
                           className={cn(
-                            "grid grid-cols-2 sm:grid-cols-[1fr_72px_72px_72px_90px_40px] gap-2 items-center rounded-md border p-2 transition-colors",
+                            "grid grid-cols-2 sm:grid-cols-[1fr_72px_72px_72px_90px_100px_40px] gap-2 items-center rounded-md border p-2 transition-colors",
                             !el.visible && "opacity-50 bg-muted/30"
                           )}
                         >
@@ -358,6 +360,27 @@ export default function GamesPage() {
                               </SelectItem>
                             </SelectContent>
                           </Select>
+
+                          {/* Color */}
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="color"
+                              value={el.color ? (el.color.length >= 7 ? el.color.slice(0, 7) : "#ffffff") : "#ffffff"}
+                              onChange={(e) => {
+                                const hex = e.target.value.toUpperCase();
+                                // Preserve existing alpha or default to FF
+                                const alpha = el.color && el.color.length === 9 ? el.color.slice(7) : "FF";
+                                updateTextElement(game.id, el.id, "color", hex + alpha);
+                              }}
+                              className="h-8 w-8 rounded border cursor-pointer p-0.5"
+                            />
+                            <Input
+                              value={el.color || ""}
+                              onChange={(e) => updateTextElement(game.id, el.id, "color", e.target.value)}
+                              placeholder="#RGBA"
+                              className="h-8 text-xs w-[60px] font-mono"
+                            />
+                          </div>
 
                           {/* Visible toggle */}
                           <div className="flex justify-center">

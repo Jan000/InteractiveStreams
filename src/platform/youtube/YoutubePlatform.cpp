@@ -510,10 +510,33 @@ void YoutubePlatform::pollLoop() {
                         }
 
                         if (item.contains("snippet")) {
-                            msg.text = item["snippet"].value("displayMessage", "");
+                            const auto& snippet = item["snippet"];
+                            msg.text = snippet.value("displayMessage", "");
+
+                            // Map event type from REST API
+                            std::string type = snippet.value("type", "textMessageEvent");
+                            if (type == "newSponsorEvent" || type == "memberMilestoneChatEvent" ||
+                                type == "membershipGiftingEvent") {
+                                msg.eventType = "yt_subscribe";
+                            } else if (type == "superChatEvent") {
+                                msg.eventType = "yt_superchat";
+                                if (snippet.contains("superChatDetails")) {
+                                    const auto& sc = snippet["superChatDetails"];
+                                    msg.amount = sc.value("amountMicros", 0) / 10000; // micros → cents
+                                    msg.currency = sc.value("currency", "");
+                                }
+                            } else if (type == "superStickerEvent") {
+                                msg.eventType = "yt_superchat";
+                                if (snippet.contains("superStickerDetails")) {
+                                    const auto& ss = snippet["superStickerDetails"];
+                                    msg.amount = ss.value("amountMicros", 0) / 10000;
+                                    msg.currency = ss.value("currency", "");
+                                }
+                            }
                         }
 
-                        if (!msg.text.empty()) {
+                        // Allow event messages through even without text
+                        if (!msg.text.empty() || !msg.eventType.empty()) {
                             m_messagesReceived++;
                             m_lastMessageTime.store(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
                             std::lock_guard<std::mutex> lock(m_mutex);

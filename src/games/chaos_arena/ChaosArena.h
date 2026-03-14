@@ -78,6 +78,7 @@ private:
     void cmdDash(const std::string& userId);
     void cmdBlock(const std::string& userId);
     void cmdEmote(const std::string& userId, const std::string& emote);
+    void handleStreamEvent(const platform::ChatMessage& msg);
 
     // Game logic
     void startCountdown();

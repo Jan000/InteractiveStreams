@@ -61,6 +61,7 @@ private:
                  const std::string& teamName);
     void cmdVote(const std::string& userId, Direction dir);
     void cmdEmote(const std::string& userId, const std::string& emote);
+    void handleStreamEvent(const platform::ChatMessage& msg);
 
     // ── Game logic ──────────────────────────────────────────────
     void startGame();

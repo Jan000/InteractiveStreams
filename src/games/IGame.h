@@ -30,6 +30,7 @@ struct TextElement {
     int         fontSize = 24;  ///< Base font size in pixels (before fontScale)
     TextAlign   align    = TextAlign::Center;
     bool        visible  = true;
+    std::string color;          ///< RGBA hex color (e.g. "#FF0000FF"), empty = game default
 
     // Serialization helpers
     nlohmann::json toJson() const {
@@ -38,7 +39,8 @@ struct TextElement {
             {"x", x}, {"y", y},
             {"font_size", fontSize},
             {"align", align == TextAlign::Left ? "left" : align == TextAlign::Right ? "right" : "center"},
-            {"visible", visible}
+            {"visible", visible},
+            {"color", color}
         };
     }
 
@@ -50,6 +52,7 @@ struct TextElement {
         te.y        = j.value("y", 5.f);
         te.fontSize = j.value("font_size", 24);
         te.visible  = j.value("visible", true);
+        te.color    = j.value("color", "");
         std::string a = j.value("align", "center");
         te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
         return te;
@@ -146,6 +149,7 @@ public:
                         std::string a = j["align"].get<std::string>();
                         te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
                     }
+                    if (j.contains("color")) te.color = j["color"].get<std::string>();
                     break;
                 }
             }
@@ -180,15 +184,39 @@ protected:
         unsigned  fontSize;
         TextAlign align;
         bool      visible;
+        std::string color;  ///< RGBA hex (empty = use game default)
     };
+
+    /// Parse a hex color string ("#RRGGBBAA" or "#RRGGBB") into sf::Color.
+    /// Returns false if the string is empty or invalid.
+    static bool parseHexColor(const std::string& hex, sf::Color& out) {
+        if (hex.empty()) return false;
+        std::string h = hex;
+        if (h[0] == '#') h = h.substr(1);
+        if (h.size() != 6 && h.size() != 8) return false;
+        unsigned long val;
+        try { val = std::stoul(h, nullptr, 16); } catch (...) { return false; }
+        if (h.size() == 8) {
+            out.r = (val >> 24) & 0xFF;
+            out.g = (val >> 16) & 0xFF;
+            out.b = (val >> 8)  & 0xFF;
+            out.a = val & 0xFF;
+        } else {
+            out.r = (val >> 16) & 0xFF;
+            out.g = (val >> 8)  & 0xFF;
+            out.b = val & 0xFF;
+            out.a = 255;
+        }
+        return true;
+    }
 
     ResolvedText resolve(const std::string& id, float targetW, float targetH) const {
         const TextElement* e = te(id);
-        if (!e) return {0, 0, 16, TextAlign::Center, true};
+        if (!e) return {0, 0, 16, TextAlign::Center, true, ""};
         float px = e->x * targetW / 100.f;
         float py = e->y * targetH / 100.f;
         unsigned fs = static_cast<unsigned>(std::max(1.f, e->fontSize * m_fontScale));
-        return {px, py, fs, e->align, e->visible};
+        return {px, py, fs, e->align, e->visible, e->color};
     }
 
     /// Position an sf::Text using a ResolvedText.
@@ -207,14 +235,21 @@ protected:
             break;
         }
         text.setPosition(r.px, r.py);
+
+        // Apply configured color override if set
+        sf::Color col;
+        if (parseHexColor(r.color, col)) {
+            text.setFillColor(col);
+        }
     }
 
     /// Register default text elements.  Games call this in their constructor.
     void registerTextElement(const std::string& id, const std::string& label,
                              float x, float y, int fontSize,
                              TextAlign align = TextAlign::Center,
-                             bool visible = true) {
-        m_textElements.push_back({id, label, x, y, fontSize, align, visible});
+                             bool visible = true,
+                             const std::string& defaultColor = "") {
+        m_textElements.push_back({id, label, x, y, fontSize, align, visible, defaultColor});
     }
 
     float m_fontScale = 1.0f;

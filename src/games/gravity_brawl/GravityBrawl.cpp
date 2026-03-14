@@ -792,14 +792,22 @@ void GravityBrawl::onChatMessage(const platform::ChatMessage& msg) {
 }
 
 void GravityBrawl::handleStreamEvent(const platform::ChatMessage& msg) {
-    if (msg.avatarUrl.empty()) return;
+    if (msg.avatarUrl.empty() && msg.eventType.empty()) return;
 
     // Asynchronously prefetch avatar so join rendering can hit a warm cache.
-    m_avatarCache.request(msg.avatarUrl);
+    if (!msg.avatarUrl.empty()) {
+        m_avatarCache.request(msg.avatarUrl);
 
-    auto it = m_planets.find(msg.userId);
-    if (it != m_planets.end()) {
-        it->second.avatarUrl = msg.avatarUrl;
+        auto it = m_planets.find(msg.userId);
+        if (it != m_planets.end()) {
+            it->second.avatarUrl = msg.avatarUrl;
+        }
+    }
+
+    // Trigger livestream reward for stream events (subscribe, superchat, etc.)
+    if (!msg.eventType.empty() && m_phase == GamePhase::Playing) {
+        triggerLivestreamReward(msg.userId, msg.displayName, msg.platformId,
+                               msg.eventType, msg.amount);
     }
 }
 

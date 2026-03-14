@@ -100,6 +100,7 @@ export interface TextElementData {
   font_size: number;
   align: "left" | "center" | "right";
   visible: boolean;
+  color: string;
 }
 
 export interface ScoreEntry {

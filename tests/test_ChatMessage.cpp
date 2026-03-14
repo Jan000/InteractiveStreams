@@ -24,6 +24,9 @@ TEST_SUITE("ChatMessage") {
         CHECK(msg.userId.empty());
         CHECK(msg.displayName.empty());
         CHECK(msg.text.empty());
+        CHECK(msg.eventType.empty());
+        CHECK(msg.amount == 0);
+        CHECK(msg.currency.empty());
         CHECK(msg.isModerator == false);
         CHECK(msg.isSubscriber == false);
         CHECK(msg.timestamp == 0.0);

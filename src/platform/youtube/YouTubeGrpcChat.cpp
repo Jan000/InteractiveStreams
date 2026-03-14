@@ -201,13 +201,48 @@ void YouTubeGrpcChat::streamLoop() {
                     text = snippet.super_chat_details().user_comment();
                 }
 
-                if (text.empty()) continue;
+                // Map event type and extract monetary details
+                std::string eventType;
+                int amountMicros = 0;
+                std::string currency;
+
+                if (snippet.has_type()) {
+                    using T = youtube::api::v3::LiveChatMessageSnippet_TypeWrapper;
+                    auto type = snippet.type();
+                    if (type == T::NEW_SPONSOR_EVENT) {
+                        eventType = "yt_subscribe";
+                    } else if (type == T::SUPER_CHAT_EVENT) {
+                        eventType = "yt_superchat";
+                        if (snippet.has_super_chat_details()) {
+                            const auto& sc = snippet.super_chat_details();
+                            if (sc.has_amount_micros()) amountMicros = static_cast<int>(sc.amount_micros() / 10000); // convert micros to cents
+                            if (sc.has_currency()) currency = sc.currency();
+                        }
+                    } else if (type == T::SUPER_STICKER_EVENT) {
+                        eventType = "yt_superchat"; // treat stickers same as super chats
+                        if (snippet.has_super_sticker_details()) {
+                            const auto& ss = snippet.super_sticker_details();
+                            if (ss.has_amount_micros()) amountMicros = static_cast<int>(ss.amount_micros() / 10000);
+                            if (ss.has_currency()) currency = ss.currency();
+                        }
+                    } else if (type == T::MEMBER_MILESTONE_CHAT_EVENT) {
+                        eventType = "yt_subscribe";
+                    } else if (type == T::MEMBERSHIP_GIFTING_EVENT) {
+                        eventType = "yt_subscribe";
+                    }
+                }
+
+                // Allow event messages through even without text
+                if (text.empty() && eventType.empty()) continue;
 
                 // Build ChatMessage
                 ChatMessage msg;
                 msg.platformId = "youtube";
                 msg.channelId  = m_channelId;
                 msg.text       = text;
+                msg.eventType  = eventType;
+                msg.amount     = amountMicros;
+                msg.currency   = currency;
 
                 if (item.has_author_details()) {
                     const auto& author = item.author_details();

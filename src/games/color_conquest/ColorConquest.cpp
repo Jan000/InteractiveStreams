@@ -91,6 +91,9 @@ void ColorConquest::shutdown() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 void ColorConquest::onChatMessage(const platform::ChatMessage& msg) {
+    // Handle stream events (subscribe, superchat, etc.)
+    handleStreamEvent(msg);
+
     if (msg.text.empty() || msg.text[0] != '!') return;
 
     std::istringstream iss(msg.text);
@@ -136,6 +139,46 @@ void ColorConquest::onChatMessage(const platform::ChatMessage& msg) {
             is::core::Application::instance().playerDatabase().recordResult(
                 msg.userId, msg.displayName, "color_conquest", 1, false);
         } catch (...) {}
+    }
+}
+
+void ColorConquest::handleStreamEvent(const platform::ChatMessage& msg) {
+    if (msg.eventType.empty()) return;
+
+    // Auto-join if not in game
+    if (!m_playerTeam.count(msg.userId)) {
+        cmdJoin(msg.userId, msg.displayName, "");
+        if (!m_playerTeam.count(msg.userId)) return;
+    }
+
+    TeamId team = m_playerTeam[msg.userId];
+    int idx = static_cast<int>(team) - 1;
+    if (idx < 0 || idx >= 4) return;
+
+    if (msg.eventType == "yt_subscribe" || msg.eventType == "twitch_sub") {
+        // Bonus territory expansion in a random direction
+        std::uniform_int_distribution<int> dirDist(0, 3);
+        Direction dir = static_cast<Direction>(dirDist(m_rng));
+        expandTeam(team, dir);
+        expandTeam(team, dir); // Double expansion as reward
+        m_events.push_back({
+            "🛡️ " + msg.displayName + " subscribed! Bonus expansion for Team " + getTeamName(team) + "!",
+            getTeamColor(team),
+            EVENT_DISPLAY_TIME
+        });
+        sendChatFeedback("🛡️ " + msg.displayName + " subscribed! Bonus cells for Team " + getTeamName(team) + "!");
+    } else if ((msg.eventType == "yt_superchat" || msg.eventType == "twitch_bits") && msg.amount > 100) {
+        // Massive expansion in all directions
+        for (int d = 0; d < 4; d++) {
+            expandTeam(team, static_cast<Direction>(d));
+            expandTeam(team, static_cast<Direction>(d));
+        }
+        m_events.push_back({
+            "⚡ " + msg.displayName + " super-boosted Team " + getTeamName(team) + "!",
+            sf::Color(255, 220, 90),
+            EVENT_DISPLAY_TIME
+        });
+        sendChatFeedback("⚡ " + msg.displayName + " super-boosted Team " + getTeamName(team) + "!");
     }
 }
 

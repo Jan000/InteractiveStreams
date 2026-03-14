@@ -12,6 +12,9 @@ struct ChatMessage {
     std::string displayName;   ///< User's display name
     std::string avatarUrl;     ///< Optional profile image URL
     std::string text;          ///< Message content
+    std::string eventType;     ///< Stream event type (e.g. "yt_subscribe", "yt_superchat", "")
+    int         amount = 0;    ///< Monetary amount in micros/cents (super chat, bits, etc.)
+    std::string currency;      ///< Currency code for monetary events (e.g. "USD")
     bool        isModerator = false;
     bool        isSubscriber = false;
     double      timestamp = 0.0;
