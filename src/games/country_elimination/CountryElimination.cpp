@@ -817,12 +817,8 @@ void CountryElimination::respawnDeadBots(float dt) {
     }
 
     for (const auto& botId : toRespawn) {
-        // Remove old player entry and respawn fresh
-        if (m_players.count(botId)) {
-            auto& p = m_players[botId];
-            if (p.body && m_world) m_world->DestroyBody(p.body);
-            m_players.erase(botId);
-        }
+        // Leave old dead body for the FIFO eliminated-queue to manage visually.
+        // Only strip the respawn timer — the queue will destroy the body when faded.
         m_botCounter++;
         std::string newId = "__bot_" + std::to_string(m_botCounter);
         int idx = (m_botCounter - 1) % NUM_BOT_NAMES;
@@ -897,9 +893,9 @@ void CountryElimination::update(double dt) {
 
     // Update eliminated ball FIFO fade tracking
     for (auto& eb : m_eliminatedQueue) eb.age += fdt;
-    // Mark oldest balls for fading when over limit (0 = no limit)
-    // When infinite linger is on, skip count-based fading entirely
-    if (!m_elimInfiniteLinger) {
+    // Mark oldest balls for fading when over limit (0 = no limit).
+    // Count-based fading always applies, even with infinite linger.
+    {
         int visibleCount = static_cast<int>(m_eliminatedQueue.size());
         int overLimit = (m_maxEliminatedVisible > 0) ? visibleCount - m_maxEliminatedVisible : 0;
         if (overLimit > 0) {
@@ -911,7 +907,7 @@ void CountryElimination::update(double dt) {
             }
         }
     }
-    // Also start fading balls that have lingered too long (unless infinite linger is on)
+    // Start fading balls that have lingered too long (unless infinite linger is on)
     if (!m_elimInfiniteLinger) {
         for (auto& eb : m_eliminatedQueue) {
             if (!eb.fading && eb.age >= m_elimLingerDuration) {
@@ -932,6 +928,7 @@ void CountryElimination::update(double dt) {
             auto& p = m_players[eb.playerId];
             if (p.body && m_world) m_world->DestroyBody(p.body);
             p.body = nullptr;
+            m_players.erase(eb.playerId);
         }
         m_eliminatedQueue.pop_front();
     }
@@ -2430,6 +2427,9 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_elimPersistRounds = settings["elim_persist_rounds"].get<bool>();
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
+
+    spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
+                 m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
 
     if (m_world) spawnBots();
 }
