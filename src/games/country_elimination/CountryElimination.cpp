@@ -2138,6 +2138,108 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
             py += cardH + pad;
         }
 
+        // Card: Player Leaderboard (real players only)
+        {
+            std::vector<const RoundWinEntry*> playerWins;
+            for (const auto& rw : m_roundWinners) {
+                if (rw.userId.rfind("__bot_", 0) != 0)
+                    playerWins.push_back(&rw);
+            }
+            int maxShow = std::min(static_cast<int>(playerWins.size()), 10);
+            float headerH = fs(16) + 10.0f;
+            float cardH = headerH + 6.0f + std::max(1, maxShow) * lineH + pad;
+            drawCard(px, py, pw, cardH);
+            float cy = drawHeader(px, py, pw, "PLAYERS", sf::Color(100, 200, 255, 220));
+
+            if (playerWins.empty()) {
+                sf::Text t;
+                t.setFont(m_font);
+                t.setString("No player wins yet");
+                t.setCharacterSize(fs(11));
+                t.setFillColor(sf::Color(150, 150, 150, 140));
+                auto lb = t.getLocalBounds();
+                t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
+                t.setPosition(px + pw / 2.0f, cy);
+                target.draw(t);
+            } else {
+                for (int i = 0; i < maxShow; ++i) {
+                    const auto& rw = *playerWins[i];
+                    float ey = cy + i * lineH;
+
+                    sf::Text rank;
+                    rank.setFont(m_font);
+                    rank.setString(std::to_string(i + 1) + ".");
+                    rank.setCharacterSize(fs(13));
+                    rank.setFillColor(i == 0 ? sf::Color(100, 200, 255, 220) : sf::Color(180, 180, 180, 200));
+                    rank.setPosition(px + 6.0f, ey);
+                    target.draw(rank);
+
+                    // Avatar or flag
+                    float flagR = fs(13) * 0.5f;
+                    const sf::Texture* avatarTex = nullptr;
+                    // Find player to get avatar URL
+                    for (const auto& [pid, pl] : m_players) {
+                        if (pl.userId == rw.userId && !pl.avatarUrl.empty()) {
+                            avatarTex = m_avatarCache.getTexture(pl.avatarUrl);
+                            break;
+                        }
+                    }
+                    if (avatarTex) {
+                        sf::CircleShape av(flagR);
+                        av.setOrigin(flagR, flagR);
+                        av.setPosition(px + 30.0f, ey + lineH / 2.0f);
+                        av.setTexture(avatarTex);
+                        av.setFillColor(sf::Color::White);
+                        av.setOutlineColor(sf::Color(255, 255, 255, 80));
+                        av.setOutlineThickness(1.0f);
+                        target.draw(av);
+                    } else {
+                        sf::CircleShape flag(flagR);
+                        flag.setOrigin(flagR, flagR);
+                        flag.setPosition(px + 30.0f, ey + lineH / 2.0f);
+                        auto fit = m_flagTextures.find(rw.label);
+                        if (fit != m_flagTextures.end()) {
+                            flag.setTexture(&fit->second);
+                            auto ts = fit->second.getSize();
+                            int sq = std::min(ts.x, ts.y);
+                            int ox = (ts.x - sq) / 2;
+                            int oy = (ts.y - sq) / 2;
+                            flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
+                            flag.setFillColor(sf::Color::White);
+                        } else {
+                            flag.setFillColor(rw.color);
+                        }
+                        flag.setOutlineColor(sf::Color(255, 255, 255, 80));
+                        flag.setOutlineThickness(1.0f);
+                        target.draw(flag);
+                    }
+
+                    sf::Text name;
+                    name.setFont(m_font);
+                    std::string disp = rw.displayName;
+                    int maxChars = static_cast<int>(pw - 80.0f) / std::max(1, static_cast<int>(fs(11) * 0.6f));
+                    if (static_cast<int>(disp.size()) > maxChars && maxChars > 3)
+                        disp = disp.substr(0, maxChars - 2) + "..";
+                    name.setString(disp);
+                    name.setCharacterSize(fs(11));
+                    name.setFillColor(sf::Color(230, 230, 240, 210));
+                    name.setPosition(px + 30.0f + flagR + 6.0f, ey + 1.0f);
+                    target.draw(name);
+
+                    sf::Text wins;
+                    wins.setFont(m_font);
+                    wins.setString(std::to_string(rw.wins) + "W");
+                    wins.setCharacterSize(fs(13));
+                    wins.setFillColor(sf::Color(100, 200, 255, 200));
+                    auto wb = wins.getLocalBounds();
+                    wins.setOrigin(wb.left + wb.width, 0.0f);
+                    wins.setPosition(px + pw - 8.0f, ey);
+                    target.draw(wins);
+                }
+            }
+            py += cardH + pad;
+        }
+
         // Card: Recent Eliminations
         {
             int maxShow = std::min(static_cast<int>(m_eliminationFeed.size()), 8);
