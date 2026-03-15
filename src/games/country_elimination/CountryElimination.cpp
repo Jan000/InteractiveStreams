@@ -639,25 +639,40 @@ void CountryElimination::enforceConstantVelocity() {
         // Anti-wall-riding: if the ball is near the arena wall and its
         // velocity is not pointing inward, reflect the radial component so
         // it bounces cleanly instead of riding along with the rotating ring.
+        // Skip if ball is at the gap opening — let it escape normally.
         b2Vec2 pos = p.body->GetPosition();
         float dx = pos.x - WORLD_CX;
         float dy = pos.y - WORLD_CY;
         float dist2 = dx * dx + dy * dy;
         float wallProx = ARENA_RADIUS - p.radiusM - 0.3f;
         if (dist2 > wallProx * wallProx) {
-            float dist = std::sqrt(dist2);
-            float rx = dx / dist;
-            float ry = dy / dist;
-            vel = p.body->GetLinearVelocity();
-            float radialVel = vel.x * rx + vel.y * ry;
-            if (radialVel >= 0.0f) {
-                // Remove outward component, reflect inward
-                vel.x -= 2.0f * radialVel * rx;
-                vel.y -= 2.0f * radialVel * ry;
-                spd = vel.Length();
-                if (spd > 0.01f) {
-                    float scale = m_currentBallSpeed / spd;
-                    p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+            // Check if the ball is at the gap opening (in arena-local frame)
+            bool inGap = false;
+            if (m_currentGapAngle > 0.001f) {
+                float ballAngle = std::atan2(dy, dx);
+                float localAngle = ballAngle - m_arenaAngle;
+                // Normalize to [-PI, PI]
+                localAngle = std::fmod(localAngle + PI, TAU);
+                if (localAngle < 0.0f) localAngle += TAU;
+                localAngle -= PI;
+                inGap = std::abs(localAngle) < m_currentGapAngle + 0.15f;
+            }
+
+            if (!inGap) {
+                float dist = std::sqrt(dist2);
+                float rx = dx / dist;
+                float ry = dy / dist;
+                vel = p.body->GetLinearVelocity();
+                float radialVel = vel.x * rx + vel.y * ry;
+                if (radialVel >= 0.0f) {
+                    // Remove outward component, reflect inward
+                    vel.x -= 2.0f * radialVel * rx;
+                    vel.y -= 2.0f * radialVel * ry;
+                    spd = vel.Length();
+                    if (spd > 0.01f) {
+                        float scale = m_currentBallSpeed / spd;
+                        p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+                    }
                 }
             }
         }
