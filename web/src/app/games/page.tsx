@@ -124,6 +124,9 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "flag_outline_thickness", label: "Flag Outline Thickness", description: "Thickness of the flag outline in pixels (only when outline is enabled)", type: "float", min: 0, max: 10, step: 0.5, defaultValue: 1.5 },
     { key: "name_text_scale", label: "Name Text Scale", description: "Scale multiplier for player name text below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
     { key: "avatar_scale", label: "Avatar Scale", description: "Scale multiplier for profile picture circles below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
+    { key: "rainbow_ring", label: "Rainbow Ring", description: "Animate the arena ring with rainbow colors", type: "bool", defaultValue: true },
+    { key: "allow_reentry", label: "Allow Re-entry", description: "Players that bounce back into the arena are revived and continue playing", type: "bool", defaultValue: true },
+    { key: "show_bot_names", label: "Show Bot Names", description: "Display name labels below bot players", type: "bool", defaultValue: true },
   ],
 };
 

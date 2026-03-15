@@ -477,6 +477,9 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - `flag_shape_rect`: Flaggen als Rechteck statt Kreis anzeigen, Hitbox passt sich an (default false)
 - `elim_infinite_linger`: Eliminierte Bälle bleiben unendlich, bis max_eliminated_visible erreicht (default false)
 - `elim_persist_rounds`: Eliminierte Bälle bleiben zwischen Runden liegen (default false)
+- `rainbow_ring`: Arena-Ring in animierten Regenbogenfarben (default true)
+- `allow_reentry`: Spieler, die zurück in die Arena prallen, werden wiederbelebt (default true)
+- `show_bot_names`: Namen unter Bot-Spielern anzeigen (default true)
 
 ---
 

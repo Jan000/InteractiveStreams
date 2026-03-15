@@ -1013,6 +1013,35 @@ void CountryElimination::update(double dt) {
         }
 
         checkEliminations();
+
+        // Re-entry: revive eliminated players that bounce back inside the arena
+        if (m_allowReentry) {
+            float reentryLimit = ARENA_RADIUS - WALL_THICKNESS - 0.3f;
+            float reentryLimit2 = reentryLimit * reentryLimit;
+            for (auto& [id, p] : m_players) {
+                if (p.alive || !p.body) continue;
+                b2Vec2 pos = p.body->GetPosition();
+                float dx = pos.x - WORLD_CX;
+                float dy = pos.y - WORLD_CY;
+                if (dx * dx + dy * dy < reentryLimit2) {
+                    p.alive = true;
+                    p.body->SetGravityScale(0.0f);
+                    p.body->SetLinearDamping(0.0f);
+                    // Restore ball physics
+                    b2Fixture* fix = p.body->GetFixtureList();
+                    if (fix) {
+                        fix->SetRestitution(m_restitution);
+                        fix->SetFriction(0.0f);
+                    }
+                    // Remove from eliminated queue
+                    m_eliminatedQueue.erase(
+                        std::remove_if(m_eliminatedQueue.begin(), m_eliminatedQueue.end(),
+                            [&id](const EliminatedBall& eb) { return eb.playerId == id; }),
+                        m_eliminatedQueue.end());
+                }
+            }
+        }
+
         respawnDeadBots(fdt);
         checkRoundEnd();
         break;
@@ -1198,8 +1227,34 @@ void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayou
             else if (inGap) edgeFade = 0.0f;
             else if (gapDist < 0.08f) edgeFade = gapDist / 0.08f;
 
-            sf::Uint8 alpha = static_cast<sf::Uint8>(ringColor.a * edgeFade);
-            sf::Color c(ringColor.r, ringColor.g, ringColor.b, alpha);
+            // Rainbow or static color
+            sf::Color c;
+            if (m_rainbowRing) {
+                float hue = std::fmod(baseA / TAU + m_globalTime * 0.15f, 1.0f);
+                // HSV→RGB (S=0.8, V=1.0)
+                float h6 = hue * 6.0f;
+                int hi = static_cast<int>(h6) % 6;
+                float f = h6 - static_cast<float>(hi);
+                float q = 1.0f - 0.8f * f;
+                float t = 1.0f - 0.8f * (1.0f - f);
+                float rr, gg, bb;
+                switch (hi) {
+                    case 0: rr=1; gg=t; bb=0.2f; break;
+                    case 1: rr=q; gg=1; bb=0.2f; break;
+                    case 2: rr=0.2f; gg=1; bb=t; break;
+                    case 3: rr=0.2f; gg=q; bb=1; break;
+                    case 4: rr=t; gg=0.2f; bb=1; break;
+                    default: rr=1; gg=0.2f; bb=q; break;
+                }
+                c = sf::Color(
+                    static_cast<sf::Uint8>(rr * 255),
+                    static_cast<sf::Uint8>(gg * 255),
+                    static_cast<sf::Uint8>(bb * 255),
+                    static_cast<sf::Uint8>(230 * edgeFade));
+            } else {
+                sf::Uint8 alpha = static_cast<sf::Uint8>(ringColor.a * edgeFade);
+                c = sf::Color(ringColor.r, ringColor.g, ringColor.b, alpha);
+            }
 
             ring[vi].position = { L.arenaCX + rOuter * std::cos(a), L.arenaCY + rOuter * std::sin(a) };
             ring[vi].color = c;
@@ -1393,8 +1448,8 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             target.draw(lbl);
         }
 
-        // Name below (alive only)
-        if (m_fontLoaded && p.alive) {
+        // Name below (alive only, skip bots if disabled)
+        if (m_fontLoaded && p.alive && (!p.isBot() || m_showBotNames)) {
             float nameY = sp.y + halfH + 4.0f;
 
             // Avatar circle (left of name)
@@ -2424,6 +2479,12 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_elimInfiniteLinger = settings["elim_infinite_linger"].get<bool>();
     if (settings.contains("elim_persist_rounds") && settings["elim_persist_rounds"].is_boolean())
         m_elimPersistRounds = settings["elim_persist_rounds"].get<bool>();
+    if (settings.contains("rainbow_ring") && settings["rainbow_ring"].is_boolean())
+        m_rainbowRing = settings["rainbow_ring"].get<bool>();
+    if (settings.contains("allow_reentry") && settings["allow_reentry"].is_boolean())
+        m_allowReentry = settings["allow_reentry"].get<bool>();
+    if (settings.contains("show_bot_names") && settings["show_bot_names"].is_boolean())
+        m_showBotNames = settings["show_bot_names"].get<bool>();
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
@@ -2461,6 +2522,9 @@ nlohmann::json CountryElimination::getSettings() const {
         {"flag_outline_thickness", m_flagOutlineThickness},
         {"elim_infinite_linger", m_elimInfiniteLinger},
         {"elim_persist_rounds", m_elimPersistRounds},
+        {"rainbow_ring", m_rainbowRing},
+        {"allow_reentry", m_allowReentry},
+        {"show_bot_names", m_showBotNames},
         {"text_elements", textElementsJson()},
     };
 }

@@ -272,6 +272,11 @@ private:
     bool   m_flagOutline          = true;
     float  m_flagOutlineThickness = 1.5f;
 
+    // Visual / gameplay toggles
+    bool   m_rainbowRing    = true;
+    bool   m_allowReentry   = true;
+    bool   m_showBotNames   = true;
+
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {
         std::string playerId;
