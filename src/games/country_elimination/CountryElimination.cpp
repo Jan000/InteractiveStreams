@@ -30,71 +30,57 @@ static const char* BOT_NAMES[] = {
     "Thailand", "Vietnam", "Philippines", "Indonesia", "Malaysia",
 };
 static const char* BOT_LABELS[] = {
-    "USA", "GBR", "FRA", "DEU", "JPN",
-    "BRA", "IND", "CHN", "RUS", "KOR",
-    "ITA", "ESP", "MEX", "CAN", "AUS",
-    "PRT", "NLD", "SWE", "POL", "TUR",
-    "ARG", "COL", "CHL", "PER", "NOR",
-    "DNK", "FIN", "BEL", "AUT", "CHE",
-    "GRC", "IRL", "NZL", "ZAF", "EGY",
-    "THA", "VNM", "PHL", "IDN", "MYS",
+    "US", "GB", "FR", "DE", "JP",
+    "BR", "IN", "CN", "RU", "KR",
+    "IT", "ES", "MX", "CA", "AU",
+    "PT", "NL", "SE", "PL", "TR",
+    "AR", "CO", "CL", "PE", "NO",
+    "DK", "FI", "BE", "AT", "CH",
+    "GR", "IE", "NZ", "ZA", "EG",
+    "TH", "VN", "PH", "ID", "MY",
 };
 static constexpr int NUM_BOT_NAMES = sizeof(BOT_NAMES) / sizeof(BOT_NAMES[0]);
 
-// ── Flag definitions (simple tricolor stripes per country code) ──────────────
+// ── Sprite-sheet flag order (matches rows in assets/img/flagSprite60.png) ─────
 
-static constexpr int FLAG_SIZE = 64;
-
-struct FlagDef {
-    const char* code;
-    uint8_t r1,g1,b1, r2,g2,b2, r3,g3,b3;
-    int n;    // number of stripes (2 or 3)
-    bool v;   // vertical stripes
+static const char* SPRITE_ORDER[] = {
+    // Africa (59)
+    "DZ","AO","BJ","BW","BF","BI","CM","CV","CF","TD",
+    "CD","DJ","EG","GQ","ER","ET","GA","GM","GH","GN",
+    "GW","CI","KE","LS","LR","LY","MG","MW","ML","MR",
+    "MU","YT","MA","MZ","NA","NE","NG","CG","RE","RW",
+    "SH","ST","SN","SC","SL","SO","ZA","SS","SD","SR",
+    "SZ","TG","TN","UG","TZ","EH","YE","ZM","ZW",
+    // Americas (54)
+    "AI","AG","AR","AW","BS","BB","BQ","BZ","BM","BO",
+    "VG","BR","CA","KY","CL","CO","KM","CR","CU","CW",
+    "DM","DO","EC","SV","FK","GF","GL","GD","GP","GT",
+    "GY","HT","HN","JM","MQ","MX","MS","NI","PA","PY",
+    "PE","PR","BL","KN","LC","PM","VC","SX","TT","TC",
+    "US","VI","UY","VE",
+    // Asia (35)
+    "AB","AF","AZ","BD","BT","BN","KH","CN","GE","HK",
+    "IN","ID","JP","KZ","LA","MO","MY","MV","MN","MM",
+    "NP","KP","MP","PW","PG","PH","SG","KR","LK","TW",
+    "TJ","TH","TL","TM","VN",
+    // Europe (54)
+    "AX","AL","AD","AM","AT","BY","BE","BA","BG","HR",
+    "CY","CZ","DK","EE","FO","FI","FR","DE","GI","GR",
+    "GG","HU","IS","IE","IM","IT","JE","XK","LV","LI",
+    "LT","LU","MT","MD","MC","ME","NL","MK","NO","PL",
+    "PT","RO","RU","SM","RS","SK","SI","ES","SE","CH",
+    "TR","UA","GB","VA",
+    // Middle East (16)
+    "BH","IR","IQ","IL","KW","JO","KG","LB","OM","PK",
+    "PS","QA","SA","SY","AE","UZ",
+    // Oceania (23)
+    "AS","AU","CX","CC","CK","FJ","PF","GU","KI","MH",
+    "FM","NC","NZ","NR","NU","NF","WS","SB","TK","TO",
+    "TV","VU","WF",
+    // Special (5)
+    "AQ","EU","JR","OLY","UN",
 };
-
-static const FlagDef FLAG_DEFS[] = {
-    // code   stripe-1 (top/left)    stripe-2 (mid)         stripe-3 (bottom/right) #  vert
-    {"USA",   0,40,104,    255,255,255,  191,10,48,     3, false},
-    {"GBR",   0,36,125,    255,255,255,  207,20,43,     3, false},
-    {"FRA",   0,35,149,    255,255,255,  237,41,57,     3, true },
-    {"DEU",   0,0,0,       221,0,0,      255,206,0,     3, false},
-    {"JPN",   255,255,255, 188,0,45,     255,255,255,   3, false},
-    {"BRA",   0,156,59,    255,223,0,    0,156,59,      3, false},
-    {"IND",   255,153,51,  255,255,255,  19,136,8,      3, false},
-    {"CHN",   238,28,37,   255,255,0,    238,28,37,     3, false},
-    {"RUS",   255,255,255, 0,57,166,     213,43,30,     3, false},
-    {"KOR",   255,255,255, 205,46,58,    0,71,160,      3, false},
-    {"ITA",   0,146,70,    255,255,255,  206,43,55,     3, true },
-    {"ESP",   170,21,27,   241,191,0,    170,21,27,     3, false},
-    {"MEX",   0,104,71,    255,255,255,  206,17,38,     3, true },
-    {"CAN",   255,0,0,     255,255,255,  255,0,0,       3, true },
-    {"AUS",   0,0,139,     255,255,255,  0,0,139,       3, false},
-    {"PRT",   0,102,0,     0,102,0,      255,0,0,       3, true },
-    {"NLD",   174,28,40,   255,255,255,  33,70,139,     3, false},
-    {"SWE",   0,106,167,   254,204,2,    0,106,167,     3, false},
-    {"POL",   255,255,255, 220,20,60,    220,20,60,     2, false},
-    {"TUR",   227,10,23,   255,255,255,  227,10,23,     3, false},
-    {"ARG",   108,180,232, 255,255,255,  108,180,232,   3, false},
-    {"COL",   252,209,22,  0,56,147,     206,17,38,     3, false},
-    {"CHL",   255,255,255, 0,57,166,     213,43,30,     3, false},
-    {"PER",   216,30,5,    255,255,255,  216,30,5,      3, true },
-    {"NOR",   186,12,47,   255,255,255,  0,48,135,      3, false},
-    {"DNK",   198,12,48,   255,255,255,  198,12,48,     3, false},
-    {"FIN",   255,255,255, 0,47,108,     255,255,255,   3, false},
-    {"BEL",   0,0,0,       250,224,66,   237,41,57,     3, true },
-    {"AUT",   237,41,57,   255,255,255,  237,41,57,     3, false},
-    {"CHE",   255,0,0,     255,255,255,  255,0,0,       3, false},
-    {"GRC",   13,94,175,   255,255,255,  13,94,175,     3, false},
-    {"IRL",   22,155,98,   255,255,255,  255,136,62,    3, true },
-    {"NZL",   0,36,125,    255,255,255,  0,36,125,      3, false},
-    {"ZAF",   0,119,73,    255,184,28,   0,20,137,      3, false},
-    {"EGY",   206,17,38,   255,255,255,  0,0,0,         3, false},
-    {"THA",   237,28,36,   255,255,255,  45,45,116,     3, false},
-    {"VNM",   218,37,29,   255,255,0,    218,37,29,     3, false},
-    {"PHL",   0,56,168,    255,255,255,  206,17,38,     3, false},
-    {"IDN",   206,17,38,   255,255,255,  255,255,255,   2, false},
-    {"MYS",   204,0,0,     255,255,255,  0,0,153,       3, false},
-};
+static constexpr int NUM_SPRITE_FLAGS = sizeof(SPRITE_ORDER) / sizeof(SPRITE_ORDER[0]);
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Construction
@@ -114,55 +100,24 @@ CountryElimination::~CountryElimination() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 void CountryElimination::generateFlagTextures() {
-    for (const auto& f : FLAG_DEFS) {
-        sf::Color colors[3] = {
-            sf::Color(f.r1, f.g1, f.b1),
-            sf::Color(f.r2, f.g2, f.b2),
-            sf::Color(f.r3, f.g3, f.b3)
-        };
-
-        sf::Image img;
-        img.create(FLAG_SIZE, FLAG_SIZE, sf::Color::White);
-
-        if (f.v) {
-            // Vertical stripes
-            int w = FLAG_SIZE / f.n;
-            for (int s = 0; s < f.n; ++s) {
-                int x0 = s * w;
-                int x1 = (s == f.n - 1) ? FLAG_SIZE : (s + 1) * w;
-                for (int x = x0; x < x1; ++x)
-                    for (int y = 0; y < FLAG_SIZE; ++y)
-                        img.setPixel(x, y, colors[std::min(s, 2)]);
-            }
-        } else {
-            // Horizontal stripes
-            int h = FLAG_SIZE / f.n;
-            for (int s = 0; s < f.n; ++s) {
-                int y0 = s * h;
-                int y1 = (s == f.n - 1) ? FLAG_SIZE : (s + 1) * h;
-                for (int y = y0; y < y1; ++y)
-                    for (int x = 0; x < FLAG_SIZE; ++x)
-                        img.setPixel(x, y, colors[std::min(s, 2)]);
-            }
-        }
-
-        // Special case: Japan — draw red circle on white
-        if (std::string(f.code) == "JPN") {
-            img.create(FLAG_SIZE, FLAG_SIZE, sf::Color::White);
-            float cx = FLAG_SIZE / 2.0f;
-            float cy = FLAG_SIZE / 2.0f;
-            float r = FLAG_SIZE * 0.3f;
-            for (int y = 0; y < FLAG_SIZE; ++y)
-                for (int x = 0; x < FLAG_SIZE; ++x) {
-                    float dx = x - cx, dy = y - cy;
-                    if (dx * dx + dy * dy <= r * r)
-                        img.setPixel(x, y, sf::Color(188, 0, 45));
-                }
-        }
-
-        m_flagTextures[f.code].loadFromImage(img);
-        m_flagTextures[f.code].setSmooth(true);
+    sf::Image spriteSheet;
+    if (!spriteSheet.loadFromFile("assets/img/flagSprite60.png")) {
+        spdlog::warn("[CountryElimination] Could not load flag sprite sheet");
+        return;
     }
+
+    unsigned int sheetW = spriteSheet.getSize().x;
+    unsigned int sheetH = spriteSheet.getSize().y;
+    unsigned int flagH  = sheetH / NUM_SPRITE_FLAGS;
+
+    for (int i = 0; i < NUM_SPRITE_FLAGS; ++i) {
+        sf::IntRect area(0, i * flagH, sheetW, flagH);
+        m_flagTextures[SPRITE_ORDER[i]].loadFromImage(spriteSheet, area);
+        m_flagTextures[SPRITE_ORDER[i]].setSmooth(true);
+    }
+
+    spdlog::info("[CountryElimination] Loaded {} flag textures ({}x{}, {}px each)",
+                 NUM_SPRITE_FLAGS, sheetW, sheetH, flagH);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1158,23 +1113,41 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             sf::CircleShape ball(rpx, 32);
             ball.setOrigin(rpx, rpx);
             ball.setPosition(sp);
-            sf::Color fill = p.color;
-            fill.a = baseAlpha;
-            ball.setFillColor(fill);
-            // White outline
+
+            std::string labelUp = p.label;
+            for (auto& c : labelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            auto flagIt = m_flagTextures.find(labelUp);
+            bool hasFlag = (flagIt != m_flagTextures.end());
+
+            if (hasFlag) {
+                ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
+                auto& tex = flagIt->second;
+                ball.setTexture(&tex);
+                // Center-square crop for rectangular flags
+                auto ts = tex.getSize();
+                int side = static_cast<int>(std::min(ts.x, ts.y));
+                int ox = (static_cast<int>(ts.x) - side) / 2;
+                int oy = (static_cast<int>(ts.y) - side) / 2;
+                ball.setTextureRect(sf::IntRect(ox, oy, side, side));
+            } else {
+                sf::Color fill = p.color;
+                fill.a = baseAlpha;
+                ball.setFillColor(fill);
+            }
+
             ball.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.7f)));
             ball.setOutlineThickness(std::max(1.5f, rpx * 0.08f));
             target.draw(ball);
-        }
 
-        // Inner highlight (top-left light reflection)
-        {
-            float hlR = rpx * 0.35f;
-            sf::CircleShape hl(hlR, 16);
-            hl.setOrigin(hlR, hlR);
-            hl.setPosition(sp.x - rpx * 0.25f, sp.y - rpx * 0.25f);
-            hl.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.25f)));
-            target.draw(hl);
+            // Inner highlight (only for non-flag balls)
+            if (!hasFlag) {
+                float hlR = rpx * 0.35f;
+                sf::CircleShape hl(hlR, 16);
+                hl.setOrigin(hlR, hlR);
+                hl.setPosition(sp.x - rpx * 0.25f, sp.y - rpx * 0.25f);
+                hl.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.25f)));
+                target.draw(hl);
+            }
         }
 
         // Shield glow
@@ -1546,7 +1519,23 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
     sf::CircleShape bigBall(bigR, 48);
     bigBall.setOrigin(bigR, bigR);
     bigBall.setPosition(cx, ballY + bounce);
-    bigBall.setFillColor(w.color);
+
+    std::string wLabelUp = w.label;
+    for (auto& c : wLabelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    auto wFlagIt = m_flagTextures.find(wLabelUp);
+    if (wFlagIt != m_flagTextures.end()) {
+        bigBall.setFillColor(sf::Color::White);
+        auto& tex = wFlagIt->second;
+        bigBall.setTexture(&tex);
+        auto ts = tex.getSize();
+        int side = static_cast<int>(std::min(ts.x, ts.y));
+        int ox = (static_cast<int>(ts.x) - side) / 2;
+        int oy = (static_cast<int>(ts.y) - side) / 2;
+        bigBall.setTextureRect(sf::IntRect(ox, oy, side, side));
+    } else {
+        bigBall.setFillColor(w.color);
+    }
+
     bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
     bigBall.setOutlineThickness(3.0f);
     target.draw(bigBall);
