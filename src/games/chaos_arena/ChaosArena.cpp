@@ -1499,16 +1499,16 @@ nlohmann::json ChaosArena::getState() const {
 
 nlohmann::json ChaosArena::getCommands() const {
     return nlohmann::json::array({
-        {{"command", "!join"}, {"description", "Join the game"}, {"aliases", nlohmann::json::array({"!play"})}},
-        {{"command", "!left"}, {"description", "Move left"}, {"aliases", nlohmann::json::array({"!l", "!a"})}},
-        {{"command", "!right"}, {"description", "Move right"}, {"aliases", nlohmann::json::array({"!r", "!d"})}},
-        {{"command", "!jump"}, {"description", "Jump straight up"}, {"aliases", nlohmann::json::array({"!j", "!w", "!up"})}},
-        {{"command", "!jumpleft"}, {"description", "Jump to the left"}, {"aliases", nlohmann::json::array({"!jl"})}},
-        {{"command", "!jumpright"}, {"description", "Jump to the right"}, {"aliases", nlohmann::json::array({"!jr"})}},
-        {{"command", "!attack"}, {"description", "Melee attack"}, {"aliases", nlohmann::json::array({"!hit", "!atk"})}},
-        {{"command", "!special"}, {"description", "Fire projectile (5s cooldown)"}, {"aliases", nlohmann::json::array({"!sp", "!ult"})}},
-        {{"command", "!dash"}, {"description", "Quick dash (3s cooldown)"}, {"aliases", nlohmann::json::array({"!dodge"})}},
-        {{"command", "!block"}, {"description", "Block (reduces damage 75%)"}, {"aliases", nlohmann::json::array({"!shield", "!def"})}},
+        {{"command", "join"}, {"description", "Join the game"}, {"aliases", nlohmann::json::array({"play"})}},
+        {{"command", "left"}, {"description", "Move left"}, {"aliases", nlohmann::json::array({"l", "a"})}},
+        {{"command", "right"}, {"description", "Move right"}, {"aliases", nlohmann::json::array({"r", "d"})}},
+        {{"command", "jump"}, {"description", "Jump straight up"}, {"aliases", nlohmann::json::array({"j", "w", "up"})}},
+        {{"command", "jumpleft"}, {"description", "Jump to the left"}, {"aliases", nlohmann::json::array({"jl"})}},
+        {{"command", "jumpright"}, {"description", "Jump to the right"}, {"aliases", nlohmann::json::array({"jr"})}},
+        {{"command", "attack"}, {"description", "Melee attack"}, {"aliases", nlohmann::json::array({"hit", "atk"})}},
+        {{"command", "special"}, {"description", "Fire projectile (5s cooldown)"}, {"aliases", nlohmann::json::array({"sp", "ult"})}},
+        {{"command", "dash"}, {"description", "Quick dash (3s cooldown)"}, {"aliases", nlohmann::json::array({"dodge"})}},
+        {{"command", "block"}, {"description", "Block (reduces damage 75%)"}, {"aliases", nlohmann::json::array({"shield", "def"})}},
     });
 }
 

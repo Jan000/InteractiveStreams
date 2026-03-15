@@ -116,7 +116,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 **Chaos Arena** ist ein physik-basiertes Battle-Arena-Spiel:
 
 ### Spielablauf
-1. **Lobby** – Zuschauer treten mit `!join` bei (30 Sekunden Wartezeit)
+1. **Lobby** – Zuschauer treten mit `join` bei (30 Sekunden Wartezeit)
 2. **Countdown** – 3-Sekunden-Countdown vor jeder Runde
 3. **Battle** – Spieler kämpfen gegeneinander (120 Sekunden pro Runde)
 4. **Rundenende** – Ergebnisse werden angezeigt (8 Sekunden)
@@ -160,9 +160,9 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 
 ### Spielablauf
 
-1. **Lobby** – Zuschauer wählen ein Team mit `!join red/blue/green/yellow` (oder `!join` für Auto-Zuweisung)
+1. **Lobby** – Zuschauer wählen ein Team mit `join red/blue/green/yellow` (oder `join` für Auto-Zuweisung)
 2. **Runden** – 30 Runden à 8 Sekunden Abstimmungszeit
-3. **Abstimmung** – Teammitglieder stimmen über die Expansionsrichtung ab (`!up`, `!down`, `!left`, `!right`)
+3. **Abstimmung** – Teammitglieder stimmen über die Expansionsrichtung ab (`up`, `down`, `left`, `right`)
 4. **Expansion** – Die Mehrheitsentscheidung jedes Teams wird ausgeführt, Grenzzellen werden erobert
 5. **Spielende** – Das Team mit den meisten Zellen nach 30 Runden gewinnt
 
@@ -179,12 +179,12 @@ Chaos Arena nutzt Box2D-Physik mit O(n²)-Kollisionsprüfungen und bis zu 13 Dra
 
 | Befehl | Aliase | Beschreibung |
 |--------|--------|-------------|
-| `!join [team]` | `!play` | Team beitreten (red/blue/green/yellow oder auto) |
-| `!up` | `!u`, `!w`, `!north` | Für Expansion nach oben stimmen |
-| `!down` | `!d`, `!s`, `!south` | Für Expansion nach unten stimmen |
-| `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
-| `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
-| `!emote [text]` | — | Team-Emote senden |
+| `join [team]` | `play` | Team beitreten (red/blue/green/yellow oder auto) |
+| `up` | `u`, `w`, `north` | Für Expansion nach oben stimmen |
+| `down` | `d`, `s`, `south` | Für Expansion nach unten stimmen |
+| `left` | `l`, `a`, `west` | Für Expansion nach links stimmen |
+| `right` | `r`, `e`, `east` | Für Expansion nach rechts stimmen |
+| `emote [text]` | — | Team-Emote senden |
 
 ### Skalierbarkeit
 
@@ -220,7 +220,7 @@ Spieler sind Planeten, die in einem Gravitationsfeld um ein zentrales Schwarzes 
 - **Scoreboard-Integration** – Punkte für Kills und Rundengewinne, persistiert in der Spieler-Datenbank
 
 ### Spielablauf
-1. **Lobby** – Zuschauer treten mit `!join` bei, Bots füllen auf die Mindestzahl auf
+1. **Lobby** – Zuschauer treten mit `join` bei, Bots füllen auf die Mindestzahl auf
 2. **Countdown** – 3-Sekunden-Countdown vor Rundenstart
 3. **Playing** – Spieler rammen sich gegenseitig Richtung Schwarzes Loch, Cosmic Events sorgen für Chaos
 4. **Game Over** – Nach Ablauf der konfigurierten Epoche (epoch_duration)
@@ -229,8 +229,8 @@ Spieler sind Planeten, die in einem Gravitationsfeld um ein zentrales Schwarzes 
 
 | Befehl | Aliases | Beschreibung |
 |--------|---------|-------------|
-| `!join [farbe]` | `!play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
-| `!s` | `!smash` | Dash/Ram-Angriff (0.8s Cooldown) |
+| `join [farbe]` | `play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
+| `s` | `smash` | Dash/Ram-Angriff (0.8s Cooldown) |
 
 ### Sound Effects
 
@@ -683,32 +683,32 @@ bun run build        # Erzeugt statischen Export in web/out/
 
 | Befehl | Aliases | Beschreibung |
 |--------|---------|-------------|
-| `!join` | `!play` | Dem Spiel beitreten |
-| `!left` | `!l`, `!a` | Nach links bewegen |
-| `!right` | `!r`, `!d` | Nach rechts bewegen |
-| `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
-| `!attack` | `!hit`, `!atk` | Nahkampf-Angriff |
-| `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
-| `!dash` | `!dodge` | Schneller Ausweichsprint (3s Cooldown) |
-| `!block` | `!shield`, `!def` | Blocken (75% Schadensreduktion) |
+| `join` | `play` | Dem Spiel beitreten |
+| `left` | `l`, `a` | Nach links bewegen |
+| `right` | `r`, `d` | Nach rechts bewegen |
+| `jump` | `j`, `w`, `up` | Springen (Doppelsprung möglich) |
+| `attack` | `hit`, `atk` | Nahkampf-Angriff |
+| `special` | `sp`, `ult` | Projektil abfeuern (5s Cooldown) |
+| `dash` | `dodge` | Schneller Ausweichsprint (3s Cooldown) |
+| `block` | `shield`, `def` | Blocken (75% Schadensreduktion) |
 
 ### Color Conquest
 
 | Befehl | Aliases | Beschreibung |
 |--------|---------|-------------|
-| `!join [team]` | `!play` | Team beitreten (red/blue/green/yellow oder auto) |
-| `!up` | `!u`, `!w`, `!north` | Für Expansion nach oben stimmen |
-| `!down` | `!d`, `!s`, `!south` | Für Expansion nach unten stimmen |
-| `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
-| `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
-| `!emote [text]` | — | Team-Emote senden |
+| `join [team]` | `play` | Team beitreten (red/blue/green/yellow oder auto) |
+| `up` | `u`, `w`, `north` | Für Expansion nach oben stimmen |
+| `down` | `d`, `s`, `south` | Für Expansion nach unten stimmen |
+| `left` | `l`, `a`, `west` | Für Expansion nach links stimmen |
+| `right` | `r`, `e`, `east` | Für Expansion nach rechts stimmen |
+| `emote [text]` | — | Team-Emote senden |
 
 ### Gravity Brawl
 
 | Befehl | Aliases | Beschreibung |
 |--------|---------|-------------|
-| `!join [farbe]` | `!play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
-| `!s` | `!smash` | Dash/Ram-Angriff (0.8s Cooldown, 5× in 3s = Supernova) |
+| `join [farbe]` | `play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
+| `s` | `smash` | Dash/Ram-Angriff (0.8s Cooldown, 5× in 3s = Supernova) |
 
 ---
 
@@ -724,7 +724,7 @@ Beim Start öffnet sich automatisch ein **SFML-Vorschaufenster** mit der gerende
 2. Öffne `http://localhost:8080` im Browser
 3. Nutze den Bereich **“Local Chat (Test)”** unten im Dashboard:
    - Wähle einen Benutzernamen (Standard: `TestUser`)
-   - Tippe Chat-Befehle ein (z.B. `!join`)
+   - Tippe Chat-Befehle ein (z.B. `join`)
    - Nutze Quick-Buttons für häufige Befehle
 4. Die Nachrichten werden direkt ins Spiel injiziert
 
@@ -732,16 +732,16 @@ Beim Start öffnet sich automatisch ein **SFML-Vorschaufenster** mit der gerende
 Wenn `console_input` aktiviert ist (Standard: `true`), kannst du auch direkt in der Konsole/Terminal Befehle eingeben:
 
 ```
-!join              → Als Benutzer "console" beitreten
-[Alice] !join      → Als Benutzer "Alice" beitreten
-[Bob] !attack      → Als "Bob" angreifen
+join              → Als Benutzer "console" beitreten
+[Alice] join      → Als Benutzer "Alice" beitreten
+[Bob] attack      → Als "Bob" angreifen
 ```
 
 ### Chat über REST API
 ```bash
 curl -X POST http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"username": "TestUser", "text": "!join"}'
+  -d '{"username": "TestUser", "text": "join"}'
 ```
 
 **Weitere API-Endpunkte für lokales Testen:**

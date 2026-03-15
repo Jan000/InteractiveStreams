@@ -157,7 +157,7 @@ Physik und Logik laufen mit festem Zeitschritt (1/60s), Rendering interpoliert m
 2. `Application` iteriert über alle `StreamInstance`s
 3. Jeder Stream filtert Nachrichten anhand seiner `channels[]`-Liste via `ChannelManager::filterByChannels()`
 4. Gefilterte Nachrichten werden an `StreamInstance::handleChatMessage()` weitergeleitet
-5. Bei Vote-Modus fängt StreamInstance `!vote`-Commands ab, ansonsten Weiterleitung an `GameManager::handleChatMessage()`
+5. Bei Vote-Modus fängt StreamInstance `vote`-Commands ab, ansonsten Weiterleitung an `GameManager::handleChatMessage()`
 6. `GameManager` delegiert an das aktive `IGame::onChatMessage()`
 
 ### Chat-Feedback (IGame → Chat)
@@ -293,19 +293,19 @@ Felder: `ffmpegPath`, `outputUrl`, `width`/`height`/`fps`, `bitrate`, `preset`, 
 - Accessoires: Schwert-Swing bei Attack, Energieschild bei Block, Speed-Lines bei Dash
 
 ### Chat-Befehl-Parsing
-Befehle in `ChaosArena::onChatMessage()`:
-- `!join`/`!play` | `!left`/`!l`/`!a`, `!right`/`!r`/`!d` → Bewegung
-- `!jump`/`!j`/`!w`/`!up`, `!jumpleft`/`!jl`, `!jumpright`/`!jr` → Springen
-- `!attack`/`!hit`/`!atk` → Melee | `!special`/`!sp`/`!ult` → Projektil (5s CD)
-- `!dash`/`!dodge` → I-Frame Dash (3s CD) | `!block`/`!shield`/`!def` → Block
-- `!emote [text]` → Kosmetisches Emote
+Befehle in `ChaosArena::onChatMessage()` (alle Befehle funktionieren mit oder ohne `!`-Prefix):
+- `join`/`play` | `left`/`l`/`a`, `right`/`r`/`d` → Bewegung
+- `jump`/`j`/`w`/`up`, `jumpleft`/`jl`, `jumpright`/`jr` → Springen
+- `attack`/`hit`/`atk` → Melee | `special`/`sp`/`ult` → Projektil (5s CD)
+- `dash`/`dodge` → I-Frame Dash (3s CD) | `block`/`shield`/`def` → Block
+- `emote [text]` → Kosmetisches Emote
 
 ### Stream-Event-Handling
 Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - **yt_subscribe / twitch_sub**: Schild (10s) + 50 HP Heilung + 300 Punkte
 - **yt_superchat / twitch_bits** (>100): Volle Heilung + Schadens-Boost (15s) + Unverwundbarkeit (5s) + 500 Punkte
 - **twitch_channel_points**: Schild (5s) + Geschwindigkeits-Boost (10s) + 100 Punkte
-- Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
+- Events lösen automatisch `join` aus, falls der Nutzer noch nicht im Spiel ist
 
 ---
 
@@ -321,16 +321,16 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - Rendering: Einfache Farbflächen, kein Box2D
 
 ### Chat-Befehl-Parsing
-Befehle in `ColorConquest::onChatMessage()`:
-- `!join [team]`/`!play` → Team beitreten (red/blue/green/yellow oder auto)
-- `!up`/`!u`/`!w`/`!north`, `!down`/`!d`/`!s`/`!south`, `!left`/`!l`/`!a`/`!west`, `!right`/`!r`/`!e`/`!east` → Expansion-Vote
-- `!emote [text]` → Team-Emote
+Befehle in `ColorConquest::onChatMessage()` (alle Befehle funktionieren mit oder ohne `!`-Prefix):
+- `join [team]`/`play` → Team beitreten (red/blue/green/yellow oder auto)
+- `up`/`u`/`w`/`north`, `down`/`d`/`s`/`south`, `left`/`l`/`a`/`west`, `right`/`r`/`e`/`east` → Expansion-Vote
+- `emote [text]` → Team-Emote
 
 ### Stream-Event-Handling
 Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - **yt_subscribe / twitch_sub**: Doppelte Gebiets-Expansion in zufälliger Richtung
 - **yt_superchat / twitch_bits** (>100): Doppelte Expansion in ALLEN 4 Richtungen
-- Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
+- Events lösen automatisch `join` aus, falls der Nutzer noch nicht im Spiel ist
 
 ---
 
@@ -382,9 +382,9 @@ enum class AnomalyType { MassInjector, Shield, ScoreJackpot };
 - Events: `gb_join`, `gb_smash`, `gb_supernova`, `gb_hit`, `gb_death`, `gb_kill`, `gb_bounty`, `gb_cosmic_event`, `gb_cosmic_end`, `gb_countdown`, `gb_battle_start`, `gb_game_over`
 
 ### Chat-Befehl-Parsing
-Befehle in `GravityBrawl::onChatMessage()`:
-- `!join [farbe]` / `!play` → Spieler hinzufügen (Farbe optional: red, blue, green, yellow, #RRGGBB)
-- `!s` / `!smash` → Dash/Ram-Angriff (0.8s Cooldown)
+Befehle in `GravityBrawl::onChatMessage()` (alle Befehle funktionieren mit oder ohne `!`-Prefix):
+- `join [farbe]` / `play` → Spieler hinzufügen (Farbe optional: red, blue, green, yellow, #RRGGBB)
+- `s` / `smash` → Dash/Ram-Angriff (0.8s Cooldown)
 - 5 aufeinanderfolgende Smashes innerhalb 3s → Supernova (großer AoE-Knockback)
 
 ### Stream-Event-Handling
@@ -392,7 +392,7 @@ Bei `eventType`-Nachrichten wird `triggerLivestreamReward()` aufgerufen:
 - **yt_subscribe / twitch_sub**: Schild + Tier-Bonus + 300 Punkte
 - **twitch_channel_points**: Supernova-Auslösung
 - **yt_superchat / twitch_bits** (>100): God Mode (30s) + 3× Masse
-- Events lösen automatisch `!join` aus, falls der Nutzer noch nicht im Spiel ist
+- Events lösen automatisch `join` aus, falls der Nutzer noch nicht im Spiel ist
 
 ### Per-Game Settings
 - Configure via `configure(json)` / `getSettings()`, gespeichert unter `game_settings.gravity_brawl`
@@ -447,9 +447,8 @@ Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <
 - Bots werden gefiltert in: Leaderboard, PlayerDatabase, Chat-Feedback
 
 ### Chat-Befehl-Parsing
-Befehle in `CountryElimination::onChatMessage()`:
+Befehle in `CountryElimination::onChatMessage()` (alle Befehle funktionieren mit oder ohne `!`-Prefix):
 - `join [land/emoji]` / `play [land/emoji]` → Ball spawnen mit Label (max 16 Zeichen)
-- `!` Prefix optional (wie bei allen Spielen)
 
 ### Stream-Event-Handling
 Bei `eventType`-Nachrichten in `handleStreamEvent()`:
@@ -708,7 +707,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 12. **ProfileManager** (`src/core/ProfileManager.h/cpp`): Stream-Konfigurationsprofile. API: `GET/POST /api/profiles`, `GET/PUT/DELETE /api/profiles/:id`.
 13. **Scoreboard Overlay**: Rotierendes Recent/All-Time-Overlay mit Crossfade. Optionaler Chat-Post via `scoreboardChatInterval`.
 14. **YouTube Quota** (`YouTubeQuota.h/cpp`): 10.000 Units/Tag, Pacific-Time Reset. `consume(cost)` blockiert bei Erschöpfung. API: `GET /api/youtube/quota`, `PUT /api/youtube/quota`. Broadcast-Erkennung: 10s nach Stream-Start, max. 2 Versuche; manuell via `POST /api/youtube/detect/:channelId`.
-15. **Stream-Event-Reactions**: `handleStreamEvent()` in allen 3 Spielen. YouTube gRPC (event types 7/15/16) + REST + Twitch IRC. Events lösen automatisch `!join` aus.
+15. **Stream-Event-Reactions**: `handleStreamEvent()` in allen 4 Spielen. YouTube gRPC (event types 7/15/16) + REST + Twitch IRC. Events lösen automatisch `join` aus.
 16. **Text-Layout mit Farbe**: `registerTextElement(..., defaultColor)` + Dashboard-Overrides via `applyTextOverrides(json)`. `parseHexColor()` unterstützt `#RRGGBBAA` und `#RRGGBB`.
 17. **AudioMixer** (`src/core/AudioMixer.h/cpp`): PCM 44100 Hz Stereo S16LE. Pointer in `EncoderSettings::audioMixer`.
 18. **ChannelStats** (`src/core/ChannelStats.h/cpp`): Engagement-Metriken pro Channel. API: `GET /api/channels/:id/stats`.
@@ -718,7 +717,7 @@ Das Dashboard wird als statischer Export (`web/out/`) erzeugt und beim CMake-Bui
 
 ## Lokales Testen
 
-- **LocalPlatform**: `POST /api/chat` (`{"username": "...", "text": "..."}`) oder Terminal `[username] !befehl` (Config: `platforms.local.console_input: true`)
+- **LocalPlatform**: `POST /api/chat` (`{"username": "...", "text": "..."}`) oder Terminal `[username] befehl` (Config: `platforms.local.console_input: true`)
 - **Dashboard**: http://localhost:8080 – Chat-Test-UI, Quick-Buttons, 4 vorkonfigurierte Spieler
 - **Vorschau**: SFML-Fenster öffnet automatisch (erster Stream), Letterboxing via `Renderer::displayPreview()`
 - Ausführliche Test-Anleitungen in `TESTING.md`

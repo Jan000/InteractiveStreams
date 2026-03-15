@@ -971,17 +971,17 @@ nlohmann::json ColorConquest::getState() const {
 
 nlohmann::json ColorConquest::getCommands() const {
     return nlohmann::json::array({
-        {{"command", "!join [team]"}, {"description", "Join a team (red/blue/green/yellow) or auto-assign"},
-         {"aliases", nlohmann::json::array({"!play"})}},
-        {{"command", "!up"}, {"description", "Vote to expand upward"},
-         {"aliases", nlohmann::json::array({"!u", "!w", "!north"})}},
-        {{"command", "!down"}, {"description", "Vote to expand downward"},
-         {"aliases", nlohmann::json::array({"!d", "!s", "!south"})}},
-        {{"command", "!left"}, {"description", "Vote to expand left"},
-         {"aliases", nlohmann::json::array({"!l", "!a", "!west"})}},
-        {{"command", "!right"}, {"description", "Vote to expand right"},
-         {"aliases", nlohmann::json::array({"!r", "!e", "!east"})}},
-        {{"command", "!emote [text]"}, {"description", "Send a team emote"},
+        {{"command", "join [team]"}, {"description", "Join a team (red/blue/green/yellow) or auto-assign"},
+         {"aliases", nlohmann::json::array({"play"})}},
+        {{"command", "up"}, {"description", "Vote to expand upward"},
+         {"aliases", nlohmann::json::array({"u", "w", "north"})}},
+        {{"command", "down"}, {"description", "Vote to expand downward"},
+         {"aliases", nlohmann::json::array({"d", "s", "south"})}},
+        {{"command", "left"}, {"description", "Vote to expand left"},
+         {"aliases", nlohmann::json::array({"l", "a", "west"})}},
+        {{"command", "right"}, {"description", "Vote to expand right"},
+         {"aliases", nlohmann::json::array({"r", "e", "east"})}},
+        {{"command", "emote [text]"}, {"description", "Send a team emote"},
          {"aliases", nlohmann::json::array()}}
     });
 }

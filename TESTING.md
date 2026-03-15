@@ -66,24 +66,24 @@ cmake --build build --config Debug
 Im selben Terminal, in dem die Anwendung läuft, kannst du direkt Befehle tippen:
 
 ```
-!join              → Tritt als "console" bei
-!left              → Bewege dich nach links
-!jump              → Springe
-!attack            → Nahkampfangriff
+join              → Tritt als "console" bei
+left              → Bewege dich nach links
+jump              → Springe
+attack            → Nahkampfangriff
 ```
 
 Um als anderer Benutzer zu schreiben, verwende das Klammerformat:
 ```
-[Alice] !join       → Alice tritt bei
-[Bob] !join         → Bob tritt bei
-[Alice] !attack     → Alice greift an
-[Bob] !jump         → Bob springt
+[Alice] join       → Alice tritt bei
+[Bob] join         → Bob tritt bei
+[Alice] attack     → Alice greift an
+[Bob] jump         → Bob springt
 ```
 
 ### Web-Dashboard (empfohlen)
 1. Öffne **http://localhost:8080** im Browser
-2. Scrolle zum Abschnitt **„Local Chat (Test)"**
-3. Gib im Eingabefeld einen Befehl ein (z.B. `!join`)
+2. Scrolle zum Abschnitt **„Local Chat (Test)“**
+3. Gib im Eingabefeld einen Befehl ein (z.B. `join`)
 4. Klicke **Send** oder drücke **Enter**
 
 ---
@@ -197,7 +197,7 @@ Es gibt **drei Wege**, Chat-Nachrichten an das Spiel zu senden:
 
 ### 3. REST-API (programmatisch)
 - **Endpoint:** `POST http://localhost:8080/api/chat`
-- **Body:** `{"username": "Name", "text": "!join"}`
+- **Body:** `{"username": "Name", "text": "join"}`
 - **Empfohlen für:** Automatisierung, Scripting, externe Tools
 
 ---
@@ -209,12 +209,12 @@ Es gibt **drei Wege**, Chat-Nachrichten an das Spiel zu senden:
 # Spieler "Alice" tritt bei
 curl -X POST http://localhost:8080/api/chat `
      -H "Content-Type: application/json" `
-     -d '{"username":"Alice","text":"!join"}'
+     -d '{"username":"Alice","text":"join"}'
 
 # Spieler "Bob" greift an
 curl -X POST http://localhost:8080/api/chat `
      -H "Content-Type: application/json" `
-     -d '{"username":"Bob","text":"!attack"}'
+     -d '{"username":"Bob","text":"attack"}'
 ```
 
 ### Spielstatus abfragen
@@ -268,7 +268,7 @@ $players = @("Alice", "Bob", "Charlie", "Diana")
 foreach ($p in $players) {
     Invoke-RestMethod -Uri "http://localhost:8080/api/chat" `
         -Method Post -ContentType "application/json" `
-        -Body "{`"username`":`"$p`",`"text`":`"!join`"}"
+        -Body "{`"username`":`"$p`",`"text`":`"join`"}"
     Start-Sleep -Milliseconds 200
 }
 ```
@@ -281,35 +281,35 @@ foreach ($p in $players) {
 
 | Befehl | Aliase | Beschreibung |
 |--------|--------|-------------|
-| `!join` | `!play` | Spiel beitreten |
-| `!left` | `!l`, `!a` | Nach links bewegen |
-| `!right` | `!r`, `!d` | Nach rechts bewegen |
-| `!jump` | `!j`, `!w`, `!up` | Springen (Doppelsprung möglich) |
-| `!jumpleft` | `!jl` | Springen nach links |
-| `!jumpright` | `!jr` | Springen nach rechts |
-| `!attack` | `!hit`, `!atk` | Nahkampfangriff (0.5s Cooldown) |
-| `!special` | `!sp`, `!ult` | Projektil abfeuern (5s Cooldown) |
-| `!dash` | `!dodge` | Dash mit I-Frames (3s Cooldown) |
-| `!block` | `!shield`, `!def` | Block aktivieren (1.5s Dauer) |
-| `!emote` | — | Emote auslösen (z.B. `!emote wave`) |
+| `join` | `play` | Spiel beitreten |
+| `left` | `l`, `a` | Nach links bewegen |
+| `right` | `r`, `d` | Nach rechts bewegen |
+| `jump` | `j`, `w`, `up` | Springen (Doppelsprung möglich) |
+| `jumpleft` | `jl` | Springen nach links |
+| `jumpright` | `jr` | Springen nach rechts |
+| `attack` | `hit`, `atk` | Nahkampfangriff (0.5s Cooldown) |
+| `special` | `sp`, `ult` | Projektil abfeuern (5s Cooldown) |
+| `dash` | `dodge` | Dash mit I-Frames (3s Cooldown) |
+| `block` | `shield`, `def` | Block aktivieren (1.5s Dauer) |
+| `emote` | — | Emote auslösen (z.B. `emote wave`) |
 
 ### Chat-Befehle (Color Conquest)
 
 | Befehl | Aliase | Beschreibung |
 |--------|--------|-------------|
-| `!join [team]` | `!play` | Team beitreten (red/blue/green/yellow oder auto) |
-| `!up` | `!u`, `!w`, `!north` | Für Expansion nach oben stimmen |
-| `!down` | `!d`, `!s`, `!south` | Für Expansion nach unten stimmen |
-| `!left` | `!l`, `!a`, `!west` | Für Expansion nach links stimmen |
-| `!right` | `!r`, `!e`, `!east` | Für Expansion nach rechts stimmen |
-| `!emote [text]` | — | Team-Emote senden |
+| `join [team]` | `play` | Team beitreten (red/blue/green/yellow oder auto) |
+| `up` | `u`, `w`, `north` | Für Expansion nach oben stimmen |
+| `down` | `d`, `s`, `south` | Für Expansion nach unten stimmen |
+| `left` | `l`, `a`, `west` | Für Expansion nach links stimmen |
+| `right` | `r`, `e`, `east` | Für Expansion nach rechts stimmen |
+| `emote [text]` | — | Team-Emote senden |
 
 ### Chat-Befehle (Gravity Brawl)
 
 | Befehl | Aliase | Beschreibung |
 |--------|--------|-------------|
-| `!join [farbe]` | `!play` | Beitreten (optional: red, blue, green, yellow, #RRGGBB) |
-| `!smash` | `!s` | Dash/Ram-Angriff (0.8s Cooldown) |
+| `join [farbe]` | `play` | Beitreten (optional: red, blue, green, yellow, #RRGGBB) |
+| `smash` | `s` | Dash/Ram-Angriff (0.8s Cooldown) |
 
 > **Supernova:** 5 aufeinanderfolgende Smashes innerhalb von 3 Sekunden lösen eine Supernova (großer AoE-Knockback) aus.
 
@@ -352,8 +352,8 @@ foreach ($p in $players) {
 7. **UI:** HUD-Anzeigen, Timer, Player-Liste, Leaderboard
 
 ### Color Conquest – Was du testen solltest
-1. **Team-Join:** `!join red`, `!join blue`, `!join` (Auto-Zuweisung)
-2. **Abstimmung:** `!up`, `!down`, `!left`, `!right` während Voting-Phase
+1. **Team-Join:** `join red`, `join blue`, `join` (Auto-Zuweisung)
+2. **Abstimmung:** `up`, `down`, `left`, `right` während Voting-Phase
 3. **Expansion:** Grenzzellen werden erobert, Gebiete wachsen
 4. **Rundenwechsel:** 30 Runden durchspielen, Ergebnis prüfen
 5. **Team-Balance:** Auto-Zuweisung weist kleinsten Teams zu
@@ -361,8 +361,8 @@ foreach ($p in $players) {
 7. **Spielwechsel:** Während Color Conquest zu Chaos Arena wechseln und umgekehrt
 
 ### Gravity Brawl – Was du testen solltest
-1. **Join-Mechanik:** `!join`, `!join red`, `!join #FF0000` (Farb-Auswahl)
-2. **Smash:** `!smash` / `!s` – Impulse, Cooldown (0.8s), Richtung
+1. **Join-Mechanik:** `join`, `join red`, `join #FF0000` (Farb-Auswahl)
+2. **Smash:** `smash` / `s` – Impulse, Cooldown (0.8s), Richtung
 3. **Supernova:** 5 schnelle Smashes → AoE-Knockback
 4. **Orbitale Physik:** Planeten kreisen um das schwarze Loch, bleiben im stabilen Band
 5. **Black-Hole-Gravitation:** Wächst über Zeit, zieht Planeten langsam rein
@@ -388,13 +388,13 @@ Für intensiveres Testing kannst du ein PowerShell-Skript verwenden:
 ```powershell
 # bot-test.ps1 – Simuliert 4 Bots für 60 Sekunden
 $players = @("Bot1", "Bot2", "Bot3", "Bot4")
-$commands = @("!left", "!right", "!jump", "!attack", "!special", "!dash", "!block")
+$commands = @("left", "right", "jump", "attack", "special", "dash", "block")
 
 # Alle Bots joinen lassen
 foreach ($p in $players) {
     Invoke-RestMethod -Uri "http://localhost:8080/api/chat" `
         -Method Post -ContentType "application/json" `
-        -Body "{`"username`":`"$p`",`"text`":`"!join`"}"
+        -Body "{`"username`":`"$p`",`"text`":`"join`"}"
     Start-Sleep -Milliseconds 100
 }
 
@@ -465,7 +465,7 @@ docker compose logs -f app
 ### Funktionstest
 1. Öffne `http://localhost:8080` im Browser
 2. Prüfe, ob das Dashboard lädt
-3. Teste Chat über API: `curl -X POST http://localhost:8080/api/chat -H "Content-Type: application/json" -d '{"username":"DockerTest","text":"!join"}'`
+3. Teste Chat über API: `curl -X POST http://localhost:8080/api/chat -H "Content-Type: application/json" -d '{"username":"DockerTest","text":"join"}'`
 
 ### Container stoppen
 ```bash
@@ -520,7 +520,7 @@ Setze `web.api_key` auf `""` → alle API-Requests sind wieder offen.
 - Prüfe die Konsolenausgabe auf `[Web] Server started on :8080`
 
 ### Spieler treten nicht bei
-- Mindestens das `!`-Zeichen muss vorhanden sein (z.B. `!join`)
+- Befehle funktionieren mit und ohne `!`-Prefix (z.B. `join` oder `!join`)
 - Prüfe im Dashboard, ob Status „Online" (grüner Punkt) angezeigt wird
 - API-Test: `curl http://localhost:8080/api/status`
 

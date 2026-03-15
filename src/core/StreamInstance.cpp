@@ -75,10 +75,12 @@ void StreamInstance::handleChatMessage(const platform::ChatMessage& msg) {
     // Record per-stream statistics
     m_stats.recordMessage(msg.userId, msg.displayName);
 
-    // Intercept vote commands
-    if (m_voteState.active && msg.text.size() >= 5 &&
-        msg.text.substr(0, 5) == "!vote") {
-        std::string gameName = (msg.text.size() > 6) ? msg.text.substr(6) : "";
+    // Intercept vote commands (with or without ! prefix)
+    std::string voteText = msg.text;
+    if (!voteText.empty() && voteText[0] == '!') voteText = voteText.substr(1);
+    if (m_voteState.active && voteText.size() >= 4 &&
+        voteText.substr(0, 4) == "vote") {
+        std::string gameName = (voteText.size() > 5) ? voteText.substr(5) : "";
         // trim
         while (!gameName.empty() && gameName.back()  == ' ') gameName.pop_back();
         while (!gameName.empty() && gameName.front() == ' ') gameName.erase(gameName.begin());
