@@ -806,13 +806,12 @@ void CountryElimination::respawnDeadBots(float dt) {
 
     // Tick timers and respawn
     std::vector<std::string> toRespawn;
-    for (auto it = m_botRespawnTimers.begin(); it != m_botRespawnTimers.end(); ) {
-        it->second -= dt;
-        if (it->second <= 0.0f && currentAlive < m_botFillTarget) {
-            toRespawn.push_back(it->first);
-            it = m_botRespawnTimers.erase(it);
-        } else {
-            ++it;
+    for (auto& [id, timer] : m_botRespawnTimers) {
+        if (timer < 0.0f) continue;  // already consumed
+        timer -= dt;
+        if (timer <= 0.0f && currentAlive < m_botFillTarget) {
+            toRespawn.push_back(id);
+            timer = -1.0f;  // sentinel: consumed, don't re-add or re-trigger
         }
     }
 

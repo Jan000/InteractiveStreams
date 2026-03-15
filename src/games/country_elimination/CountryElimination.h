@@ -47,8 +47,8 @@ static constexpr float FLAG_ASPECT = 60.0f / 41.0f;
 // Visible-area boundaries — walls at exact screen edges
 static constexpr float FLOOR_Y      = WORLD_CY + 17.0f;
 static constexpr float CEILING_Y    = WORLD_CY - (REF_H * 0.36f) / REF_PPM - 0.5f;
-static constexpr float WALL_LEFT_X  = WORLD_CX - (REF_W * 0.5f) / REF_PPM - 0.5f;
-static constexpr float WALL_RIGHT_X = WORLD_CX + (REF_W * 0.5f) / REF_PPM + 0.5f;
+static constexpr float WALL_LEFT_X  = WORLD_CX - (REF_W * 0.5f) / REF_PPM - 0.25f;
+static constexpr float WALL_RIGHT_X = WORLD_CX + (REF_W * 0.5f) / REF_PPM + 0.25f;
 
 // Physics segments
 static constexpr int WALL_SEGMENTS = 64;
