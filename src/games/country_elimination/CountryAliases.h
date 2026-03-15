@@ -628,10 +628,52 @@ inline int editDistance(const std::string& a, const std::string& b) {
     return prev[n];
 }
 
+// Decode a flag emoji (Regional Indicator Symbol pair) to a 2-letter ISO code.
+// Flag emojis are encoded as two consecutive U+1F1E6..U+1F1FF code points in UTF-8.
+// Each Regional Indicator is 4 bytes in UTF-8: F0 9F 87 A6..BF
+// Returns empty string if not a valid flag emoji.
+inline std::string flagEmojiToCode(const std::string& input) {
+    // A Regional Indicator in UTF-8 is 4 bytes: 0xF0 0x9F 0x87 [0xA6..0xBF]
+    // A flag emoji is exactly 2 of these = 8 bytes
+    std::string trimmed = input;
+    // Strip leading/trailing whitespace
+    while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\t')) trimmed.erase(trimmed.begin());
+    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t')) trimmed.pop_back();
+
+    if (trimmed.size() < 8) return "";
+
+    auto byte = [](char c) -> unsigned char { return static_cast<unsigned char>(c); };
+
+    // Check first Regional Indicator (bytes 0-3)
+    if (byte(trimmed[0]) != 0xF0 || byte(trimmed[1]) != 0x9F || byte(trimmed[2]) != 0x87) return "";
+    unsigned char b3 = byte(trimmed[3]);
+    if (b3 < 0xA6 || b3 > 0xBF) return "";
+    char c1 = static_cast<char>('A' + (b3 - 0xA6));
+
+    // Check second Regional Indicator (bytes 4-7)
+    if (byte(trimmed[4]) != 0xF0 || byte(trimmed[5]) != 0x9F || byte(trimmed[6]) != 0x87) return "";
+    unsigned char b7 = byte(trimmed[7]);
+    if (b7 < 0xA6 || b7 > 0xBF) return "";
+    char c2 = static_cast<char>('A' + (b7 - 0xA6));
+
+    std::string code;
+    code += c1;
+    code += c2;
+    return code;
+}
+
 // Resolve user input to 2-letter ISO code
 // Returns empty string if no match found (caller should pick random)
 inline std::string resolveCountryCode(const std::string& input) {
     if (input.empty() || input == "?") return "";
+
+    // 0. Flag emoji (e.g. 🇩🇪 → DE)
+    std::string emojiCode = flagEmojiToCode(input);
+    if (!emojiCode.empty()) {
+        // Verify it's a known country code
+        const auto& aliases = getCountryAliases();
+        if (aliases.count(emojiCode)) return aliases.at(emojiCode);
+    }
 
     std::string upper = toUpper(input);
 
