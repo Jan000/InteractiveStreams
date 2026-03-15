@@ -474,6 +474,8 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - `bot_fill`: Ziel-Spieleranzahl mit Bots (default 8, 0=disabled)
 - `bot_respawn`: Bots respawnen nach Eliminierung (default true)
 - `bot_respawn_delay`: Respawn-Verzögerung in Sekunden (default 3.0)
+- `flag_shape_rect`: Flaggen als Rechteck statt Kreis anzeigen, Hitbox passt sich an (default false)
+- `elim_infinite_linger`: Eliminierte Bälle bleiben unendlich, bis max_eliminated_visible erreicht (default false)
 
 ---
 

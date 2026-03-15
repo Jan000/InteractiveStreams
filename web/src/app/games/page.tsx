@@ -116,7 +116,9 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "max_eliminated_visible", label: "Max Eliminated Visible", description: "Maximum number of eliminated balls visible on the floor (0 = no limit)", type: "int", min: 0, step: 1, defaultValue: 20 },
     { key: "elim_linger_duration", label: "Eliminated Linger Duration (s)", description: "How long eliminated balls rest on the floor before fading out", type: "float", min: 0.5, step: 0.5, defaultValue: 8.0 },
     { key: "elim_fade_duration", label: "Eliminated Fade Duration (s)", description: "How long the fade-out animation takes for removed eliminated balls", type: "float", min: 0.1, step: 0.1, defaultValue: 2.0 },
-    // --- Visual Sizes ---
+    { key: "elim_infinite_linger", label: "Infinite Linger", description: "Eliminated balls stay forever until max visible count is reached (ignores linger duration)", type: "bool", defaultValue: false },
+    // --- Visual ---
+    { key: "flag_shape_rect", label: "Rectangular Flags", description: "Display flags as rectangles instead of circles (hitbox adjusts accordingly)", type: "bool", defaultValue: false },
     { key: "name_text_scale", label: "Name Text Scale", description: "Scale multiplier for player name text below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
     { key: "avatar_scale", label: "Avatar Scale", description: "Scale multiplier for profile picture circles below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
   ],

@@ -33,11 +33,22 @@ static constexpr float BALL_RADIUS    = 0.45f;
 // Default gap half-angle (~30° opening)
 static constexpr float GAP_INITIAL = 0.26f;
 
-// Visible-area boundaries (walls + floor must stay on-screen)
+// Reference mobile resolution for boundary placement (9:16 portrait)
+static constexpr float REF_W = 1080.0f;
+static constexpr float REF_H = 1920.0f;
+static constexpr float REF_DIAM_W = REF_W * 0.88f;
+static constexpr float REF_DIAM_H = REF_H * 0.44f;
+static constexpr float REF_DIAM   = (REF_DIAM_W < REF_DIAM_H) ? REF_DIAM_W : REF_DIAM_H;
+static constexpr float REF_PPM    = (REF_DIAM * 0.5f) / ARENA_RADIUS;
+
+// Flag aspect ratio (60px wide × 41px tall)
+static constexpr float FLAG_ASPECT = 60.0f / 41.0f;
+
+// Visible-area boundaries — walls at exact screen edges
 static constexpr float FLOOR_Y      = WORLD_CY + 17.0f;
-static constexpr float CEILING_Y    = WORLD_CY - ARENA_RADIUS - 3.0f;
-static constexpr float WALL_LEFT_X  = WORLD_CX - ARENA_RADIUS - 1.5f;
-static constexpr float WALL_RIGHT_X = WORLD_CX + ARENA_RADIUS + 1.5f;
+static constexpr float CEILING_Y    = WORLD_CY - (REF_H * 0.36f) / REF_PPM - 0.5f;
+static constexpr float WALL_LEFT_X  = WORLD_CX - (REF_W * 0.5f) / REF_PPM - 0.5f;
+static constexpr float WALL_RIGHT_X = WORLD_CX + (REF_W * 0.5f) / REF_PPM + 0.5f;
 
 // Physics segments
 static constexpr int WALL_SEGMENTS = 64;
@@ -253,6 +264,10 @@ private:
     int    m_maxEliminatedVisible = 20;
     float  m_elimFadeDuration     = 2.0f;
     float  m_elimLingerDuration   = 8.0f;
+    bool   m_elimInfiniteLinger   = false;
+
+    // Flag display
+    bool   m_flagShapeRect        = false;
 
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {

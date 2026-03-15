@@ -417,14 +417,21 @@ b2Body* CountryElimination::createPlayerBody(float x, float y, float radius) {
     bd.gravityScale = 0.0f;
 
     b2Body* body = m_world->CreateBody(&bd);
-    b2CircleShape circle;
-    circle.m_radius = radius;
 
     b2FixtureDef fix;
-    fix.shape = &circle;
     fix.density = 1.0f;
     fix.restitution = m_restitution;
     fix.friction = 0.0f;
+
+    b2CircleShape circle;
+    b2PolygonShape box;
+    if (m_flagShapeRect) {
+        box.SetAsBox(radius, radius / FLAG_ASPECT);
+        fix.shape = &box;
+    } else {
+        circle.m_radius = radius;
+        fix.shape = &circle;
+    }
     body->CreateFixture(&fix);
 
     // Always give initial velocity
@@ -884,11 +891,13 @@ void CountryElimination::update(double dt) {
             }
         }
     }
-    // Also start fading balls that have lingered too long
-    for (auto& eb : m_eliminatedQueue) {
-        if (!eb.fading && eb.age >= m_elimLingerDuration) {
-            eb.fading = true;
-            eb.fadeProgress = 0.0f;
+    // Also start fading balls that have lingered too long (unless infinite linger is on)
+    if (!m_elimInfiniteLinger) {
+        for (auto& eb : m_eliminatedQueue) {
+            if (!eb.fading && eb.age >= m_elimLingerDuration) {
+                eb.fading = true;
+                eb.fadeProgress = 0.0f;
+            }
         }
     }
     // Advance fade and remove fully faded
@@ -1247,54 +1256,86 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             if (baseAlpha == 0) continue;
         }
 
-        // Shadow behind ball
+        // Flag texture lookup
+        std::string labelUp = p.label;
+        for (auto& c : labelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        auto flagIt = m_flagTextures.find(labelUp);
+        bool hasFlag = (flagIt != m_flagTextures.end());
+
+        float halfW = rpx;
+        float halfH = m_flagShapeRect ? (rpx / FLAG_ASPECT) : rpx;
+
+        // Shadow
         {
-            sf::CircleShape shadow(rpx + 2.0f, 32);
-            shadow.setOrigin(rpx + 2.0f, rpx + 2.0f);
-            shadow.setPosition(sp.x + 2.0f, sp.y + 2.0f);
-            shadow.setFillColor(sf::Color(0, 0, 0, baseAlpha / 3));
-            target.draw(shadow);
+            if (m_flagShapeRect) {
+                sf::RectangleShape shadow(sf::Vector2f(halfW * 2 + 4.0f, halfH * 2 + 4.0f));
+                shadow.setOrigin(halfW + 2.0f, halfH + 2.0f);
+                shadow.setPosition(sp.x + 2.0f, sp.y + 2.0f);
+                shadow.setFillColor(sf::Color(0, 0, 0, baseAlpha / 3));
+                target.draw(shadow);
+            } else {
+                sf::CircleShape shadow(rpx + 2.0f, 32);
+                shadow.setOrigin(rpx + 2.0f, rpx + 2.0f);
+                shadow.setPosition(sp.x + 2.0f, sp.y + 2.0f);
+                shadow.setFillColor(sf::Color(0, 0, 0, baseAlpha / 3));
+                target.draw(shadow);
+            }
         }
 
         // Ball body
         {
-            sf::CircleShape ball(rpx, 32);
-            ball.setOrigin(rpx, rpx);
-            ball.setPosition(sp);
+            float outlineThk = std::max(1.5f, rpx * 0.08f);
+            sf::Color outlineCol(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.7f));
 
-            std::string labelUp = p.label;
-            for (auto& c : labelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            auto flagIt = m_flagTextures.find(labelUp);
-            bool hasFlag = (flagIt != m_flagTextures.end());
+            if (m_flagShapeRect) {
+                sf::RectangleShape ball(sf::Vector2f(halfW * 2, halfH * 2));
+                ball.setOrigin(halfW, halfH);
+                ball.setPosition(sp);
 
-            if (hasFlag) {
-                ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
-                auto& tex = flagIt->second;
-                ball.setTexture(&tex);
-                // Center-square crop for rectangular flags
-                auto ts = tex.getSize();
-                int side = static_cast<int>(std::min(ts.x, ts.y));
-                int ox = (static_cast<int>(ts.x) - side) / 2;
-                int oy = (static_cast<int>(ts.y) - side) / 2;
-                ball.setTextureRect(sf::IntRect(ox, oy, side, side));
+                if (hasFlag) {
+                    ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
+                    ball.setTexture(&flagIt->second);
+                } else {
+                    sf::Color fill = p.color;
+                    fill.a = baseAlpha;
+                    ball.setFillColor(fill);
+                }
+                ball.setOutlineColor(outlineCol);
+                ball.setOutlineThickness(outlineThk);
+                target.draw(ball);
             } else {
-                sf::Color fill = p.color;
-                fill.a = baseAlpha;
-                ball.setFillColor(fill);
-            }
+                sf::CircleShape ball(rpx, 32);
+                ball.setOrigin(rpx, rpx);
+                ball.setPosition(sp);
 
-            ball.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.7f)));
-            ball.setOutlineThickness(std::max(1.5f, rpx * 0.08f));
-            target.draw(ball);
+                if (hasFlag) {
+                    ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
+                    auto& tex = flagIt->second;
+                    ball.setTexture(&tex);
+                    // Center-square crop for rectangular flags on circle
+                    auto ts = tex.getSize();
+                    int side = static_cast<int>(std::min(ts.x, ts.y));
+                    int ox = (static_cast<int>(ts.x) - side) / 2;
+                    int oy = (static_cast<int>(ts.y) - side) / 2;
+                    ball.setTextureRect(sf::IntRect(ox, oy, side, side));
+                } else {
+                    sf::Color fill = p.color;
+                    fill.a = baseAlpha;
+                    ball.setFillColor(fill);
+                }
+                ball.setOutlineColor(outlineCol);
+                ball.setOutlineThickness(outlineThk);
+                target.draw(ball);
 
-            // Inner highlight (only for non-flag balls)
-            if (!hasFlag) {
-                float hlR = rpx * 0.35f;
-                sf::CircleShape hl(hlR, 16);
-                hl.setOrigin(hlR, hlR);
-                hl.setPosition(sp.x - rpx * 0.25f, sp.y - rpx * 0.25f);
-                hl.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.25f)));
-                target.draw(hl);
+                // Inner highlight (only for non-flag circle balls)
+                if (!hasFlag) {
+                    float hlR = rpx * 0.35f;
+                    sf::CircleShape hl(hlR, 16);
+                    hl.setOrigin(hlR, hlR);
+                    hl.setPosition(sp.x - rpx * 0.25f, sp.y - rpx * 0.25f);
+                    hl.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.25f)));
+                    target.draw(hl);
+                }
             }
         }
 
@@ -1302,20 +1343,27 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
         if (p.hasShield && p.alive) {
             float pulse = 0.5f + 0.5f * std::sin(m_globalTime * 5.0f);
             sf::Uint8 sAlpha = static_cast<sf::Uint8>(120 + 100 * pulse);
-            sf::CircleShape shield(rpx + 5.0f, 32);
-            shield.setOrigin(rpx + 5.0f, rpx + 5.0f);
-            shield.setPosition(sp);
-            shield.setFillColor(sf::Color::Transparent);
-            shield.setOutlineColor(sf::Color(80, 200, 255, sAlpha));
-            shield.setOutlineThickness(3.0f);
-            target.draw(shield);
+            if (m_flagShapeRect) {
+                sf::RectangleShape shield(sf::Vector2f(halfW * 2 + 10.0f, halfH * 2 + 10.0f));
+                shield.setOrigin(halfW + 5.0f, halfH + 5.0f);
+                shield.setPosition(sp);
+                shield.setFillColor(sf::Color::Transparent);
+                shield.setOutlineColor(sf::Color(80, 200, 255, sAlpha));
+                shield.setOutlineThickness(3.0f);
+                target.draw(shield);
+            } else {
+                sf::CircleShape shield(rpx + 5.0f, 32);
+                shield.setOrigin(rpx + 5.0f, rpx + 5.0f);
+                shield.setPosition(sp);
+                shield.setFillColor(sf::Color::Transparent);
+                shield.setOutlineColor(sf::Color(80, 200, 255, sAlpha));
+                shield.setOutlineThickness(3.0f);
+                target.draw(shield);
+            }
         }
 
         // Label text on ball (only when no flag texture)
-        std::string labelUp2 = p.label;
-        for (auto& ch : labelUp2) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-        bool hasFlagForLabel = (m_flagTextures.find(labelUp2) != m_flagTextures.end());
-        if (m_fontLoaded && !hasFlagForLabel) {
+        if (m_fontLoaded && !hasFlag) {
             sf::Text lbl;
             lbl.setFont(m_font);
             lbl.setString(p.label);
@@ -1331,7 +1379,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
 
         // Name below (alive only)
         if (m_fontLoaded && p.alive) {
-            float nameY = sp.y + rpx + 4.0f;
+            float nameY = sp.y + halfH + 4.0f;
 
             // Avatar circle (left of name)
             const sf::Texture* avatarTex = (!p.avatarUrl.empty())
@@ -1709,45 +1757,65 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
 
     // Winner ball (large)
     float bigR = L.arenaRadiusPx * 0.2f;
+    float bigH = m_flagShapeRect ? (bigR / FLAG_ASPECT) : bigR;
     float ballY = L.arenaCY - bigR * 0.5f;
     float bounce = std::sin(m_globalTime * 3.0f) * 8.0f;
-
-    sf::CircleShape bigBall(bigR, 48);
-    bigBall.setOrigin(bigR, bigR);
-    bigBall.setPosition(cx, ballY + bounce);
 
     std::string wLabelUp = w.label;
     for (auto& c : wLabelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     auto wFlagIt = m_flagTextures.find(wLabelUp);
-    if (wFlagIt != m_flagTextures.end()) {
-        bigBall.setFillColor(sf::Color::White);
-        auto& tex = wFlagIt->second;
-        bigBall.setTexture(&tex);
-        auto ts = tex.getSize();
-        int side = static_cast<int>(std::min(ts.x, ts.y));
-        int ox = (static_cast<int>(ts.x) - side) / 2;
-        int oy = (static_cast<int>(ts.y) - side) / 2;
-        bigBall.setTextureRect(sf::IntRect(ox, oy, side, side));
+    bool wHasFlag = (wFlagIt != m_flagTextures.end());
+
+    if (m_flagShapeRect) {
+        sf::RectangleShape bigBall(sf::Vector2f(bigR * 2, bigH * 2));
+        bigBall.setOrigin(bigR, bigH);
+        bigBall.setPosition(cx, ballY + bounce);
+
+        if (wHasFlag) {
+            bigBall.setFillColor(sf::Color::White);
+            bigBall.setTexture(&wFlagIt->second);
+        } else {
+            bigBall.setFillColor(w.color);
+        }
+        bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
+        bigBall.setOutlineThickness(3.0f);
+        target.draw(bigBall);
     } else {
-        bigBall.setFillColor(w.color);
+        sf::CircleShape bigBall(bigR, 48);
+        bigBall.setOrigin(bigR, bigR);
+        bigBall.setPosition(cx, ballY + bounce);
+
+        if (wHasFlag) {
+            bigBall.setFillColor(sf::Color::White);
+            auto& tex = wFlagIt->second;
+            bigBall.setTexture(&tex);
+            auto ts = tex.getSize();
+            int side = static_cast<int>(std::min(ts.x, ts.y));
+            int ox = (static_cast<int>(ts.x) - side) / 2;
+            int oy = (static_cast<int>(ts.y) - side) / 2;
+            bigBall.setTextureRect(sf::IntRect(ox, oy, side, side));
+        } else {
+            bigBall.setFillColor(w.color);
+        }
+        bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
+        bigBall.setOutlineThickness(3.0f);
+        target.draw(bigBall);
     }
 
-    bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
-    bigBall.setOutlineThickness(3.0f);
-    target.draw(bigBall);
-
-    // Label on big ball
-    sf::Text lbl;
-    lbl.setFont(m_font);
-    lbl.setString(w.label);
-    lbl.setCharacterSize(fs(static_cast<int>(bigR * 0.7f)));
-    lbl.setFillColor(sf::Color::White);
-    lbl.setOutlineColor(sf::Color(0, 0, 0, 200));
-    lbl.setOutlineThickness(2.0f);
-    auto llb = lbl.getLocalBounds();
-    lbl.setOrigin(llb.left + llb.width / 2.0f, llb.top + llb.height / 2.0f);
-    lbl.setPosition(cx, ballY + bounce);
-    target.draw(lbl);
+    // Label on big ball (only when no flag)
+    if (m_fontLoaded && !wHasFlag) {
+        sf::Text lbl;
+        lbl.setFont(m_font);
+        lbl.setString(w.label);
+        lbl.setCharacterSize(fs(static_cast<int>(bigR * 0.7f)));
+        lbl.setFillColor(sf::Color::White);
+        lbl.setOutlineColor(sf::Color(0, 0, 0, 200));
+        lbl.setOutlineThickness(2.0f);
+        auto llb = lbl.getLocalBounds();
+        lbl.setOrigin(llb.left + llb.width / 2.0f, llb.top + llb.height / 2.0f);
+        lbl.setPosition(cx, ballY + bounce);
+        target.draw(lbl);
+    }
 
     // "WINNER!" text above
     {
@@ -2330,6 +2398,10 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_nameTextScale = std::clamp(settings["name_text_scale"].get<float>(), 0.3f, 3.0f);
     if (settings.contains("avatar_scale") && settings["avatar_scale"].is_number())
         m_avatarScale = std::clamp(settings["avatar_scale"].get<float>(), 0.3f, 3.0f);
+    if (settings.contains("flag_shape_rect") && settings["flag_shape_rect"].is_boolean())
+        m_flagShapeRect = settings["flag_shape_rect"].get<bool>();
+    if (settings.contains("elim_infinite_linger") && settings["elim_infinite_linger"].is_boolean())
+        m_elimInfiniteLinger = settings["elim_infinite_linger"].get<bool>();
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
@@ -2359,6 +2431,8 @@ nlohmann::json CountryElimination::getSettings() const {
         {"elim_linger_duration", m_elimLingerDuration},
         {"name_text_scale", m_nameTextScale},
         {"avatar_scale", m_avatarScale},
+        {"flag_shape_rect", m_flagShapeRect},
+        {"elim_infinite_linger", m_elimInfiniteLinger},
         {"text_elements", textElementsJson()},
     };
 }
