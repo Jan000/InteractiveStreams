@@ -119,6 +119,8 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "elim_infinite_linger", label: "Infinite Linger", description: "Eliminated balls stay forever until max visible count is reached (ignores linger duration)", type: "bool", defaultValue: false },
     // --- Visual ---
     { key: "flag_shape_rect", label: "Rectangular Flags", description: "Display flags as rectangles instead of circles (hitbox adjusts accordingly)", type: "bool", defaultValue: false },
+    { key: "flag_outline", label: "Flag Outline", description: "Show a white outline/border around flags", type: "bool", defaultValue: true },
+    { key: "flag_outline_thickness", label: "Flag Outline Thickness", description: "Thickness of the flag outline in pixels (only when outline is enabled)", type: "float", min: 0, max: 10, step: 0.5, defaultValue: 1.5 },
     { key: "name_text_scale", label: "Name Text Scale", description: "Scale multiplier for player name text below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
     { key: "avatar_scale", label: "Avatar Scale", description: "Scale multiplier for profile picture circles below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
   ],

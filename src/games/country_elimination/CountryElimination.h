@@ -268,6 +268,8 @@ private:
 
     // Flag display
     bool   m_flagShapeRect        = false;
+    bool   m_flagOutline          = true;
+    float  m_flagOutlineThickness = 1.5f;
 
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {

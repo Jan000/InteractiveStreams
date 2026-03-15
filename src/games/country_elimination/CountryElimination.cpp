@@ -299,14 +299,18 @@ ScreenLayout CountryElimination::computeLayout(const sf::RenderTarget& target) c
 void CountryElimination::createBoundaryWalls() {
     if (!m_world) return;
 
+    // Wall vertical span: from ceiling to floor
+    float wallCenterY = (CEILING_Y + FLOOR_Y) / 2.0f;
+    float wallHalfH   = (FLOOR_Y - CEILING_Y) / 2.0f;
+
     // Left wall — at the left visible boundary
     {
         b2BodyDef bd;
         bd.type = b2_staticBody;
-        bd.position.Set(WALL_LEFT_X, (WORLD_CY + FLOOR_Y) / 2.0f);
+        bd.position.Set(WALL_LEFT_X, wallCenterY);
         m_leftWall = m_world->CreateBody(&bd);
         b2PolygonShape box;
-        box.SetAsBox(0.5f, (FLOOR_Y - WORLD_CY + ARENA_RADIUS) / 2.0f);
+        box.SetAsBox(0.5f, wallHalfH);
         b2FixtureDef fix;
         fix.shape = &box;
         fix.restitution = 0.6f;
@@ -318,10 +322,10 @@ void CountryElimination::createBoundaryWalls() {
     {
         b2BodyDef bd;
         bd.type = b2_staticBody;
-        bd.position.Set(WALL_RIGHT_X, (WORLD_CY + FLOOR_Y) / 2.0f);
+        bd.position.Set(WALL_RIGHT_X, wallCenterY);
         m_rightWall = m_world->CreateBody(&bd);
         b2PolygonShape box;
-        box.SetAsBox(0.5f, (FLOOR_Y - WORLD_CY + ARENA_RADIUS) / 2.0f);
+        box.SetAsBox(0.5f, wallHalfH);
         b2FixtureDef fix;
         fix.shape = &box;
         fix.restitution = 0.6f;
@@ -880,9 +884,9 @@ void CountryElimination::update(double dt) {
 
     // Update eliminated ball FIFO fade tracking
     for (auto& eb : m_eliminatedQueue) eb.age += fdt;
-    // Mark oldest balls for fading when over limit
+    // Mark oldest balls for fading when over limit (0 = no limit)
     int visibleCount = static_cast<int>(m_eliminatedQueue.size());
-    int overLimit = visibleCount - m_maxEliminatedVisible;
+    int overLimit = (m_maxEliminatedVisible > 0) ? visibleCount - m_maxEliminatedVisible : 0;
     if (overLimit > 0) {
         for (int i = 0; i < overLimit && i < visibleCount; ++i) {
             if (!m_eliminatedQueue[i].fading) {
@@ -1284,7 +1288,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
 
         // Ball body
         {
-            float outlineThk = std::max(1.5f, rpx * 0.08f);
+            float outlineThk = m_flagOutline ? std::max(m_flagOutlineThickness, rpx * 0.08f) : 0.0f;
             sf::Color outlineCol(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.7f));
 
             if (m_flagShapeRect) {
@@ -1778,7 +1782,7 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
             bigBall.setFillColor(w.color);
         }
         bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
-        bigBall.setOutlineThickness(3.0f);
+        bigBall.setOutlineThickness(m_flagOutline ? 3.0f : 0.0f);
         target.draw(bigBall);
     } else {
         sf::CircleShape bigBall(bigR, 48);
@@ -1798,7 +1802,7 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
             bigBall.setFillColor(w.color);
         }
         bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
-        bigBall.setOutlineThickness(3.0f);
+        bigBall.setOutlineThickness(m_flagOutline ? 3.0f : 0.0f);
         target.draw(bigBall);
     }
 
@@ -2400,6 +2404,10 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_avatarScale = std::clamp(settings["avatar_scale"].get<float>(), 0.3f, 3.0f);
     if (settings.contains("flag_shape_rect") && settings["flag_shape_rect"].is_boolean())
         m_flagShapeRect = settings["flag_shape_rect"].get<bool>();
+    if (settings.contains("flag_outline") && settings["flag_outline"].is_boolean())
+        m_flagOutline = settings["flag_outline"].get<bool>();
+    if (settings.contains("flag_outline_thickness") && settings["flag_outline_thickness"].is_number())
+        m_flagOutlineThickness = std::clamp(settings["flag_outline_thickness"].get<float>(), 0.0f, 10.0f);
     if (settings.contains("elim_infinite_linger") && settings["elim_infinite_linger"].is_boolean())
         m_elimInfiniteLinger = settings["elim_infinite_linger"].get<bool>();
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
@@ -2432,6 +2440,8 @@ nlohmann::json CountryElimination::getSettings() const {
         {"name_text_scale", m_nameTextScale},
         {"avatar_scale", m_avatarScale},
         {"flag_shape_rect", m_flagShapeRect},
+        {"flag_outline", m_flagOutline},
+        {"flag_outline_thickness", m_flagOutlineThickness},
         {"elim_infinite_linger", m_elimInfiniteLinger},
         {"text_elements", textElementsJson()},
     };
