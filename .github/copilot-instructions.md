@@ -422,11 +422,12 @@ Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <
 - Eliminierte Bälle sind **sichtbar auf dem Bildschirm** – Boden, Wände und Decke halten sie im sichtbaren Bereich
 
 ### Flaggen-Rendering
-- `generateFlagTextures()` erzeugt 64×64 `sf::Texture` für alle 40 Ländercodes
-- Jede Flagge: einfache 2-3 Streifen (horizontal/vertikal) in Landesfarben
-- Spezialfall Japan: Weißer Hintergrund mit rotem Kreis
-- Lookup via Label (case-insensitive uppercase): Bot-Labels matchen direkt ("USA", "GBR")
-- Fallback: Wenn kein Flaggen-Textur gefunden, wird wie bisher ein farbiger Kreis gezeichnet
+- `generateFlagTextures()` lädt `assets/img/flagSprite60.png` (246 Flaggen, vertikal gestapelt)
+- `SPRITE_ORDER[]` definiert die Reihenfolge der 246 ISO-2-Letter-Codes (Afrika→Amerika→Asien→Europa→Naher Osten→Ozeanien→Spezial)
+- Jede Reihe wird per `sf::Texture::loadFromImage(spriteSheet, IntRect)` extrahiert und in `m_flagTextures` (Key: 2-Letter-Code) gespeichert
+- Lookup via Label (case-insensitive uppercase): Bot-Labels nutzen 2-Letter-Codes ("US", "GB", etc.)
+- Fallback: Wenn kein Flaggen-Textur gefunden, wird ein farbiger Kreis gezeichnet
+- Center-Square-Crop via `setTextureRect()` für rechteckige Flaggen auf kreisförmigen Bällen
 - `renderPlayers()`: `sf::CircleShape::setTexture()` rendert Flagge kreisförmig auf dem Ball
 - `renderWinnerOverlay()`: Großer Sieger-Ball zeigt ebenfalls die Flagge
 
