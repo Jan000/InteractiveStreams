@@ -100,6 +100,9 @@ struct ScreenLayout {
     float ppm;
     float safeLeft, safeRight;
     float safeW;
+    bool  isDesktop = false;  // true when aspect > ~9:16 (side panels visible)
+    float leftPanelX, leftPanelW;   // left side panel bounds
+    float rightPanelX, rightPanelW; // right side panel bounds
 };
 
 // ── Main Game Class ──────────────────────────────────────────────────────────
@@ -188,6 +191,7 @@ private:
     void renderRoundWinners(sf::RenderTarget& target, const ScreenLayout& L);
     void renderWinnerOverlay(sf::RenderTarget& target, const ScreenLayout& L);
     void renderEliminationFeed(sf::RenderTarget& target, const ScreenLayout& L);
+    void renderSidePanels(sf::RenderTarget& target, const ScreenLayout& L);
 
     sf::Color generateColor();
 
@@ -242,6 +246,20 @@ private:
     bool  m_botRespawn      = true;
     float m_botRespawnDelay = 3.0f;
     std::unordered_map<std::string, float> m_botRespawnTimers;
+
+    // Eliminated player display settings
+    int    m_maxEliminatedVisible = 20;
+    float  m_elimFadeDuration     = 2.0f;
+    float  m_elimLingerDuration   = 8.0f;
+
+    // Eliminated player fade tracking (FIFO)
+    struct EliminatedBall {
+        std::string playerId;
+        float       age = 0.0f;      // how long it's been eliminated
+        bool        fading = false;   // in fade-out phase
+        float       fadeProgress = 0; // 0..1
+    };
+    std::deque<EliminatedBall> m_eliminatedQueue;
 
     int  m_roundNumber = 0;
     bool m_gameWon     = false;

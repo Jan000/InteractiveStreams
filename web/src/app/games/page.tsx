@@ -112,6 +112,10 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "bot_fill", label: "Bot Fill", description: "Fill arena to this many players with bots (0 = disabled)", type: "int", min: 0, step: 1, defaultValue: 8 },
     { key: "bot_respawn", label: "Bot Respawn", description: "Respawn eliminated bots during battle phase", type: "bool", defaultValue: true },
     { key: "bot_respawn_delay", label: "Bot Respawn Delay (s)", description: "Seconds before an eliminated bot re-enters the arena", type: "float", min: 0.5, step: 0.5, defaultValue: 3.0 },
+    // --- Eliminated Display ---
+    { key: "max_eliminated_visible", label: "Max Eliminated Visible", description: "Maximum number of eliminated balls visible on the floor (0 = no limit)", type: "int", min: 0, step: 1, defaultValue: 20 },
+    { key: "elim_linger_duration", label: "Eliminated Linger Duration (s)", description: "How long eliminated balls rest on the floor before fading out", type: "float", min: 0.5, step: 0.5, defaultValue: 8.0 },
+    { key: "elim_fade_duration", label: "Eliminated Fade Duration (s)", description: "How long the fade-out animation takes for removed eliminated balls", type: "float", min: 0.1, step: 0.1, defaultValue: 2.0 },
   ],
 };
 
