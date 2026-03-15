@@ -56,6 +56,24 @@ static constexpr int WALL_SEGMENTS = 64;
 // Visual ring smoothness
 static constexpr int RING_RESOLUTION = 180;
 
+// ── Box2D Collision Categories ────────────────────────────────────────────────
+
+static constexpr uint16_t CAT_ALIVE      = 0x0001; // Alive players
+static constexpr uint16_t CAT_ARENA      = 0x0002; // Arena ring
+static constexpr uint16_t CAT_ELIMINATED = 0x0004; // Eliminated players
+static constexpr uint16_t CAT_BOUNDARY   = 0x0008; // Floor, walls
+
+// Alive players collide with: alive + arena + boundaries
+static constexpr uint16_t MASK_ALIVE     = CAT_ALIVE | CAT_ARENA | CAT_BOUNDARY;
+// Eliminated (re-entry OFF): only other eliminated + boundaries
+static constexpr uint16_t MASK_ELIM_NOREENTRY = CAT_ELIMINATED | CAT_BOUNDARY;
+// Eliminated (re-entry ON):  everything (to be able to bounce back in)
+static constexpr uint16_t MASK_ELIM_REENTRY   = 0xFFFF;
+// Arena ring collides with: alive players only
+static constexpr uint16_t MASK_ARENA     = CAT_ALIVE;
+// Boundaries collide with: everything
+static constexpr uint16_t MASK_BOUNDARY  = 0xFFFF;
+
 // ── Enums ────────────────────────────────────────────────────────────────────
 
 enum class GamePhase { Lobby, Countdown, Battle, RoundEnd };
@@ -186,7 +204,9 @@ private:
     void generateFlagTextures();
 
     // Bots
-    void spawnBots();
+    void spawnBots();          // immediate fill (used at initialize)
+    void scheduleBotSpawns();  // staggered fill via timers
+    void tickBotSpawnTimers(float dt);
     void respawnDeadBots(float dt);
 
     // Particles
@@ -260,6 +280,14 @@ private:
     bool  m_botRespawn      = true;
     float m_botRespawnDelay = 3.0f;
     std::unordered_map<std::string, float> m_botRespawnTimers;
+
+    // Staggered bot spawn queue (used at round start / init)
+    struct PendingBotSpawn {
+        float timer;
+        std::string name;
+        std::string label;
+    };
+    std::vector<PendingBotSpawn> m_pendingBotSpawns;
 
     // Eliminated player display settings
     int    m_maxEliminatedVisible = 20;

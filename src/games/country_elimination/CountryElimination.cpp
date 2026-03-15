@@ -188,6 +188,8 @@ void CountryElimination::initialize() {
         fix.shape = &box;
         fix.restitution = 0.6f;
         fix.friction = 0.4f;
+        fix.filter.categoryBits = CAT_BOUNDARY;
+        fix.filter.maskBits     = MASK_BOUNDARY;
         m_floorBody->CreateFixture(&fix);
     }
 
@@ -219,7 +221,7 @@ void CountryElimination::initialize() {
     m_roundWinners.clear();
     m_currentBallSpeed = m_initialSpeed;
 
-    spawnBots();
+    scheduleBotSpawns();
 
     spdlog::info("[CountryElimination] Initialized.");
 }
@@ -233,6 +235,7 @@ void CountryElimination::shutdown() {
     m_eliminatedQueue.clear();
     m_particles.clear();
     m_botRespawnTimers.clear();
+    m_pendingBotSpawns.clear();
     m_avatarCache.clear();
     destroyArenaBody();
     if (m_leftWall && m_world) { m_world->DestroyBody(m_leftWall); m_leftWall = nullptr; }
@@ -317,6 +320,8 @@ void CountryElimination::createBoundaryWalls() {
         fix.shape = &box;
         fix.restitution = 0.6f;
         fix.friction = 0.3f;
+        fix.filter.categoryBits = CAT_BOUNDARY;
+        fix.filter.maskBits     = MASK_BOUNDARY;
         m_leftWall->CreateFixture(&fix);
     }
 
@@ -332,6 +337,8 @@ void CountryElimination::createBoundaryWalls() {
         fix.shape = &box;
         fix.restitution = 0.6f;
         fix.friction = 0.3f;
+        fix.filter.categoryBits = CAT_BOUNDARY;
+        fix.filter.maskBits     = MASK_BOUNDARY;
         m_rightWall->CreateFixture(&fix);
     }
 
@@ -372,6 +379,8 @@ void CountryElimination::createArenaBody() {
         fix.shape = &seg;
         fix.restitution = 1.0f;
         fix.friction = 0.0f;
+        fix.filter.categoryBits = CAT_ARENA;
+        fix.filter.maskBits     = MASK_ARENA;
         m_arenaBody->CreateFixture(&fix);
     }
 
@@ -415,6 +424,8 @@ b2Body* CountryElimination::createPlayerBody(float x, float y, float radius) {
     fix.density = 1.0f;
     fix.restitution = m_restitution;
     fix.friction = 0.0f;
+    fix.filter.categoryBits = CAT_ALIVE;
+    fix.filter.maskBits     = MASK_ALIVE;
 
     b2CircleShape circle;
     b2PolygonShape box;
@@ -718,6 +729,12 @@ void CountryElimination::checkEliminations() {
             if (fix) {
                 fix->SetRestitution(0.7f);
                 fix->SetFriction(0.2f);
+
+                // Switch collision category to eliminated
+                b2Filter filter = fix->GetFilterData();
+                filter.categoryBits = CAT_ELIMINATED;
+                filter.maskBits     = m_allowReentry ? MASK_ELIM_REENTRY : MASK_ELIM_NOREENTRY;
+                fix->SetFilterData(filter);
             }
 
             // Track in eliminated FIFO queue
@@ -798,18 +815,6 @@ void CountryElimination::recordRoundWin(const Player& winner) {
 }
 
 void CountryElimination::resetForNextRound() {
-    // Collect human players to preserve across rounds
-    std::vector<std::pair<std::string, Player>> humansToKeep;
-    for (auto& [id, p] : m_players) {
-        if (!p.isBot()) {
-            humansToKeep.emplace_back(id, Player{
-                p.userId, p.displayName, p.label, p.avatarUrl, p.color,
-                nullptr, BALL_RADIUS, true, false, false, 0.0f, 0,
-                {0,0}, {0,0}
-            });
-        }
-    }
-
     if (m_elimPersistRounds) {
         for (auto it = m_players.begin(); it != m_players.end(); ) {
             if (it->second.alive) {
@@ -830,6 +835,7 @@ void CountryElimination::resetForNextRound() {
     m_winnerId.clear();
     m_particles.clear();
     m_botRespawnTimers.clear();
+    m_pendingBotSpawns.clear();
 
     // Reset to closed ring for lobby
     m_currentGapAngle = 0.0f;
@@ -841,21 +847,7 @@ void CountryElimination::resetForNextRound() {
     m_phase = GamePhase::Lobby;
     m_lobbyTimer = 0.0;
 
-    // Re-spawn preserved human players with fresh bodies
-    std::uniform_real_distribution<float> aDist(0.0f, TAU);
-    std::uniform_real_distribution<float> rDist(0.0f, ARENA_RADIUS * 0.55f);
-    for (auto& [id, p] : humansToKeep) {
-        float a = aDist(m_rng);
-        float r = rDist(m_rng);
-        float sx = WORLD_CX + r * std::cos(a);
-        float sy = WORLD_CY + r * std::sin(a);
-        p.body = createPlayerBody(sx, sy, BALL_RADIUS);
-        p.prevPos = p.body->GetPosition();
-        p.currPos = p.prevPos;
-        m_players[id] = std::move(p);
-    }
-
-    spawnBots();
+    scheduleBotSpawns();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -865,8 +857,6 @@ void CountryElimination::resetForNextRound() {
 void CountryElimination::spawnBots() {
     if (m_botFillTarget <= 0) return;
 
-    // Count ALL bot entries (alive + dead) to avoid overspawning while
-    // dead bodies linger for the visual FIFO queue.
     int botCount = 0;
     for (const auto& [id, p] : m_players) { if (p.isBot() && p.alive) botCount++; }
 
@@ -877,6 +867,38 @@ void CountryElimination::spawnBots() {
         int idx = (m_botCounter - 1) % NUM_BOT_NAMES;
 
         cmdJoin(botId, BOT_NAMES[idx], BOT_LABELS[idx]);
+    }
+}
+
+void CountryElimination::scheduleBotSpawns() {
+    if (m_botFillTarget <= 0) return;
+
+    int botCount = 0;
+    for (const auto& [id, p] : m_players) { if (p.isBot() && p.alive) botCount++; }
+    int pending = static_cast<int>(m_pendingBotSpawns.size());
+
+    int needed = m_botFillTarget - botCount - pending;
+    for (int i = 0; i < needed; ++i) {
+        int idx = (m_botCounter + i) % NUM_BOT_NAMES;
+        float delay = m_botRespawnDelay * static_cast<float>(i + 1);
+        m_pendingBotSpawns.push_back({delay, BOT_NAMES[idx], BOT_LABELS[idx]});
+    }
+}
+
+void CountryElimination::tickBotSpawnTimers(float dt) {
+    if (m_pendingBotSpawns.empty()) return;
+
+    for (auto& pbs : m_pendingBotSpawns) {
+        pbs.timer -= dt;
+    }
+
+    // Spawn bots whose timer has expired (one per tick to stagger visually)
+    while (!m_pendingBotSpawns.empty() && m_pendingBotSpawns.front().timer <= 0.0f) {
+        auto& pbs = m_pendingBotSpawns.front();
+        m_botCounter++;
+        std::string botId = "__bot_" + std::to_string(m_botCounter);
+        cmdJoin(botId, pbs.name, pbs.label);
+        m_pendingBotSpawns.erase(m_pendingBotSpawns.begin());
     }
 }
 
@@ -1041,6 +1063,9 @@ void CountryElimination::update(double dt) {
 
         enforceConstantVelocity();
 
+        // Staggered bot spawning
+        tickBotSpawnTimers(fdt);
+
         // Arena always rotates
         if (m_arenaBody) {
             m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
@@ -1128,6 +1153,11 @@ void CountryElimination::update(double dt) {
                     if (fix) {
                         fix->SetRestitution(m_restitution);
                         fix->SetFriction(0.0f);
+                        // Restore alive collision filter
+                        b2Filter filter = fix->GetFilterData();
+                        filter.categoryBits = CAT_ALIVE;
+                        filter.maskBits     = MASK_ALIVE;
+                        fix->SetFilterData(filter);
                     }
                     // Remove from eliminated queue
                     m_eliminatedQueue.erase(
