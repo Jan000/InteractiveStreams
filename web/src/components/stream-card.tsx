@@ -110,6 +110,14 @@ export function StreamCard({
   const [audioCodec, setAudioCodec] = useState(stream.audioCodec ?? "aac");
   const [profileId, setProfileId] = useState(stream.profileId ?? "");
 
+  // Dual-format streaming
+  const [dualFormat, setDualFormat] = useState(stream.dualFormat ?? false);
+  const [secondaryResolution, setSecondaryResolution] = useState(
+    stream.secondaryResolution ?? "desktop"
+  );
+  const [secondaryBitrate, setSecondaryBitrate] = useState(stream.secondaryBitrate ?? 0);
+  const [secondaryFps, setSecondaryFps] = useState(stream.secondaryFps ?? 0);
+
   // Per-game descriptions and info messages
   const [gameDescriptions, setGameDescriptions] = useState<Record<string, string>>(
     stream.gameDescriptions ?? {}
@@ -257,6 +265,10 @@ export function StreamCard({
       setAudioBitrate(stream.audioBitrate ?? 128);
       setAudioSampleRate(stream.audioSampleRate ?? 44100);
       setAudioCodec(stream.audioCodec ?? "aac");
+      setDualFormat(stream.dualFormat ?? false);
+      setSecondaryResolution(stream.secondaryResolution ?? "desktop");
+      setSecondaryBitrate(stream.secondaryBitrate ?? 0);
+      setSecondaryFps(stream.secondaryFps ?? 0);
       setGameDescriptions(stream.gameDescriptions ?? {});
       setGameInfoMessages(stream.gameInfoMessages ?? {});
       setGameInfoIntervals(stream.gameInfoIntervals ?? {});
@@ -304,6 +316,10 @@ export function StreamCard({
         audio_bitrate: audioBitrate,
         audio_sample_rate: audioSampleRate,
         audio_codec: audioCodec,
+        dual_format: dualFormat,
+        secondary_resolution: secondaryResolution,
+        secondary_bitrate_kbps: secondaryBitrate,
+        secondary_fps: secondaryFps,
         game_descriptions: Object.keys(gameDescriptions).length > 0 ? gameDescriptions : undefined,
         game_info_messages: Object.keys(gameInfoMessages).length > 0 ? gameInfoMessages : undefined,
         game_info_intervals: Object.keys(gameInfoIntervals).length > 0 ? gameInfoIntervals : undefined,
@@ -441,6 +457,11 @@ export function StreamCard({
             <Badge className="bg-red-600 text-[10px] hover:bg-red-600">
               <Radio className="mr-1 size-3" />
               LIVE
+            </Badge>
+          )}
+          {stream.dualFormat && (
+            <Badge variant="outline" className="text-[10px] border-blue-500 text-blue-500">
+              DUAL
             </Badge>
           )}
           {!hasValidUrl && (
@@ -1089,6 +1110,75 @@ export function StreamCard({
                   </Select>
                 </div>
               </div>
+            </div>
+
+            {/* Dual-Format Streaming */}
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs font-semibold">Dual-Format Streaming</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Stream the same game in two formats simultaneously (e.g. horizontal + vertical for YouTube)
+                  </p>
+                </div>
+                <Switch
+                  checked={dualFormat}
+                  onCheckedChange={set(setDualFormat)}
+                />
+              </div>
+              {dualFormat && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Secondary Resolution</Label>
+                      <Select
+                        value={secondaryResolution}
+                        onValueChange={(v) =>
+                          set(setSecondaryResolution)(v as "mobile" | "desktop" | "mobile720" | "desktop720")
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mobile">Mobile 1080p (1080×1920)</SelectItem>
+                          <SelectItem value="desktop">Desktop 1080p (1920×1080)</SelectItem>
+                          <SelectItem value="mobile720">Mobile 720p (720×1280)</SelectItem>
+                          <SelectItem value="desktop720">Desktop 720p (1280×720)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Secondary Bitrate (kbps)</Label>
+                      <NumericInput
+                        className="h-8 text-xs"
+                        integer
+                        min={0}
+                        max={30000}
+                        step={500}
+                        value={secondaryBitrate}
+                        onChange={set(setSecondaryBitrate)}
+                      />
+                      <p className="text-[9px] text-muted-foreground">0 = use primary</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Secondary FPS</Label>
+                      <NumericInput
+                        className="h-8 text-xs"
+                        integer
+                        min={0}
+                        max={60}
+                        value={secondaryFps}
+                        onChange={set(setSecondaryFps)}
+                      />
+                      <p className="text-[9px] text-muted-foreground">0 = use primary</p>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Configure the secondary stream URL in each channel&apos;s settings (Vertical Stream URL / Key fields).
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Save + Update Metadata */}

@@ -33,6 +33,14 @@ export interface StreamState {
   audioSampleRate: number;
   audioCodec: string;
   enabled: boolean;
+  // Dual-format streaming
+  dualFormat?: boolean;
+  secondaryResolution?: "mobile" | "desktop" | "mobile720" | "desktop720";
+  secondaryWidth?: number;
+  secondaryHeight?: number;
+  secondaryBitrate?: number;
+  secondaryFps?: number;
+  secondaryStreaming?: boolean;
   // Per-game descriptions and info messages
   gameDescriptions?: Record<string, string>;
   gameInfoMessages?: Record<string, string>;

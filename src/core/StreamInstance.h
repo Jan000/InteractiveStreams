@@ -36,6 +36,37 @@ enum class ResolutionPreset {
     Desktop720   ///< 1280x720  (16:9)
 };
 
+/// Returns the companion resolution (swaps orientation).
+inline ResolutionPreset companionResolution(ResolutionPreset r) {
+    switch (r) {
+        case ResolutionPreset::Mobile:     return ResolutionPreset::Desktop;
+        case ResolutionPreset::Desktop:    return ResolutionPreset::Mobile;
+        case ResolutionPreset::Mobile720:  return ResolutionPreset::Desktop720;
+        case ResolutionPreset::Desktop720: return ResolutionPreset::Mobile720;
+        default: return ResolutionPreset::Desktop;
+    }
+}
+
+inline int resolutionWidth(ResolutionPreset r) {
+    switch (r) {
+        case ResolutionPreset::Mobile:     return 1080;
+        case ResolutionPreset::Desktop:    return 1920;
+        case ResolutionPreset::Mobile720:  return 720;
+        case ResolutionPreset::Desktop720: return 1280;
+        default: return 1080;
+    }
+}
+
+inline int resolutionHeight(ResolutionPreset r) {
+    switch (r) {
+        case ResolutionPreset::Mobile:     return 1920;
+        case ResolutionPreset::Desktop:    return 1080;
+        case ResolutionPreset::Mobile720:  return 1280;
+        case ResolutionPreset::Desktop720: return 720;
+        default: return 1920;
+    }
+}
+
 /// Serialisable configuration for a single stream instance.
 struct StreamConfig {
     std::string id;
@@ -65,24 +96,16 @@ struct StreamConfig {
     int audioSampleRate = 44100;
     std::string audioCodec = "aac";
 
-    int width()  const {
-        switch (resolution) {
-            case ResolutionPreset::Mobile:     return 1080;
-            case ResolutionPreset::Desktop:    return 1920;
-            case ResolutionPreset::Mobile720:  return 720;
-            case ResolutionPreset::Desktop720: return 1280;
-            default: return 1080;
-        }
-    }
-    int height() const {
-        switch (resolution) {
-            case ResolutionPreset::Mobile:     return 1920;
-            case ResolutionPreset::Desktop:    return 1080;
-            case ResolutionPreset::Mobile720:  return 1280;
-            case ResolutionPreset::Desktop720: return 720;
-            default: return 1920;
-        }
-    }
+    // ── Dual-format streaming (e.g. YouTube horizontal+vertical) ─────────
+    bool dualFormat = false;     ///< Enable secondary format output
+    ResolutionPreset secondaryResolution = ResolutionPreset::Desktop; ///< Auto-derived if not set
+    int  secondaryBitrate = 0;   ///< kbps for secondary (0 = use primary)
+    int  secondaryFps     = 0;   ///< FPS for secondary (0 = use primary)
+
+    int width()  const { return resolutionWidth(resolution); }
+    int height() const { return resolutionHeight(resolution); }
+    int secondaryWidth()  const { return resolutionWidth(secondaryResolution); }
+    int secondaryHeight() const { return resolutionHeight(secondaryResolution); }
 
     // ── Per-game descriptions (optional, overrides stream description) ───
     /// Map: game_id -> description for that game
@@ -194,8 +217,13 @@ public:
 
 private:
     void ensureRenderTexture();
+    void ensureSecondaryRenderTexture();
     void renderVoteOverlay();
+    void renderSecondaryVoteOverlay();
     void renderGlobalScoreboard();
+    void renderSecondaryGlobalScoreboard();
+    void renderVoteOverlayTo(sf::RenderTexture& target);
+    void renderGlobalScoreboardTo(sf::RenderTexture& target);
     void startNextGameFromVote();
     void startRandomGame();
     void restartCurrentGame();
@@ -218,12 +246,24 @@ private:
     bool               m_fontLoaded = false;
     bool               m_rtReady    = false;
 
+    // Secondary render target for dual-format streaming
+    sf::RenderTexture  m_secondaryRenderTexture;
+    sf::Image          m_secondaryFrameCapture;
+    bool               m_secondaryRtReady = false;
+
     // Frame-pacing: only perform GPU readback + encode at the configured encoder FPS
     int  m_encodeFrameCounter   = 0;
     bool m_frameReadyForEncoder = false;
 
+    // Secondary frame-pacing (may differ from primary FPS)
+    int  m_secondaryEncodeFrameCounter   = 0;
+    bool m_secondaryFrameReadyForEncoder = false;
+
     // Encoding – one encoder per output channel (channelId → encoder)
     std::unordered_map<std::string, std::unique_ptr<streaming::StreamEncoder>> m_encoders;
+
+    // Secondary encoders for dual-format (channelId → encoder for secondary resolution)
+    std::unordered_map<std::string, std::unique_ptr<streaming::StreamEncoder>> m_secondaryEncoders;
 
     // JPEG frame buffer for web preview (thread-safe)
     mutable std::mutex     m_jpegMutex;

@@ -73,6 +73,9 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   // Streaming output (Twitch / YouTube)
   const [streamUrl, setStreamUrl] = useState("");
   const [streamKey, setStreamKey] = useState("");
+  // Vertical / secondary stream output (dual-format)
+  const [verticalStreamUrl, setVerticalStreamUrl] = useState("");
+  const [verticalStreamKey, setVerticalStreamKey] = useState("");
   // YouTube
   const [ytApiKey, setYtApiKey] = useState("");
   const [ytOauthToken, setYtOauthToken] = useState("");
@@ -263,6 +266,8 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       // Streaming output
       setStreamUrl((s.stream_url as string) ?? "");
       setStreamKey((s.stream_key as string) ?? "");
+      setVerticalStreamUrl((s.vertical_stream_url as string) ?? "");
+      setVerticalStreamKey((s.vertical_stream_key as string) ?? "");
       // YouTube
       setYtApiKey((s.api_key as string) ?? "");
       setYtOauthToken((s.oauth_token as string) ?? "");
@@ -287,6 +292,11 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   );
 
   const buildSettings = (): Record<string, unknown> => {
+    // Vertical stream fields (shared across platforms)
+    const verticalFields: Record<string, unknown> = {};
+    if (verticalStreamUrl) verticalFields.vertical_stream_url = verticalStreamUrl;
+    if (verticalStreamKey) verticalFields.vertical_stream_key = verticalStreamKey;
+
     if (platform === "twitch") {
       return {
         channel: twitchChannel,
@@ -298,6 +308,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         redirect_uri: twitchRedirectUri,
         stream_url: streamUrl,
         stream_key: streamKey,
+        ...verticalFields,
       };
     }
     if (platform === "youtube") {
@@ -312,6 +323,7 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         poll_interval: ytPollInterval,
         stream_url: streamUrl,
         stream_key: streamKey,
+        ...verticalFields,
       };
     }
     return { console_input: consoleInput };
@@ -820,6 +832,36 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                       />
                     </div>
                   </div>
+                  {/* Vertical / Dual-Format Output */}
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Vertical Stream URL <span className="text-muted-foreground/60">(dual-format)</span>
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="rtmp://..."
+                        value={verticalStreamUrl}
+                        onChange={(e) =>
+                          markDirty(setVerticalStreamUrl)(e.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Vertical Stream Key <span className="text-muted-foreground/60">(dual-format)</span>
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        type="password"
+                        placeholder="key..."
+                        value={verticalStreamKey}
+                        onChange={(e) =>
+                          markDirty(setVerticalStreamKey)(e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -995,6 +1037,36 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                         value={streamKey}
                         onChange={(e) =>
                           markDirty(setStreamKey)(e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                  {/* Vertical / Dual-Format Output */}
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Vertical Stream URL <span className="text-muted-foreground/60">(dual-format)</span>
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="rtmp://a.rtmp.youtube.com/live2"
+                        value={verticalStreamUrl}
+                        onChange={(e) =>
+                          markDirty(setVerticalStreamUrl)(e.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">
+                        Vertical Stream Key <span className="text-muted-foreground/60">(dual-format)</span>
+                      </Label>
+                      <Input
+                        className="h-8 text-xs"
+                        type="password"
+                        placeholder="xxxx-xxxx-xxxx-xxxx"
+                        value={verticalStreamKey}
+                        onChange={(e) =>
+                          markDirty(setVerticalStreamKey)(e.target.value)
                         }
                       />
                     </div>

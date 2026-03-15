@@ -64,6 +64,18 @@ void StreamInstance::ensureRenderTexture() {
     m_rtReady = true;
 }
 
+void StreamInstance::ensureSecondaryRenderTexture() {
+    if (m_secondaryRtReady) return;
+    int w = m_config.secondaryWidth();
+    int h = m_config.secondaryHeight();
+    if (!m_secondaryRenderTexture.create(w, h)) {
+        spdlog::error("[Stream '{}'] Failed to create secondary RenderTexture {}x{}",
+            m_config.name, w, h);
+    }
+    m_secondaryRenderTexture.setSmooth(true);
+    m_secondaryRtReady = true;
+}
+
 sf::RenderTexture& StreamInstance::renderTexture() {
     ensureRenderTexture();
     return m_renderTexture;
@@ -186,6 +198,7 @@ void StreamInstance::update(double dt) {
 void StreamInstance::render(double alpha) {
     bool encoderRunning = isStreaming();
     bool windowActive   = !Application::instance().renderer().isHeadless();
+    bool hasDualFormat  = m_config.dualFormat && !m_secondaryEncoders.empty();
 
     m_jpegFrameCounter++;
     bool needJpeg = (m_jpegFrameCounter >= m_jpegFrameInterval);
@@ -195,7 +208,7 @@ void StreamInstance::render(double alpha) {
     // application.target_fps (typically 60).  Only perform the expensive
     // GPU→CPU readback (copyToImage) on the frames the encoder actually needs.
     bool needEncode = false;
-    if (encoderRunning) {
+    if (encoderRunning && !m_encoders.empty()) {
         int targetFps = Application::instance().config().get<int>("application.target_fps", 60);
         int encFps    = m_config.fps > 0 ? m_config.fps : 30;
         int skip      = (targetFps > encFps) ? (targetFps / encFps) : 1;
@@ -206,13 +219,27 @@ void StreamInstance::render(double alpha) {
         }
     }
 
+    // Secondary format frame pacing (may have different FPS)
+    bool needSecondaryEncode = false;
+    if (hasDualFormat) {
+        int targetFps = Application::instance().config().get<int>("application.target_fps", 60);
+        int secFps    = m_config.secondaryFps > 0 ? m_config.secondaryFps : (m_config.fps > 0 ? m_config.fps : 30);
+        int skip      = (targetFps > secFps) ? (targetFps / secFps) : 1;
+        m_secondaryEncodeFrameCounter++;
+        if (m_secondaryEncodeFrameCounter >= skip) {
+            m_secondaryEncodeFrameCounter = 0;
+            needSecondaryEncode = true;
+        }
+    }
+
     // Skip the entire GPU render when nothing needs a fresh frame
     // (headless mode, no encoder, and JPEG preview not yet due).
-    if (!needEncode && !windowActive && !needJpeg) {
+    if (!needEncode && !needSecondaryEncode && !windowActive && !needJpeg) {
         return;
     }
     if (needJpeg) m_jpegFrameCounter = 0;
 
+    // ── Primary render ───────────────────────────────────────────────────
     ensureRenderTexture();
     m_renderTexture.clear(sf::Color(15, 15, 25));
 
@@ -237,30 +264,78 @@ void StreamInstance::render(double alpha) {
         updateJpegBuffer();
     }
     m_frameReadyForEncoder = needEncode;
+
+    // ── Secondary render (dual-format) ───────────────────────────────────
+    if (needSecondaryEncode) {
+        ensureSecondaryRenderTexture();
+        m_secondaryRenderTexture.clear(sf::Color(15, 15, 25));
+
+        if (m_gameManager->activeGame()) {
+            m_gameManager->render(m_secondaryRenderTexture, alpha);
+        }
+
+        if (m_voteState.active) {
+            renderSecondaryVoteOverlay();
+        }
+
+        renderSecondaryGlobalScoreboard();
+
+        m_secondaryRenderTexture.display();
+        m_secondaryFrameCapture = m_secondaryRenderTexture.getTexture().copyToImage();
+        m_secondaryFrameReadyForEncoder = true;
+    }
 }
 
 void StreamInstance::encodeFrame() {
-    if (m_encoders.empty() || !m_frameReadyForEncoder) return;
-    m_frameReadyForEncoder = false;
+    // Primary encoders
+    if (!m_encoders.empty() && m_frameReadyForEncoder) {
+        m_frameReadyForEncoder = false;
 
-    const sf::Uint8* pixels = getFrameBuffer();
-    if (!pixels) return;
-
-    bool anyFailed = false;
-    for (auto& [chId, enc] : m_encoders) {
-        if (enc && enc->isRunning()) {
-            enc->encodeFrame(pixels);
-        }
-        if (enc && enc->hasFailed()) {
-            spdlog::error("[Stream '{}'] Encoder for channel '{}' failed – removing.",
-                          m_config.name, chId);
-            enc->stop();
-            enc.reset();
-            anyFailed = true;
+        const sf::Uint8* pixels = getFrameBuffer();
+        if (pixels) {
+            bool anyFailed = false;
+            for (auto& [chId, enc] : m_encoders) {
+                if (enc && enc->isRunning()) {
+                    enc->encodeFrame(pixels);
+                }
+                if (enc && enc->hasFailed()) {
+                    spdlog::error("[Stream '{}'] Encoder for channel '{}' failed – removing.",
+                                  m_config.name, chId);
+                    enc->stop();
+                    enc.reset();
+                    anyFailed = true;
+                }
+            }
+            if (anyFailed) {
+                std::erase_if(m_encoders, [](const auto& p) { return !p.second; });
+            }
         }
     }
-    if (anyFailed) {
-        std::erase_if(m_encoders, [](const auto& p) { return !p.second; });
+
+    // Secondary encoders (dual-format)
+    if (!m_secondaryEncoders.empty() && m_secondaryFrameReadyForEncoder) {
+        m_secondaryFrameReadyForEncoder = false;
+
+        const sf::Uint8* secPixels = (m_secondaryFrameCapture.getSize().x > 0)
+            ? m_secondaryFrameCapture.getPixelsPtr() : nullptr;
+        if (secPixels) {
+            bool anyFailed = false;
+            for (auto& [chId, enc] : m_secondaryEncoders) {
+                if (enc && enc->isRunning()) {
+                    enc->encodeFrame(secPixels);
+                }
+                if (enc && enc->hasFailed()) {
+                    spdlog::error("[Stream '{}'] Secondary encoder for channel '{}' failed – removing.",
+                                  m_config.name, chId);
+                    enc->stop();
+                    enc.reset();
+                    anyFailed = true;
+                }
+            }
+            if (anyFailed) {
+                std::erase_if(m_secondaryEncoders, [](const auto& p) { return !p.second; });
+            }
+        }
     }
 }
 
@@ -431,9 +506,17 @@ std::vector<std::string> StreamInstance::getAvailableGameIds() const {
 // ── Vote overlay rendering ───────────────────────────────────────────────────
 
 void StreamInstance::renderVoteOverlay() {
+    renderVoteOverlayTo(m_renderTexture);
+}
+
+void StreamInstance::renderSecondaryVoteOverlay() {
+    renderVoteOverlayTo(m_secondaryRenderTexture);
+}
+
+void StreamInstance::renderVoteOverlayTo(sf::RenderTexture& target) {
     if (!m_fontLoaded) return;
-    float w = static_cast<float>(width());
-    float h = static_cast<float>(height());
+    float w = static_cast<float>(target.getSize().x);
+    float h = static_cast<float>(target.getSize().y);
     float vfs = m_config.voteOverlayFontScale;
     auto fs = [vfs](int base) -> unsigned int {
         return static_cast<unsigned int>(std::max(1.0f, base * vfs));
@@ -442,7 +525,7 @@ void StreamInstance::renderVoteOverlay() {
     // Dim background
     sf::RectangleShape overlay(sf::Vector2f(w, h));
     overlay.setFillColor(sf::Color(0, 0, 0, 180));
-    m_renderTexture.draw(overlay);
+    target.draw(overlay);
 
     // Title
     sf::Text title;
@@ -453,7 +536,7 @@ void StreamInstance::renderVoteOverlay() {
     title.setStyle(sf::Text::Bold);
     auto tb = title.getLocalBounds();
     title.setPosition((w - tb.width) / 2.0f, h * 0.15f);
-    m_renderTexture.draw(title);
+    target.draw(title);
 
     // Timer
     float remaining = static_cast<float>(m_voteState.duration - m_voteState.timer);
@@ -464,7 +547,7 @@ void StreamInstance::renderVoteOverlay() {
     timer.setFillColor(sf::Color(200, 200, 200));
     auto tmb = timer.getLocalBounds();
     timer.setPosition((w - tmb.width) / 2.0f, h * 0.22f);
-    m_renderTexture.draw(timer);
+    target.draw(timer);
 
     // Instructions
     sf::Text instr;
@@ -474,7 +557,7 @@ void StreamInstance::renderVoteOverlay() {
     instr.setFillColor(sf::Color(150, 150, 150));
     auto ib = instr.getLocalBounds();
     instr.setPosition((w - ib.width) / 2.0f, h * 0.27f);
-    m_renderTexture.draw(instr);
+    target.draw(instr);
 
     // Game cards – filter by player limit
     auto allGameIds = getAvailableGameIds();
@@ -503,7 +586,7 @@ void StreamInstance::renderVoteOverlay() {
         card.setFillColor(sf::Color(30, 40, 60, 200));
         card.setOutlineColor(sf::Color(80, 130, 200));
         card.setOutlineThickness(1.5f);
-        m_renderTexture.draw(card);
+        target.draw(card);
 
         // Use cached display name to avoid creating full game objects per frame
         std::string dispName = gid;
@@ -518,7 +601,7 @@ void StreamInstance::renderVoteOverlay() {
         nameT.setCharacterSize(fs(20));
         nameT.setFillColor(sf::Color::White);
         nameT.setPosition(cardX + 15.0f, y + 8.0f);
-        m_renderTexture.draw(nameT);
+        target.draw(nameT);
 
         sf::Text voteT;
         voteT.setFont(m_font);
@@ -526,7 +609,7 @@ void StreamInstance::renderVoteOverlay() {
         voteT.setCharacterSize(fs(16));
         voteT.setFillColor(sf::Color(88, 166, 255));
         voteT.setPosition(cardX + 15.0f, y + 34.0f);
-        m_renderTexture.draw(voteT);
+        target.draw(voteT);
 
         sf::Text idT;
         idT.setFont(m_font);
@@ -535,7 +618,7 @@ void StreamInstance::renderVoteOverlay() {
         idT.setFillColor(sf::Color(120, 120, 140));
         auto idb = idT.getLocalBounds();
         idT.setPosition(cardX + cardW - idb.width - 15.0f, y + 20.0f);
-        m_renderTexture.draw(idT);
+        target.draw(idT);
 
         y += cardH + 10.0f;
     }
@@ -599,11 +682,19 @@ static sf::Color hexToColor(const std::string& hex, uint8_t alpha = 255) {
 }
 
 void StreamInstance::renderGlobalScoreboard() {
+    renderGlobalScoreboardTo(m_renderTexture);
+}
+
+void StreamInstance::renderSecondaryGlobalScoreboard() {
+    renderGlobalScoreboardTo(m_secondaryRenderTexture);
+}
+
+void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
     if (!m_fontLoaded) return;
     if (m_scoreboardPanels.empty()) return;
 
-    float w = static_cast<float>(width());
-    float h = static_cast<float>(height());
+    float w = static_cast<float>(target.getSize().x);
+    float h = static_cast<float>(target.getSize().y);
 
     // Determine current panel type
     ScoreboardPanel panelType = m_scoreboardPanels[static_cast<size_t>(
@@ -669,7 +760,7 @@ void StreamInstance::renderGlobalScoreboard() {
         bg.setFillColor(bgColor);
         bg.setOutlineColor(borderColor);
         bg.setOutlineThickness(1.5f);
-        m_renderTexture.draw(bg);
+        target.draw(bg);
 
         sf::Text header;
         header.setFont(m_font);
@@ -679,7 +770,7 @@ void StreamInstance::renderGlobalScoreboard() {
         header.setStyle(sf::Text::Bold);
         auto hb = header.getLocalBounds();
         header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
-        m_renderTexture.draw(header);
+        target.draw(header);
 
         float y = panelY + padY + headerH;
         int rank = 1;
@@ -691,7 +782,7 @@ void StreamInstance::renderGlobalScoreboard() {
             nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
             nameText.setFillColor(nameColorForRank(rank));
             nameText.setPosition(panelX + padX, y);
-            m_renderTexture.draw(nameText);
+            target.draw(nameText);
 
             sf::Text ptsText;
             ptsText.setFont(m_font);
@@ -700,7 +791,7 @@ void StreamInstance::renderGlobalScoreboard() {
             ptsText.setFillColor(ptsColor);
             auto pb = ptsText.getLocalBounds();
             ptsText.setPosition(panelX + panelW - pb.width - padX, y);
-            m_renderTexture.draw(ptsText);
+            target.draw(ptsText);
             y += lineH;
             rank++;
         }
@@ -717,7 +808,7 @@ void StreamInstance::renderGlobalScoreboard() {
         bg.setFillColor(bgColor);
         bg.setOutlineColor(borderColor);
         bg.setOutlineThickness(1.5f);
-        m_renderTexture.draw(bg);
+        target.draw(bg);
 
         sf::Text header;
         header.setFont(m_font);
@@ -727,7 +818,7 @@ void StreamInstance::renderGlobalScoreboard() {
         header.setStyle(sf::Text::Bold);
         auto hb = header.getLocalBounds();
         header.setPosition(panelX + (panelW - hb.width) / 2.0f, panelY + padY);
-        m_renderTexture.draw(header);
+        target.draw(header);
 
         float y = panelY + padY + headerH;
         int rank = 1;
@@ -739,7 +830,7 @@ void StreamInstance::renderGlobalScoreboard() {
             nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
             nameText.setFillColor(nameColorForRank(rank));
             nameText.setPosition(panelX + padX, y);
-            m_renderTexture.draw(nameText);
+            target.draw(nameText);
 
             sf::Text ptsText;
             ptsText.setFont(m_font);
@@ -748,7 +839,7 @@ void StreamInstance::renderGlobalScoreboard() {
             ptsText.setFillColor(ptsColor);
             auto pb = ptsText.getLocalBounds();
             ptsText.setPosition(panelX + panelW - pb.width - padX, y);
-            m_renderTexture.draw(ptsText);
+            target.draw(ptsText);
             y += lineH;
             rank++;
         }
@@ -1131,6 +1222,9 @@ bool StreamInstance::isStreaming() const {
     for (const auto& [chId, enc] : m_encoders) {
         if (enc && enc->isRunning()) return true;
     }
+    for (const auto& [chId, enc] : m_secondaryEncoders) {
+        if (enc && enc->isRunning()) return true;
+    }
     return false;
 }
 
@@ -1150,28 +1244,9 @@ std::string StreamInstance::startStreaming() {
         return "No channels assigned to this stream.";
     }
 
-    std::string diagnostics;
-    for (const auto& chId : m_config.channelIds) {
-        const auto* cfg = cm.getChannelConfig(chId);
-        if (!cfg) {
-            diagnostics += "Channel '" + chId + "' not found. ";
-            continue;
-        }
-
-        std::string url = cfg->settings.value("stream_url", "");
-        std::string key = cfg->settings.value("stream_key", "");
-        if (url.empty()) {
-            spdlog::debug("[Stream '{}'] Channel '{}' ({}) has no stream_url – skipping.",
-                          m_config.name, chId, cfg->name);
-            continue;
-        }
-
-        std::string fullUrl = key.empty() ? url : url + "/" + key;
-
+    // Helper: build base encoder settings from stream config
+    auto buildBaseSettings = [&]() {
         streaming::EncoderSettings es;
-        es.outputUrl        = fullUrl;
-        es.width            = width();
-        es.height           = height();
         es.fps              = m_config.fps;
         es.bitrate          = m_config.bitrate;
         es.preset           = m_config.preset;
@@ -1186,20 +1261,68 @@ std::string StreamInstance::startStreaming() {
         es.audioBitrate     = m_config.audioBitrate;
         es.audioSampleRate  = m_config.audioSampleRate;
         es.audioCodec       = m_config.audioCodec;
-
-        // Attach the AudioMixer so game audio is piped to FFmpeg
         try {
             es.audioMixer = &Application::instance().audioMixer();
         } catch (...) {
             es.audioMixer = nullptr;
         }
+        return es;
+    };
 
-        auto enc = std::make_unique<streaming::StreamEncoder>(es);
-        enc->start();
-        spdlog::info("[Stream '{}'] Streaming to {} via channel '{}'",
-                     m_config.name, url, chId);
-        m_encoders[chId] = std::move(enc);
-        anyStarted = true;
+    std::string diagnostics;
+    for (const auto& chId : m_config.channelIds) {
+        const auto* cfg = cm.getChannelConfig(chId);
+        if (!cfg) {
+            diagnostics += "Channel '" + chId + "' not found. ";
+            continue;
+        }
+
+        // ── Primary encoder ──────────────────────────────────────────────
+        std::string url = cfg->settings.value("stream_url", "");
+        std::string key = cfg->settings.value("stream_key", "");
+        if (!url.empty()) {
+            std::string fullUrl = key.empty() ? url : url + "/" + key;
+
+            auto es       = buildBaseSettings();
+            es.outputUrl  = fullUrl;
+            es.width      = width();
+            es.height     = height();
+
+            auto enc = std::make_unique<streaming::StreamEncoder>(es);
+            enc->start();
+            spdlog::info("[Stream '{}'] Streaming to {} via channel '{}'",
+                         m_config.name, url, chId);
+            m_encoders[chId] = std::move(enc);
+            anyStarted = true;
+        } else {
+            spdlog::debug("[Stream '{}'] Channel '{}' ({}) has no stream_url – skipping.",
+                          m_config.name, chId, cfg->name);
+        }
+
+        // ── Secondary encoder (dual-format) ──────────────────────────────
+        if (m_config.dualFormat) {
+            std::string secUrl = cfg->settings.value("vertical_stream_url", "");
+            std::string secKey = cfg->settings.value("vertical_stream_key", "");
+            if (!secUrl.empty()) {
+                std::string fullSecUrl = secKey.empty() ? secUrl : secUrl + "/" + secKey;
+
+                auto es       = buildBaseSettings();
+                es.outputUrl  = fullSecUrl;
+                es.width      = m_config.secondaryWidth();
+                es.height     = m_config.secondaryHeight();
+                if (m_config.secondaryBitrate > 0)
+                    es.bitrate = m_config.secondaryBitrate;
+                if (m_config.secondaryFps > 0)
+                    es.fps = m_config.secondaryFps;
+
+                auto enc = std::make_unique<streaming::StreamEncoder>(es);
+                enc->start();
+                spdlog::info("[Stream '{}'] Secondary format streaming to {} via channel '{}' ({}x{})",
+                             m_config.name, secUrl, chId, es.width, es.height);
+                m_secondaryEncoders[chId] = std::move(enc);
+                anyStarted = true;
+            }
+        }
     }
 
     if (!anyStarted) {
@@ -1219,12 +1342,17 @@ void StreamInstance::stopStreaming() {
         if (enc) enc->stop();
     }
     m_encoders.clear();
+    for (auto& [chId, enc] : m_secondaryEncoders) {
+        if (enc) enc->stop();
+    }
+    m_secondaryEncoders.clear();
 }
 
 // ── Configuration update ─────────────────────────────────────────────────────
 
 void StreamInstance::updateConfig(const StreamConfig& c) {
     bool resChanged = (c.resolution != m_config.resolution);
+    bool secResChanged = (c.secondaryResolution != m_config.secondaryResolution);
 
     // Detect whether a game switch is needed.  This covers:
     //   1) fixed_game changed while mode is Fixed
@@ -1241,6 +1369,7 @@ void StreamInstance::updateConfig(const StreamConfig& c) {
 
     m_config = c;
     if (resChanged) { m_rtReady = false; }
+    if (secResChanged) { m_secondaryRtReady = false; }
 
     // Never call loadGame() directly from the web-API thread – queue the
     // switch so the main loop executes it via checkPendingSwitch().
@@ -1293,6 +1422,26 @@ nlohmann::json StreamInstance::getState() const {
     s["audioSampleRate"] = m_config.audioSampleRate;
     s["audioCodec"]      = m_config.audioCodec;
     s["enabled"]    = m_config.enabled;
+
+    // Dual-format fields
+    s["dualFormat"] = m_config.dualFormat;
+    if (m_config.dualFormat) {
+        auto resToStr = [](ResolutionPreset r) -> std::string {
+            switch (r) {
+                case ResolutionPreset::Mobile:     return "mobile";
+                case ResolutionPreset::Desktop:    return "desktop";
+                case ResolutionPreset::Mobile720:  return "mobile720";
+                case ResolutionPreset::Desktop720: return "desktop720";
+                default: return "mobile";
+            }
+        };
+        s["secondaryResolution"] = resToStr(m_config.secondaryResolution);
+        s["secondaryWidth"]      = m_config.secondaryWidth();
+        s["secondaryHeight"]     = m_config.secondaryHeight();
+        s["secondaryBitrate"]    = m_config.secondaryBitrate;
+        s["secondaryFps"]        = m_config.secondaryFps;
+        s["secondaryStreaming"]  = !m_secondaryEncoders.empty();
+    }
 
     // Per-game descriptions & info messages
     if (!m_config.gameDescriptions.empty())
@@ -1414,6 +1563,23 @@ nlohmann::json StreamInstance::toJson() const {
     j["audio_sample_rate"] = m_config.audioSampleRate;
     j["audio_codec"]    = m_config.audioCodec;
 
+    // Dual-format streaming
+    j["dual_format"] = m_config.dualFormat;
+    {
+        auto resToStr = [](ResolutionPreset r) -> std::string {
+            switch (r) {
+                case ResolutionPreset::Mobile:     return "mobile";
+                case ResolutionPreset::Desktop:    return "desktop";
+                case ResolutionPreset::Mobile720:  return "mobile720";
+                case ResolutionPreset::Desktop720: return "desktop720";
+                default: return "mobile";
+            }
+        };
+        j["secondary_resolution"] = resToStr(m_config.secondaryResolution);
+    }
+    j["secondary_bitrate_kbps"] = m_config.secondaryBitrate;
+    j["secondary_fps"]          = m_config.secondaryFps;
+
     // Per-game descriptions
     if (!m_config.gameDescriptions.empty())
         j["game_descriptions"] = m_config.gameDescriptions;
@@ -1503,6 +1669,19 @@ StreamConfig StreamInstance::configFromJson(const nlohmann::json& j) {
     c.audioBitrate    = j.value("audio_bitrate", 128);
     c.audioSampleRate = j.value("audio_sample_rate", 44100);
     c.audioCodec      = j.value("audio_codec", std::string("aac"));
+
+    // Dual-format streaming
+    c.dualFormat = j.value("dual_format", false);
+    {
+        std::string secRes = j.value("secondary_resolution", "");
+        if      (secRes == "mobile")     c.secondaryResolution = ResolutionPreset::Mobile;
+        else if (secRes == "desktop")    c.secondaryResolution = ResolutionPreset::Desktop;
+        else if (secRes == "mobile720")  c.secondaryResolution = ResolutionPreset::Mobile720;
+        else if (secRes == "desktop720") c.secondaryResolution = ResolutionPreset::Desktop720;
+        else                             c.secondaryResolution = companionResolution(c.resolution);
+    }
+    c.secondaryBitrate = j.value("secondary_bitrate_kbps", 0);
+    c.secondaryFps     = j.value("secondary_fps", 0);
 
     // Per-game descriptions
     if (j.contains("game_descriptions") && j["game_descriptions"].is_object()) {
