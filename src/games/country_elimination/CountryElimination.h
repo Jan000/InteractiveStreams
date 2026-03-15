@@ -65,6 +65,7 @@ enum class GamePhase { Lobby, Countdown, Battle, RoundEnd };
 struct EliminationEntry {
     std::string displayName;
     std::string label;
+    std::string avatarUrl;
     sf::Color   color;
     double      timeRemaining;
 };
@@ -73,6 +74,7 @@ struct RoundWinEntry {
     std::string userId;
     std::string displayName;
     std::string label;
+    std::string avatarUrl;
     sf::Color   color;
     int         wins = 0;
 };

@@ -709,7 +709,7 @@ void CountryElimination::checkEliminations() {
             // Track in eliminated FIFO queue
             m_eliminatedQueue.push_back({id, 0.0f, false, 0.0f});
 
-            m_eliminationFeed.push_front({p.displayName, p.label, p.color, 4.0});
+            m_eliminationFeed.push_front({p.displayName, p.label, p.avatarUrl, p.color, 4.0});
             if (m_eliminationFeed.size() > 8) m_eliminationFeed.pop_back();
 
             if (!p.isBot()) {
@@ -765,6 +765,7 @@ void CountryElimination::recordRoundWin(const Player& winner) {
         if (rw.userId == winner.userId) {
             rw.wins++;
             rw.label = winner.label;
+            rw.avatarUrl = winner.avatarUrl;
             rw.color = winner.color;
             std::sort(m_roundWinners.begin(), m_roundWinners.end(),
                       [](const RoundWinEntry& a, const RoundWinEntry& b) { return a.wins > b.wins; });
@@ -777,7 +778,7 @@ void CountryElimination::recordRoundWin(const Player& winner) {
             return;
         }
     }
-    m_roundWinners.push_back({winner.userId, winner.displayName, winner.label, winner.color, 1});
+    m_roundWinners.push_back({winner.userId, winner.displayName, winner.label, winner.avatarUrl, winner.color, 1});
     std::sort(m_roundWinners.begin(), m_roundWinners.end(),
               [](const RoundWinEntry& a, const RoundWinEntry& b) { return a.wins > b.wins; });
 }
@@ -2148,26 +2149,41 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     rank.setPosition(px + 6.0f, ey);
                     target.draw(rank);
 
-                    // Flag circle
+                    // Avatar or flag circle
                     float flagR = fs(13) * 0.5f;
-                    sf::CircleShape flag(flagR);
-                    flag.setOrigin(flagR, flagR);
-                    flag.setPosition(px + 30.0f, ey + lineH / 2.0f);
-                    auto fit = m_flagTextures.find(rw.label);
-                    if (fit != m_flagTextures.end()) {
-                        flag.setTexture(&fit->second);
-                        auto ts = fit->second.getSize();
-                        int sq = std::min(ts.x, ts.y);
-                        int ox = (ts.x - sq) / 2;
-                        int oy = (ts.y - sq) / 2;
-                        flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
-                        flag.setFillColor(sf::Color::White);
+                    const sf::Texture* avatarTex = nullptr;
+                    if (!rw.avatarUrl.empty())
+                        avatarTex = m_avatarCache.getTexture(rw.avatarUrl);
+
+                    if (avatarTex) {
+                        sf::CircleShape av(flagR);
+                        av.setOrigin(flagR, flagR);
+                        av.setPosition(px + 30.0f, ey + lineH / 2.0f);
+                        av.setTexture(avatarTex);
+                        av.setFillColor(sf::Color::White);
+                        av.setOutlineColor(sf::Color(255, 255, 255, 80));
+                        av.setOutlineThickness(1.0f);
+                        target.draw(av);
                     } else {
-                        flag.setFillColor(rw.color);
+                        sf::CircleShape flag(flagR);
+                        flag.setOrigin(flagR, flagR);
+                        flag.setPosition(px + 30.0f, ey + lineH / 2.0f);
+                        auto fit = m_flagTextures.find(rw.label);
+                        if (fit != m_flagTextures.end()) {
+                            flag.setTexture(&fit->second);
+                            auto ts = fit->second.getSize();
+                            int sq = std::min(ts.x, ts.y);
+                            int ox = (ts.x - sq) / 2;
+                            int oy = (ts.y - sq) / 2;
+                            flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
+                            flag.setFillColor(sf::Color::White);
+                        } else {
+                            flag.setFillColor(rw.color);
+                        }
+                        flag.setOutlineColor(sf::Color(255, 255, 255, 80));
+                        flag.setOutlineThickness(1.0f);
+                        target.draw(flag);
                     }
-                    flag.setOutlineColor(sf::Color(255, 255, 255, 80));
-                    flag.setOutlineThickness(1.0f);
-                    target.draw(flag);
 
                     // Name
                     sf::Text name;
@@ -2236,13 +2252,8 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     // Avatar or flag
                     float flagR = fs(13) * 0.5f;
                     const sf::Texture* avatarTex = nullptr;
-                    // Find player to get avatar URL
-                    for (const auto& [pid, pl] : m_players) {
-                        if (pl.userId == rw.userId && !pl.avatarUrl.empty()) {
-                            avatarTex = m_avatarCache.getTexture(pl.avatarUrl);
-                            break;
-                        }
-                    }
+                    if (!rw.avatarUrl.empty())
+                        avatarTex = m_avatarCache.getTexture(rw.avatarUrl);
                     if (avatarTex) {
                         sf::CircleShape av(flagR);
                         av.setOrigin(flagR, flagR);
@@ -2324,12 +2335,42 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     float alpha = std::min(1.0f, static_cast<float>(e.timeRemaining));
                     sf::Uint8 a = static_cast<sf::Uint8>(alpha * 200);
 
-                    sf::CircleShape dot(4.0f);
-                    dot.setOrigin(4.0f, 4.0f);
-                    dot.setPosition(px + 10.0f, ey + lineH / 2.0f);
-                    sf::Color dc = e.color; dc.a = a;
-                    dot.setFillColor(dc);
-                    target.draw(dot);
+                    // Avatar or flag circle
+                    float flagR = 5.0f;
+                    const sf::Texture* avatarTex = nullptr;
+                    if (!e.avatarUrl.empty())
+                        avatarTex = m_avatarCache.getTexture(e.avatarUrl);
+
+                    if (avatarTex) {
+                        sf::CircleShape av(flagR);
+                        av.setOrigin(flagR, flagR);
+                        av.setPosition(px + 10.0f, ey + lineH / 2.0f);
+                        av.setTexture(avatarTex);
+                        av.setFillColor(sf::Color(255, 255, 255, a));
+                        av.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(a / 3)));
+                        av.setOutlineThickness(1.0f);
+                        target.draw(av);
+                    } else {
+                        sf::CircleShape dot(flagR);
+                        dot.setOrigin(flagR, flagR);
+                        dot.setPosition(px + 10.0f, ey + lineH / 2.0f);
+                        auto fit = m_flagTextures.find(e.label);
+                        if (fit != m_flagTextures.end()) {
+                            dot.setTexture(&fit->second);
+                            auto ts = fit->second.getSize();
+                            int sq = std::min(ts.x, ts.y);
+                            int ox = (ts.x - sq) / 2;
+                            int oy = (ts.y - sq) / 2;
+                            dot.setTextureRect(sf::IntRect(ox, oy, sq, sq));
+                            dot.setFillColor(sf::Color(255, 255, 255, a));
+                        } else {
+                            sf::Color dc = e.color; dc.a = a;
+                            dot.setFillColor(dc);
+                        }
+                        dot.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(a / 3)));
+                        dot.setOutlineThickness(1.0f);
+                        target.draw(dot);
+                    }
 
                     sf::Text t;
                     t.setFont(m_font);
