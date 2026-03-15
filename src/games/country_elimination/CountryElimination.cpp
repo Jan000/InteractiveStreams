@@ -237,7 +237,7 @@ void CountryElimination::shutdown() {
     destroyArenaBody();
     if (m_leftWall && m_world) { m_world->DestroyBody(m_leftWall); m_leftWall = nullptr; }
     if (m_rightWall && m_world) { m_world->DestroyBody(m_rightWall); m_rightWall = nullptr; }
-    if (m_ceilingBody && m_world) { m_world->DestroyBody(m_ceilingBody); m_ceilingBody = nullptr; }
+    if (m_floorBody && m_world) { m_world->DestroyBody(m_floorBody); m_floorBody = nullptr; }
     if (m_floorBody && m_world) { m_world->DestroyBody(m_floorBody); m_floorBody = nullptr; }
     delete m_world;
     m_world = nullptr;
@@ -299,9 +299,11 @@ ScreenLayout CountryElimination::computeLayout(const sf::RenderTarget& target) c
 void CountryElimination::createBoundaryWalls() {
     if (!m_world) return;
 
-    // Wall vertical span: from ceiling to floor
-    float wallCenterY = (CEILING_Y + FLOOR_Y) / 2.0f;
-    float wallHalfH   = (FLOOR_Y - CEILING_Y) / 2.0f;
+    // Walls span from far above the arena down to the floor, so eliminated
+    // balls that fly upward can never escape the sides.
+    float wallTop     = WORLD_CY - ARENA_RADIUS - 15.0f;
+    float wallCenterY = (wallTop + FLOOR_Y) / 2.0f;
+    float wallHalfH   = (FLOOR_Y - wallTop) / 2.0f;
 
     // Left wall — at the left visible boundary
     {
@@ -333,20 +335,7 @@ void CountryElimination::createBoundaryWalls() {
         m_rightWall->CreateFixture(&fix);
     }
 
-    // Ceiling — keeps eliminated balls from flying off the top
-    {
-        b2BodyDef bd;
-        bd.type = b2_staticBody;
-        bd.position.Set(WORLD_CX, CEILING_Y);
-        m_ceilingBody = m_world->CreateBody(&bd);
-        b2PolygonShape box;
-        box.SetAsBox(WORLD_W, 0.5f);
-        b2FixtureDef fix;
-        fix.shape = &box;
-        fix.restitution = 0.5f;
-        fix.friction = 0.3f;
-        m_ceilingBody->CreateFixture(&fix);
-    }
+    // No ceiling — eliminated balls may fly upward freely
 }
 
 void CountryElimination::createArenaBody() {
@@ -778,10 +767,12 @@ void CountryElimination::resetForNextRound() {
 void CountryElimination::spawnBots() {
     if (m_botFillTarget <= 0) return;
 
-    int currentAlive = 0;
-    for (const auto& [_, p] : m_players) { if (p.alive) currentAlive++; }
+    // Count ALL bot entries (alive + dead) to avoid overspawning while
+    // dead bodies linger for the visual FIFO queue.
+    int botCount = 0;
+    for (const auto& [id, p] : m_players) { if (p.isBot() && p.alive) botCount++; }
 
-    int needed = m_botFillTarget - currentAlive;
+    int needed = m_botFillTarget - botCount;
     for (int i = 0; i < needed; ++i) {
         m_botCounter++;
         std::string botId = "__bot_" + std::to_string(m_botCounter);
@@ -794,12 +785,13 @@ void CountryElimination::spawnBots() {
 void CountryElimination::respawnDeadBots(float dt) {
     if (m_botFillTarget <= 0 || !m_botRespawn) return;
 
-    int currentAlive = 0;
-    for (const auto& [_, p] : m_players) { if (p.alive) currentAlive++; }
+    int aliveCount = 0;
+    for (const auto& [_, p] : m_players) { if (p.alive) aliveCount++; }
+    if (aliveCount >= m_botFillTarget) return;  // already full
 
     for (auto& [id, p] : m_players) {
         if (p.alive || !p.isBot()) continue;
-        // Track this dead bot
+        // Track this dead bot (only if not already tracked)
         if (m_botRespawnTimers.find(id) == m_botRespawnTimers.end())
             m_botRespawnTimers[id] = m_botRespawnDelay;
     }
@@ -809,20 +801,26 @@ void CountryElimination::respawnDeadBots(float dt) {
     for (auto& [id, timer] : m_botRespawnTimers) {
         if (timer < 0.0f) continue;  // already consumed
         timer -= dt;
-        if (timer <= 0.0f && currentAlive < m_botFillTarget) {
+        if (timer <= 0.0f && aliveCount < m_botFillTarget) {
             toRespawn.push_back(id);
-            timer = -1.0f;  // sentinel: consumed, don't re-add or re-trigger
+            timer = -1.0f;  // sentinel: consumed
+            aliveCount++;   // account for upcoming spawn
         }
     }
 
+    // Clean up consumed timers whose players have been removed from m_players
+    for (auto it = m_botRespawnTimers.begin(); it != m_botRespawnTimers.end(); ) {
+        if (it->second < 0.0f && m_players.find(it->first) == m_players.end())
+            it = m_botRespawnTimers.erase(it);
+        else
+            ++it;
+    }
+
     for (const auto& botId : toRespawn) {
-        // Leave old dead body for the FIFO eliminated-queue to manage visually.
-        // Only strip the respawn timer — the queue will destroy the body when faded.
         m_botCounter++;
         std::string newId = "__bot_" + std::to_string(m_botCounter);
         int idx = (m_botCounter - 1) % NUM_BOT_NAMES;
         cmdJoin(newId, BOT_NAMES[idx], BOT_LABELS[idx]);
-        currentAlive++;
     }
 }
 

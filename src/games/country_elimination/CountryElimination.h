@@ -221,7 +221,6 @@ private:
     b2Body*   m_floorBody  = nullptr;
     b2Body*   m_leftWall    = nullptr;
     b2Body*   m_rightWall   = nullptr;
-    b2Body*   m_ceilingBody = nullptr;
 
     float m_arenaAngle       = 0.0f;
     float m_arenaAngularVel  = 0.3f;
