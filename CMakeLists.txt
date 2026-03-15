@@ -220,6 +220,7 @@ set(CORE_SOURCES
     src/core/SettingsDatabase.cpp
     src/core/AudioManager.cpp
     src/core/AudioMixer.cpp
+    src/core/AvatarCache.cpp
 )
 
 set(GAME_SOURCES

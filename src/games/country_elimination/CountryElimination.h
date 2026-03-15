@@ -1,6 +1,7 @@
 #pragma once
 
 #include "games/IGame.h"
+#include "core/AvatarCache.h"
 #include "rendering/PostProcessing.h"
 #include "rendering/Background.h"
 
@@ -75,6 +76,7 @@ struct Player {
     std::string userId;
     std::string displayName;
     std::string label;
+    std::string avatarUrl;
     sf::Color   color;
 
     b2Body*     body       = nullptr;
@@ -149,7 +151,7 @@ private:
 
     // Commands
     void cmdJoin(const std::string& userId, const std::string& displayName,
-                 const std::string& label);
+                 const std::string& label, const std::string& avatarUrl = "");
     void handleStreamEvent(const platform::ChatMessage& msg);
 
     // Game logic
@@ -265,8 +267,13 @@ private:
     bool m_gameWon     = false;
     std::string m_championId;
 
+    // Visual size settings
+    float  m_nameTextScale       = 1.0f;
+    float  m_avatarScale         = 1.0f;
+
     rendering::PostProcessing m_postProcessing;
     rendering::Background     m_background;
+    is::core::AvatarCache     m_avatarCache;
     sf::Font  m_font;
     bool      m_fontLoaded = false;
     std::vector<Particle> m_particles;

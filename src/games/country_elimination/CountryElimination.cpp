@@ -153,8 +153,8 @@ void CountryElimination::initialize() {
         box.SetAsBox(WORLD_W, 0.5f);
         b2FixtureDef fix;
         fix.shape = &box;
-        fix.restitution = 0.3f;
-        fix.friction = 0.8f;
+        fix.restitution = 0.6f;
+        fix.friction = 0.4f;
         m_floorBody->CreateFixture(&fix);
     }
 
@@ -169,6 +169,8 @@ void CountryElimination::initialize() {
 
     m_postProcessing.initialize(1080, 1920);
     m_background.initialize(1080, 1920, 100);
+
+    generateFlagTextures();
 
     if (m_font.loadFromFile("assets/fonts/JetBrainsMono-Regular.ttf")) {
         m_fontLoaded = true;
@@ -198,9 +200,11 @@ void CountryElimination::shutdown() {
     m_eliminatedQueue.clear();
     m_particles.clear();
     m_botRespawnTimers.clear();
+    m_avatarCache.clear();
     destroyArenaBody();
     if (m_leftWall && m_world) { m_world->DestroyBody(m_leftWall); m_leftWall = nullptr; }
     if (m_rightWall && m_world) { m_world->DestroyBody(m_rightWall); m_rightWall = nullptr; }
+    if (m_ceilingBody && m_world) { m_world->DestroyBody(m_ceilingBody); m_ceilingBody = nullptr; }
     if (m_floorBody && m_world) { m_world->DestroyBody(m_floorBody); m_floorBody = nullptr; }
     delete m_world;
     m_world = nullptr;
@@ -262,34 +266,49 @@ ScreenLayout CountryElimination::computeLayout(const sf::RenderTarget& target) c
 void CountryElimination::createBoundaryWalls() {
     if (!m_world) return;
 
-    // Left wall
+    // Left wall — at the left visible boundary
     {
         b2BodyDef bd;
         bd.type = b2_staticBody;
-        bd.position.Set(0.5f, (WORLD_CY + FLOOR_Y) / 2.0f);
+        bd.position.Set(WALL_LEFT_X, (WORLD_CY + FLOOR_Y) / 2.0f);
         m_leftWall = m_world->CreateBody(&bd);
         b2PolygonShape box;
         box.SetAsBox(0.5f, (FLOOR_Y - WORLD_CY + ARENA_RADIUS) / 2.0f);
         b2FixtureDef fix;
         fix.shape = &box;
-        fix.restitution = 0.4f;
-        fix.friction = 0.5f;
+        fix.restitution = 0.6f;
+        fix.friction = 0.3f;
         m_leftWall->CreateFixture(&fix);
     }
 
-    // Right wall
+    // Right wall — at the right visible boundary
     {
         b2BodyDef bd;
         bd.type = b2_staticBody;
-        bd.position.Set(WORLD_W - 0.5f, (WORLD_CY + FLOOR_Y) / 2.0f);
+        bd.position.Set(WALL_RIGHT_X, (WORLD_CY + FLOOR_Y) / 2.0f);
         m_rightWall = m_world->CreateBody(&bd);
         b2PolygonShape box;
         box.SetAsBox(0.5f, (FLOOR_Y - WORLD_CY + ARENA_RADIUS) / 2.0f);
         b2FixtureDef fix;
         fix.shape = &box;
-        fix.restitution = 0.4f;
-        fix.friction = 0.5f;
+        fix.restitution = 0.6f;
+        fix.friction = 0.3f;
         m_rightWall->CreateFixture(&fix);
+    }
+
+    // Ceiling — keeps eliminated balls from flying off the top
+    {
+        b2BodyDef bd;
+        bd.type = b2_staticBody;
+        bd.position.Set(WORLD_CX, CEILING_Y);
+        m_ceilingBody = m_world->CreateBody(&bd);
+        b2PolygonShape box;
+        box.SetAsBox(WORLD_W, 0.5f);
+        b2FixtureDef fix;
+        fix.shape = &box;
+        fix.restitution = 0.5f;
+        fix.friction = 0.3f;
+        m_ceilingBody->CreateFixture(&fix);
     }
 }
 
@@ -406,12 +425,12 @@ void CountryElimination::onChatMessage(const platform::ChatMessage& msg) {
         // Resolve country name/code to 2-letter ISO code
         std::string code = resolveCountryCode(label);
         if (code.empty()) code = randomCountryCode(m_rng);
-        cmdJoin(msg.userId, msg.displayName, code);
+        cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
     }
 }
 
 void CountryElimination::cmdJoin(const std::string& userId, const std::string& displayName,
-                                  const std::string& label) {
+                                  const std::string& label, const std::string& avatarUrl) {
     if (m_phase != GamePhase::Lobby && m_phase != GamePhase::Battle) return;
     if (m_players.count(userId)) return;
 
@@ -426,6 +445,7 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.userId = userId;
     p.displayName = displayName;
     p.label = label;
+    p.avatarUrl = avatarUrl;
     p.color = generateColor();
     p.radiusM = BALL_RADIUS;
     p.alive = true;
@@ -434,6 +454,9 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.prevPos = p.body->GetPosition();
     p.currPos = p.prevPos;
     m_players[userId] = std::move(p);
+
+    if (!avatarUrl.empty())
+        m_avatarCache.request(avatarUrl);
 
     if (!isBotId(userId)) {
         const auto& names = getCountryDisplayNames();
@@ -448,7 +471,7 @@ void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
     if (m_phase != GamePhase::Battle && m_phase != GamePhase::Lobby) return;
 
     if (!m_players.count(msg.userId)) {
-        cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng));
+        cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng), msg.avatarUrl);
         if (!m_players.count(msg.userId)) return;
     }
 
@@ -580,9 +603,16 @@ void CountryElimination::checkEliminations() {
 
             p.alive = false;
             p.body->SetGravityScale(1.0f);
-            p.body->SetLinearDamping(0.5f);
+            p.body->SetLinearDamping(0.2f);
             b2Vec2 vel = p.body->GetLinearVelocity();
-            p.body->SetLinearVelocity(b2Vec2(vel.x * 0.4f, 2.0f));
+            p.body->SetLinearVelocity(b2Vec2(vel.x * 0.5f, 2.0f));
+
+            // Update fixture for eliminated ball physics: bouncy, some friction
+            b2Fixture* fix = p.body->GetFixtureList();
+            if (fix) {
+                fix->SetRestitution(0.7f);
+                fix->SetFriction(0.2f);
+            }
 
             // Track in eliminated FIFO queue
             m_eliminatedQueue.push_back({id, 0.0f, false, 0.0f});
@@ -597,17 +627,6 @@ void CountryElimination::checkEliminations() {
                         p.userId, p.displayName, "country_elimination", 1, false);
                 } catch (...) {}
             }
-        }
-    }
-
-    // Settle eliminated balls at floor
-    for (auto& [id, p] : m_players) {
-        if (p.alive || p.eliminated || !p.body) continue;
-        b2Vec2 pos = p.body->GetPosition();
-        if (pos.y > FLOOR_Y - 1.0f) {
-            p.eliminated = true;
-            p.body->SetLinearVelocity(b2Vec2(0.0f, 0.0f));
-            p.body->SetType(b2_staticBody);
         }
     }
 }
@@ -806,6 +825,7 @@ void CountryElimination::update(double dt) {
     m_arenaGlowPhase += fdt * 1.5f;
     m_background.update(fdt);
     updateParticles(fdt);
+    m_avatarCache.processPendingUploads(2);
 
     for (auto& [id, p] : m_players) {
         if (p.hasShield) {
@@ -1275,17 +1295,62 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
 
         // Name below (alive only)
         if (m_fontLoaded && p.alive) {
-            sf::Text name;
-            name.setFont(m_font);
-            name.setString(p.displayName);
-            name.setCharacterSize(fs(11));
-            name.setFillColor(sf::Color(255, 255, 255, 180));
-            name.setOutlineColor(sf::Color(0, 0, 0, 140));
-            name.setOutlineThickness(1.0f);
-            auto nb = name.getLocalBounds();
-            name.setOrigin(nb.left + nb.width / 2.0f, 0.0f);
-            name.setPosition(sp.x, sp.y + rpx + 4.0f);
-            target.draw(name);
+            float nameY = sp.y + rpx + 4.0f;
+
+            // Avatar circle (left of name)
+            const sf::Texture* avatarTex = (!p.avatarUrl.empty())
+                ? m_avatarCache.getTexture(p.avatarUrl) : nullptr;
+
+            float avatarDiam = rpx * 0.9f * m_avatarScale;
+            float avatarOffset = 0.0f;
+
+            if (avatarTex) {
+                sf::Sprite avatar(*avatarTex);
+                avatar.setOrigin(32.0f, 32.0f);
+                float avatarS = avatarDiam / 64.0f;
+                avatar.setScale(avatarS, avatarS);
+                // Will position after we measure the name text
+                avatarOffset = avatarDiam / 2.0f + 3.0f;
+
+                sf::Text name;
+                name.setFont(m_font);
+                name.setString(p.displayName);
+                name.setCharacterSize(fs(static_cast<int>(11 * m_nameTextScale)));
+                auto nb = name.getLocalBounds();
+                float totalW = avatarDiam + 3.0f + nb.width;
+                float startX = sp.x - totalW / 2.0f;
+
+                avatar.setPosition(startX + avatarDiam / 2.0f, nameY + avatarDiam / 2.0f);
+                target.draw(avatar);
+
+                // Circular outline around avatar
+                sf::CircleShape ring(avatarDiam / 2.0f, 20);
+                ring.setOrigin(avatarDiam / 2.0f, avatarDiam / 2.0f);
+                ring.setPosition(avatar.getPosition());
+                ring.setFillColor(sf::Color::Transparent);
+                ring.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.5f)));
+                ring.setOutlineThickness(1.0f);
+                target.draw(ring);
+
+                name.setFillColor(sf::Color(255, 255, 255, 180));
+                name.setOutlineColor(sf::Color(0, 0, 0, 140));
+                name.setOutlineThickness(1.0f);
+                name.setOrigin(0.0f, 0.0f);
+                name.setPosition(startX + avatarDiam + 3.0f, nameY);
+                target.draw(name);
+            } else {
+                sf::Text name;
+                name.setFont(m_font);
+                name.setString(p.displayName);
+                name.setCharacterSize(fs(static_cast<int>(11 * m_nameTextScale)));
+                name.setFillColor(sf::Color(255, 255, 255, 180));
+                name.setOutlineColor(sf::Color(0, 0, 0, 140));
+                name.setOutlineThickness(1.0f);
+                auto nb = name.getLocalBounds();
+                name.setOrigin(nb.left + nb.width / 2.0f, 0.0f);
+                name.setPosition(sp.x, nameY);
+                target.draw(name);
+            }
         }
     }
 }
@@ -2225,6 +2290,10 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_elimFadeDuration = std::max(0.1f, settings["elim_fade_duration"].get<float>());
     if (settings.contains("elim_linger_duration") && settings["elim_linger_duration"].is_number())
         m_elimLingerDuration = std::max(0.5f, settings["elim_linger_duration"].get<float>());
+    if (settings.contains("name_text_scale") && settings["name_text_scale"].is_number())
+        m_nameTextScale = std::clamp(settings["name_text_scale"].get<float>(), 0.3f, 3.0f);
+    if (settings.contains("avatar_scale") && settings["avatar_scale"].is_number())
+        m_avatarScale = std::clamp(settings["avatar_scale"].get<float>(), 0.3f, 3.0f);
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
@@ -2252,6 +2321,8 @@ nlohmann::json CountryElimination::getSettings() const {
         {"max_eliminated_visible", m_maxEliminatedVisible},
         {"elim_fade_duration", m_elimFadeDuration},
         {"elim_linger_duration", m_elimLingerDuration},
+        {"name_text_scale", m_nameTextScale},
+        {"avatar_scale", m_avatarScale},
         {"text_elements", textElementsJson()},
     };
 }
