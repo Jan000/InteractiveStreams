@@ -221,7 +221,7 @@ void CountryElimination::initialize() {
     m_roundWinners.clear();
     m_currentBallSpeed = m_initialSpeed;
 
-    scheduleBotSpawns();
+    spawnBots();
 
     spdlog::info("[CountryElimination] Initialized.");
 }
@@ -847,7 +847,7 @@ void CountryElimination::resetForNextRound() {
     m_phase = GamePhase::Lobby;
     m_lobbyTimer = 0.0;
 
-    scheduleBotSpawns();
+    spawnBots();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
