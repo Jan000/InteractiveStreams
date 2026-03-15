@@ -464,7 +464,7 @@ void CountryElimination::onChatMessage(const platform::ChatMessage& msg) {
 
 void CountryElimination::cmdJoin(const std::string& userId, const std::string& displayName,
                                   const std::string& label, const std::string& avatarUrl) {
-    if (m_phase != GamePhase::Lobby && m_phase != GamePhase::Battle) return;
+    // Joins are allowed in ALL phases — viewers can join at any time.
 
     // Count alive entries for this user
     int aliveCount = 0;
@@ -520,7 +520,6 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
 
 void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
     if (msg.eventType.empty()) return;
-    if (m_phase != GamePhase::Battle && m_phase != GamePhase::Lobby) return;
 
     // Find first alive entry for this user (or any entry)
     Player* target = nullptr;
@@ -799,8 +798,19 @@ void CountryElimination::recordRoundWin(const Player& winner) {
 }
 
 void CountryElimination::resetForNextRound() {
+    // Collect human players to preserve across rounds
+    std::vector<std::pair<std::string, Player>> humansToKeep;
+    for (auto& [id, p] : m_players) {
+        if (!p.isBot()) {
+            humansToKeep.emplace_back(id, Player{
+                p.userId, p.displayName, p.label, p.avatarUrl, p.color,
+                nullptr, BALL_RADIUS, true, false, false, 0.0f, 0,
+                {0,0}, {0,0}
+            });
+        }
+    }
+
     if (m_elimPersistRounds) {
-        // Keep eliminated players (dead bodies on the floor), remove only alive players
         for (auto it = m_players.begin(); it != m_players.end(); ) {
             if (it->second.alive) {
                 if (it->second.body && m_world) m_world->DestroyBody(it->second.body);
@@ -809,7 +819,6 @@ void CountryElimination::resetForNextRound() {
                 ++it;
             }
         }
-        // m_eliminatedQueue stays untouched
     } else {
         for (auto& [id, p] : m_players) {
             if (p.body && m_world) { m_world->DestroyBody(p.body); p.body = nullptr; }
@@ -831,6 +840,20 @@ void CountryElimination::resetForNextRound() {
 
     m_phase = GamePhase::Lobby;
     m_lobbyTimer = 0.0;
+
+    // Re-spawn preserved human players with fresh bodies
+    std::uniform_real_distribution<float> aDist(0.0f, TAU);
+    std::uniform_real_distribution<float> rDist(0.0f, ARENA_RADIUS * 0.55f);
+    for (auto& [id, p] : humansToKeep) {
+        float a = aDist(m_rng);
+        float r = rDist(m_rng);
+        float sx = WORLD_CX + r * std::cos(a);
+        float sy = WORLD_CY + r * std::sin(a);
+        p.body = createPlayerBody(sx, sy, BALL_RADIUS);
+        p.prevPos = p.body->GetPosition();
+        p.currPos = p.prevPos;
+        m_players[id] = std::move(p);
+    }
 
     spawnBots();
 }
