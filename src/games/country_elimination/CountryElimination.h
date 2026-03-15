@@ -1,6 +1,7 @@
 #pragma once
 
 #include "games/IGame.h"
+#include "games/country_elimination/QuizQuestions.h"
 #include "core/AvatarCache.h"
 #include "rendering/PostProcessing.h"
 #include "rendering/Background.h"
@@ -227,6 +228,14 @@ private:
     void renderWinnerOverlay(sf::RenderTarget& target, const ScreenLayout& L);
     void renderEliminationFeed(sf::RenderTarget& target, const ScreenLayout& L);
     void renderSidePanels(sf::RenderTarget& target, const ScreenLayout& L);
+    void renderQuizOverlay(sf::RenderTarget& target, const ScreenLayout& L);
+
+    // Quiz
+    void startQuiz();
+    void endQuiz();
+    void updateQuiz(float dt);
+    void handleQuizAnswer(const std::string& userId, const std::string& displayName,
+                          int answerIndex);
 
     sf::Color generateColor();
 
@@ -327,6 +336,27 @@ private:
     float  m_labelTextScale         = 1.0f;
     float  m_avatarScale            = 1.0f;
     float  m_avatarOutlineThickness = 1.0f;
+
+    // ── Quiz State ───────────────────────────────────────────────────────
+
+    bool   m_quizEnabled       = true;
+    float  m_quizInterval      = 30.0f;  // seconds between quizzes
+    float  m_quizDuration      = 15.0f;  // seconds to answer
+    int    m_quizPoints        = 50;     // points for correct answer
+    float  m_quizShieldSecs    = 10.0f;  // shield duration for correct answer
+
+    bool   m_quizActive        = false;
+    float  m_quizTimer         = 0.0f;   // countdown while quiz is active
+    float  m_quizCooldown      = 0.0f;   // countdown until next quiz
+    int    m_quizCurrentIdx    = -1;     // index into catalog
+    float  m_quizRevealTimer   = 0.0f;   // time showing correct answer after quiz ends
+    int    m_quizCorrectCount  = 0;      // how many got it right this round
+
+    std::vector<int> m_quizOrder;        // shuffled question indices
+    int    m_quizOrderPos      = 0;      // position in shuffled order
+
+    // userId → answer index (0–3), -1 = not yet answered
+    std::unordered_map<std::string, int> m_quizAnswers;
 
     rendering::PostProcessing m_postProcessing;
     rendering::Background     m_background;

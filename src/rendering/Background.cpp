@@ -53,15 +53,23 @@ void Background::update(float dt) {
 
 void Background::render(sf::RenderTarget& target, float zoom,
                         float cx, float cy) {
+    float tw = static_cast<float>(target.getSize().x);
+    float th = static_cast<float>(target.getSize().y);
+    float sx = (m_width > 0.0f) ? tw / m_width : 1.0f;
+    float sy = (m_height > 0.0f) ? th / m_height : 1.0f;
+
+    sf::Transform xf;
+    xf.scale(sx, sy);
+
     if (zoom != 1.0f && zoom > 0.0f) {
-        sf::Transform xf;
-        xf.translate(cx, cy);
-        xf.scale(zoom, zoom);
-        xf.translate(-cx, -cy);
-        target.draw(m_vertices, sf::RenderStates(xf));
-    } else {
-        target.draw(m_vertices);
+        sf::Transform zf;
+        zf.translate(cx, cy);
+        zf.scale(zoom, zoom);
+        zf.translate(-cx, -cy);
+        xf = zf * xf;
     }
+
+    target.draw(m_vertices, sf::RenderStates(xf));
 }
 
 } // namespace is::rendering

@@ -221,6 +221,16 @@ void CountryElimination::initialize() {
     m_roundWinners.clear();
     m_currentBallSpeed = m_initialSpeed;
 
+    // Quiz init
+    m_quizActive = false;
+    m_quizCooldown = m_quizInterval;
+    m_quizCurrentIdx = -1;
+    m_quizRevealTimer = 0.0f;
+    m_quizCorrectCount = 0;
+    m_quizAnswers.clear();
+    m_quizOrder = shuffledQuizIndices(m_rng);
+    m_quizOrderPos = 0;
+
     spawnBots();
 
     spdlog::info("[CountryElimination] Initialized.");
@@ -236,6 +246,8 @@ void CountryElimination::shutdown() {
     m_particles.clear();
     m_botRespawnTimers.clear();
     m_pendingBotSpawns.clear();
+    m_quizActive = false;
+    m_quizAnswers.clear();
     m_avatarCache.clear();
     destroyArenaBody();
     if (m_leftWall && m_world) { m_world->DestroyBody(m_leftWall); m_leftWall = nullptr; }
@@ -470,6 +482,15 @@ void CountryElimination::onChatMessage(const platform::ChatMessage& msg) {
         std::string code = resolveCountryCode(label);
         if (code.empty()) code = randomCountryCode(m_rng);
         cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
+    }
+
+    // Quiz answers: 1-4 or a-d
+    if (m_quizActive && cmd.size() == 1) {
+        int ans = -1;
+        if (cmd[0] >= '1' && cmd[0] <= '4') ans = cmd[0] - '1';
+        else if (cmd[0] >= 'a' && cmd[0] <= 'd') ans = cmd[0] - 'a';
+        if (ans >= 0)
+            handleQuizAnswer(msg.userId, msg.displayName, ans);
     }
 }
 
@@ -1169,6 +1190,7 @@ void CountryElimination::update(double dt) {
         }
 
         respawnDeadBots(fdt);
+        updateQuiz(fdt);
         checkRoundEnd();
         break;
     }
@@ -1248,6 +1270,7 @@ void CountryElimination::render(sf::RenderTarget& target, double alpha) {
     renderParticles(target);
     renderEliminationFeed(target, L);
     renderUI(target, L);
+    renderQuizOverlay(target, L);
     renderRoundWinners(target, L);
 
     if (L.isDesktop) renderSidePanels(target, L);
@@ -2682,6 +2705,7 @@ nlohmann::json CountryElimination::getState() const {
 nlohmann::json CountryElimination::getCommands() const {
     return nlohmann::json::array({
         {{"command", "join"}, {"description", "Join with a country label"}, {"aliases", nlohmann::json::array({"play"})}},
+        {{"command", "1/2/3/4"}, {"description", "Answer quiz questions (A-D)"}, {"aliases", nlohmann::json::array({"a","b","c","d"})}},
     });
 }
 
@@ -2762,6 +2786,18 @@ void CountryElimination::configure(const nlohmann::json& settings) {
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
+    // Quiz settings
+    if (settings.contains("quiz_enabled") && settings["quiz_enabled"].is_boolean())
+        m_quizEnabled = settings["quiz_enabled"].get<bool>();
+    if (settings.contains("quiz_interval") && settings["quiz_interval"].is_number())
+        m_quizInterval = std::max(10.0f, settings["quiz_interval"].get<float>());
+    if (settings.contains("quiz_duration") && settings["quiz_duration"].is_number())
+        m_quizDuration = std::clamp(settings["quiz_duration"].get<float>(), 5.0f, 60.0f);
+    if (settings.contains("quiz_points") && settings["quiz_points"].is_number_integer())
+        m_quizPoints = std::max(0, settings["quiz_points"].get<int>());
+    if (settings.contains("quiz_shield_secs") && settings["quiz_shield_secs"].is_number())
+        m_quizShieldSecs = std::max(0.0f, settings["quiz_shield_secs"].get<float>());
+
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
 
@@ -2802,8 +2838,285 @@ nlohmann::json CountryElimination::getSettings() const {
         {"max_entries_per_player", m_maxEntriesPerPlayer},
         {"label_text_scale", m_labelTextScale},
         {"avatar_outline_thickness", m_avatarOutlineThickness},
+        {"quiz_enabled", m_quizEnabled},
+        {"quiz_interval", m_quizInterval},
+        {"quiz_duration", m_quizDuration},
+        {"quiz_points", m_quizPoints},
+        {"quiz_shield_secs", m_quizShieldSecs},
         {"text_elements", textElementsJson()},
     };
+}
+
+} // namespace is::games::country_elimination
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Quiz System  (placed after namespace close — re-opened)
+// ═════════════════════════════════════════════════════════════════════════════
+namespace is::games::country_elimination {
+
+// ── Quiz lifecycle ──────────────────────────────────────────────────────────
+
+void CountryElimination::startQuiz() {
+    auto& catalog = getQuizCatalog();
+    if (catalog.empty()) return;
+
+    // Pick next question from shuffled order
+    if (m_quizOrderPos >= static_cast<int>(m_quizOrder.size())) {
+        m_quizOrder = shuffledQuizIndices(m_rng);
+        m_quizOrderPos = 0;
+    }
+    m_quizCurrentIdx = m_quizOrder[m_quizOrderPos++];
+    m_quizActive = true;
+    m_quizTimer = m_quizDuration;
+    m_quizRevealTimer = 0.0f;
+    m_quizCorrectCount = 0;
+    m_quizAnswers.clear();
+
+    spdlog::info("[CountryElimination] Quiz started: Q#{}", m_quizCurrentIdx);
+}
+
+void CountryElimination::endQuiz() {
+    if (!m_quizActive && m_quizRevealTimer <= 0.0f) return;
+
+    auto& catalog = getQuizCatalog();
+    if (m_quizCurrentIdx < 0 || m_quizCurrentIdx >= static_cast<int>(catalog.size())) {
+        m_quizActive = false;
+        return;
+    }
+
+    const auto& q = catalog[m_quizCurrentIdx];
+    int correctIdx = q.correctIndex;
+
+    // Award points and shields to correct answerers
+    m_quizCorrectCount = 0;
+    for (const auto& [userId, ans] : m_quizAnswers) {
+        if (ans != correctIdx) continue;
+        m_quizCorrectCount++;
+
+        // Find a player entry for this user
+        for (auto& [key, p] : m_players) {
+            if (p.userId != userId) continue;
+            p.score += m_quizPoints;
+            if (p.alive && m_quizShieldSecs > 0.0f) {
+                p.hasShield = true;
+                p.shieldTimer = std::max(p.shieldTimer, m_quizShieldSecs);
+            }
+            break; // one reward per user
+        }
+    }
+
+    m_quizActive = false;
+    m_quizRevealTimer = 4.0f; // show correct answer for 4 seconds
+    m_quizCooldown = m_quizInterval;
+
+    if (m_quizCorrectCount > 0) {
+        sendChatFeedback("✅ " + std::to_string(m_quizCorrectCount) + " correct! Answer: "
+                         + std::string(1, static_cast<char>('A' + correctIdx)) + ") " + q.options[correctIdx]);
+    } else {
+        sendChatFeedback("❌ Nobody got it! Answer: "
+                         + std::string(1, static_cast<char>('A' + correctIdx)) + ") " + q.options[correctIdx]);
+    }
+}
+
+void CountryElimination::updateQuiz(float dt) {
+    if (!m_quizEnabled) return;
+
+    // Reveal phase (showing correct answer after quiz ended)
+    if (m_quizRevealTimer > 0.0f) {
+        m_quizRevealTimer -= dt;
+        return;
+    }
+
+    // Active quiz countdown
+    if (m_quizActive) {
+        m_quizTimer -= dt;
+        if (m_quizTimer <= 0.0f) {
+            endQuiz();
+        }
+        return;
+    }
+
+    // Cooldown until next quiz
+    m_quizCooldown -= dt;
+    if (m_quizCooldown <= 0.0f) {
+        startQuiz();
+    }
+}
+
+void CountryElimination::handleQuizAnswer(const std::string& userId,
+                                           const std::string& displayName,
+                                           int answerIndex) {
+    if (!m_quizActive) return;
+    if (answerIndex < 0 || answerIndex > 3) return;
+
+    // Only first answer counts
+    if (m_quizAnswers.count(userId)) return;
+    m_quizAnswers[userId] = answerIndex;
+}
+
+// ── Quiz Rendering ──────────────────────────────────────────────────────────
+
+void CountryElimination::renderQuizOverlay(sf::RenderTarget& target, const ScreenLayout& L) {
+    if (!m_fontLoaded) return;
+    if (!m_quizEnabled) return;
+
+    auto& catalog = getQuizCatalog();
+    if (m_quizCurrentIdx < 0 || m_quizCurrentIdx >= static_cast<int>(catalog.size())) return;
+
+    bool showingReveal = (!m_quizActive && m_quizRevealTimer > 0.0f);
+    if (!m_quizActive && !showingReveal) return;
+
+    const auto& q = catalog[m_quizCurrentIdx];
+    float cx = (L.safeLeft + L.safeRight) / 2.0f;
+
+    // Position: below the arena circle
+    float topY = L.arenaCY + L.arenaRadiusPx + L.H * 0.03f;
+    float boxW = L.safeW * 0.85f;
+    float boxX = cx - boxW / 2.0f;
+
+    // Semi-transparent background panel
+    float panelH = L.H * 0.22f;
+    sf::RectangleShape panel(sf::Vector2f(boxW, panelH));
+    panel.setPosition(boxX, topY);
+    panel.setFillColor(sf::Color(15, 18, 40, 210));
+    panel.setOutlineColor(sf::Color(100, 140, 220, 120));
+    panel.setOutlineThickness(1.5f);
+    target.draw(panel);
+
+    float pad = L.safeW * 0.03f;
+    float textX = boxX + pad;
+    float textW = boxW - pad * 2.0f;
+
+    // ── Timer bar ────────────────────────────────────────────────────────
+    if (m_quizActive) {
+        float barH = 4.0f;
+        float frac = std::clamp(m_quizTimer / m_quizDuration, 0.0f, 1.0f);
+        sf::RectangleShape barBg(sf::Vector2f(boxW - pad * 2, barH));
+        barBg.setPosition(textX, topY + 6.0f);
+        barBg.setFillColor(sf::Color(40, 40, 60, 150));
+        target.draw(barBg);
+        sf::RectangleShape bar(sf::Vector2f((boxW - pad * 2) * frac, barH));
+        bar.setPosition(textX, topY + 6.0f);
+        sf::Uint8 r = static_cast<sf::Uint8>(255 * (1.0f - frac));
+        sf::Uint8 g = static_cast<sf::Uint8>(255 * frac);
+        bar.setFillColor(sf::Color(r, g, 80));
+        target.draw(bar);
+    }
+
+    // ── Question text ────────────────────────────────────────────────────
+    float qY = topY + 16.0f;
+    {
+        sf::Text qt;
+        qt.setFont(m_font);
+        qt.setString(q.question);
+        qt.setCharacterSize(fs(16));
+        qt.setFillColor(sf::Color(255, 255, 255, 230));
+        qt.setOutlineColor(sf::Color(0, 0, 0, 180));
+        qt.setOutlineThickness(1.0f);
+        // Wrap: if too wide, shrink font
+        auto lb = qt.getLocalBounds();
+        if (lb.width > textW) {
+            float scale = textW / lb.width;
+            qt.setScale(scale, scale);
+            lb = qt.getLocalBounds();
+        }
+        qt.setOrigin(lb.left + lb.width / 2.0f, lb.top);
+        qt.setPosition(cx, qY);
+        target.draw(qt);
+        qY += lb.height * qt.getScale().y + 12.0f;
+    }
+
+    // ── 4 answer options (2×2 grid) ──────────────────────────────────────
+    const char* labels[] = {"A)", "B)", "C)", "D)"};
+    sf::Color optColors[] = {
+        sf::Color(70, 130, 230),  // A - blue
+        sf::Color(230, 160, 50),  // B - orange
+        sf::Color(60, 190, 100),  // C - green
+        sf::Color(200, 70, 100),  // D - red/pink
+    };
+
+    float cellW = (textW - pad) / 2.0f;
+    float cellH = (panelH - (qY - topY) - 14.0f) / 2.0f;
+    cellH = std::max(cellH, 28.0f);
+
+    for (int i = 0; i < 4; ++i) {
+        int col = i % 2;
+        int row = i / 2;
+        float ox = textX + col * (cellW + pad);
+        float oy = qY + row * (cellH + 4.0f);
+
+        // Cell background
+        sf::RectangleShape cell(sf::Vector2f(cellW, cellH));
+        cell.setPosition(ox, oy);
+
+        bool isCorrect = (i == q.correctIndex);
+        if (showingReveal && isCorrect) {
+            cell.setFillColor(sf::Color(30, 140, 60, 200));
+            cell.setOutlineColor(sf::Color(80, 255, 120, 200));
+            cell.setOutlineThickness(2.0f);
+        } else if (showingReveal && !isCorrect) {
+            cell.setFillColor(sf::Color(60, 20, 20, 150));
+            cell.setOutlineColor(sf::Color(100, 50, 50, 80));
+            cell.setOutlineThickness(1.0f);
+        } else {
+            cell.setFillColor(sf::Color(optColors[i].r, optColors[i].g, optColors[i].b, 50));
+            cell.setOutlineColor(sf::Color(optColors[i].r, optColors[i].g, optColors[i].b, 140));
+            cell.setOutlineThickness(1.0f);
+        }
+        target.draw(cell);
+
+        // Option text
+        sf::Text ot;
+        ot.setFont(m_font);
+        ot.setString(std::string(labels[i]) + " " + q.options[i]);
+        ot.setCharacterSize(fs(13));
+        ot.setFillColor(sf::Color(255, 255, 255, showingReveal && !isCorrect ? static_cast<sf::Uint8>(100) : static_cast<sf::Uint8>(220)));
+        ot.setOutlineColor(sf::Color(0, 0, 0, 150));
+        ot.setOutlineThickness(1.0f);
+
+        auto lb = ot.getLocalBounds();
+        if (lb.width > cellW - 10.0f) {
+            float scale = (cellW - 10.0f) / lb.width;
+            ot.setScale(scale, scale);
+            lb = ot.getLocalBounds();
+        }
+        ot.setOrigin(lb.left, lb.top + lb.height / 2.0f);
+        ot.setPosition(ox + 6.0f, oy + cellH / 2.0f);
+        target.draw(ot);
+    }
+
+    // ── Result text during reveal phase ──────────────────────────────────
+    if (showingReveal) {
+        sf::Text rt;
+        rt.setFont(m_font);
+        if (m_quizCorrectCount > 0)
+            rt.setString(std::to_string(m_quizCorrectCount) + " correct!");
+        else
+            rt.setString("Nobody got it!");
+        rt.setCharacterSize(fs(14));
+        rt.setFillColor(m_quizCorrectCount > 0 ? sf::Color(80, 255, 120, 230) : sf::Color(255, 100, 100, 230));
+        rt.setOutlineColor(sf::Color(0, 0, 0, 180));
+        rt.setOutlineThickness(1.0f);
+        auto lb = rt.getLocalBounds();
+        rt.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
+        rt.setPosition(cx, topY + panelH - 10.0f);
+        target.draw(rt);
+    }
+
+    // ── "Answer 1-4 in chat!" hint during active quiz ────────────────────
+    if (m_quizActive) {
+        sf::Text ht;
+        ht.setFont(m_font);
+        ht.setString("Type 1-4 in chat to answer!");
+        ht.setCharacterSize(fs(11));
+        ht.setFillColor(sf::Color(200, 200, 255, 180));
+        ht.setOutlineColor(sf::Color(0, 0, 0, 120));
+        ht.setOutlineThickness(1.0f);
+        auto lb = ht.getLocalBounds();
+        ht.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
+        ht.setPosition(cx, topY + panelH - 10.0f);
+        target.draw(ht);
+    }
 }
 
 } // namespace is::games::country_elimination
