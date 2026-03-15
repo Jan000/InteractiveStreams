@@ -465,7 +465,26 @@ void CountryElimination::onChatMessage(const platform::ChatMessage& msg) {
 void CountryElimination::cmdJoin(const std::string& userId, const std::string& displayName,
                                   const std::string& label, const std::string& avatarUrl) {
     if (m_phase != GamePhase::Lobby && m_phase != GamePhase::Battle) return;
-    if (m_players.count(userId)) return;
+
+    // Count alive entries for this user
+    int aliveCount = 0;
+    int totalCount = 0;
+    for (const auto& [key, pl] : m_players) {
+        if (pl.userId == userId) {
+            totalCount++;
+            if (pl.alive) aliveCount++;
+        }
+    }
+    if (aliveCount >= m_maxEntriesPerPlayer) return;
+
+    // Find next available map key
+    std::string mapKey = userId;
+    if (m_players.count(mapKey)) {
+        for (int n = 2; ; ++n) {
+            mapKey = userId + "#" + std::to_string(n);
+            if (!m_players.count(mapKey)) break;
+        }
+    }
 
     std::uniform_real_distribution<float> aDist(0.0f, TAU);
     std::uniform_real_distribution<float> rDist(0.0f, ARENA_RADIUS * 0.55f);
@@ -486,12 +505,12 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.body = createPlayerBody(sx, sy, BALL_RADIUS);
     p.prevPos = p.body->GetPosition();
     p.currPos = p.prevPos;
-    m_players[userId] = std::move(p);
+    m_players[mapKey] = std::move(p);
 
     if (!avatarUrl.empty())
         m_avatarCache.request(avatarUrl);
 
-    if (!isBotId(userId)) {
+    if (totalCount == 0 && !isBotId(userId)) {
         const auto& names = getCountryDisplayNames();
         auto nameIt = names.find(label);
         std::string countryName = (nameIt != names.end()) ? nameIt->second : label;
@@ -503,12 +522,26 @@ void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
     if (msg.eventType.empty()) return;
     if (m_phase != GamePhase::Battle && m_phase != GamePhase::Lobby) return;
 
-    if (!m_players.count(msg.userId)) {
-        cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng), msg.avatarUrl);
-        if (!m_players.count(msg.userId)) return;
+    // Find first alive entry for this user (or any entry)
+    Player* target = nullptr;
+    bool hasAny = false;
+    for (auto& [key, pl] : m_players) {
+        if (pl.userId == msg.userId) {
+            hasAny = true;
+            if (pl.alive && !target) target = &pl;
+        }
     }
+    if (!hasAny) {
+        cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng), msg.avatarUrl);
+        // Find the newly created entry
+        for (auto& [key, pl] : m_players) {
+            if (pl.userId == msg.userId && pl.alive) { target = &pl; break; }
+        }
+        if (!target) return;
+    }
+    if (!target) return;
 
-    Player& p = m_players[msg.userId];
+    Player& p = *target;
 
     if (msg.eventType == "yt_subscribe" || msg.eventType == "twitch_sub") {
         p.hasShield = true;
@@ -601,6 +634,32 @@ void CountryElimination::enforceConstantVelocity() {
         } else if (std::abs(spd - m_currentBallSpeed) > 0.1f) {
             float scale = m_currentBallSpeed / spd;
             p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+        }
+
+        // Anti-wall-riding: if the ball is near the arena wall and its
+        // velocity is not pointing inward, reflect the radial component so
+        // it bounces cleanly instead of riding along with the rotating ring.
+        b2Vec2 pos = p.body->GetPosition();
+        float dx = pos.x - WORLD_CX;
+        float dy = pos.y - WORLD_CY;
+        float dist2 = dx * dx + dy * dy;
+        float wallProx = ARENA_RADIUS - p.radiusM - 0.3f;
+        if (dist2 > wallProx * wallProx) {
+            float dist = std::sqrt(dist2);
+            float rx = dx / dist;
+            float ry = dy / dist;
+            vel = p.body->GetLinearVelocity();
+            float radialVel = vel.x * rx + vel.y * ry;
+            if (radialVel >= 0.0f) {
+                // Remove outward component, reflect inward
+                vel.x -= 2.0f * radialVel * rx;
+                vel.y -= 2.0f * radialVel * ry;
+                spd = vel.Length();
+                if (spd > 0.01f) {
+                    float scale = m_currentBallSpeed / spd;
+                    p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+                }
+            }
         }
     }
 }
@@ -1353,7 +1412,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
 
         // Ball body
         {
-            float outlineThk = m_flagOutline ? std::max(m_flagOutlineThickness, rpx * 0.08f) : 0.0f;
+            float outlineThk = m_flagOutline ? m_flagOutlineThickness : 0.0f;
             sf::Color outlineCol(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.7f));
 
             if (m_flagShapeRect) {
@@ -1436,7 +1495,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             sf::Text lbl;
             lbl.setFont(m_font);
             lbl.setString(p.label);
-            lbl.setCharacterSize(fs(static_cast<int>(rpx * 0.85f)));
+            lbl.setCharacterSize(fs(static_cast<int>(rpx * 0.85f * m_labelTextScale)));
             lbl.setFillColor(sf::Color(255, 255, 255, baseAlpha));
             lbl.setOutlineColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(baseAlpha * 0.8f)));
             lbl.setOutlineThickness(1.5f);
@@ -1482,7 +1541,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 ring.setPosition(avatar.getPosition());
                 ring.setFillColor(sf::Color::Transparent);
                 ring.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.5f)));
-                ring.setOutlineThickness(1.0f);
+                ring.setOutlineThickness(m_avatarOutlineThickness);
                 target.draw(ring);
 
                 name.setFillColor(sf::Color(255, 255, 255, 180));
@@ -2585,6 +2644,12 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_allowReentry = settings["allow_reentry"].get<bool>();
     if (settings.contains("show_bot_names") && settings["show_bot_names"].is_boolean())
         m_showBotNames = settings["show_bot_names"].get<bool>();
+    if (settings.contains("max_entries_per_player") && settings["max_entries_per_player"].is_number_integer())
+        m_maxEntriesPerPlayer = std::max(1, settings["max_entries_per_player"].get<int>());
+    if (settings.contains("label_text_scale") && settings["label_text_scale"].is_number())
+        m_labelTextScale = std::clamp(settings["label_text_scale"].get<float>(), 0.3f, 3.0f);
+    if (settings.contains("avatar_outline_thickness") && settings["avatar_outline_thickness"].is_number())
+        m_avatarOutlineThickness = std::clamp(settings["avatar_outline_thickness"].get<float>(), 0.0f, 5.0f);
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
@@ -2625,6 +2690,9 @@ nlohmann::json CountryElimination::getSettings() const {
         {"rainbow_ring", m_rainbowRing},
         {"allow_reentry", m_allowReentry},
         {"show_bot_names", m_showBotNames},
+        {"max_entries_per_player", m_maxEntriesPerPlayer},
+        {"label_text_scale", m_labelTextScale},
+        {"avatar_outline_thickness", m_avatarOutlineThickness},
         {"text_elements", textElementsJson()},
     };
 }

@@ -271,6 +271,9 @@ private:
     bool   m_flagOutline          = true;
     float  m_flagOutlineThickness = 1.5f;
 
+    // Multi-join
+    int    m_maxEntriesPerPlayer = 1;
+
     // Visual / gameplay toggles
     bool   m_rainbowRing    = true;
     bool   m_allowReentry   = true;
@@ -290,8 +293,10 @@ private:
     std::string m_championId;
 
     // Visual size settings
-    float  m_nameTextScale       = 1.0f;
-    float  m_avatarScale         = 1.0f;
+    float  m_nameTextScale          = 1.0f;
+    float  m_labelTextScale         = 1.0f;
+    float  m_avatarScale            = 1.0f;
+    float  m_avatarOutlineThickness = 1.0f;
 
     rendering::PostProcessing m_postProcessing;
     rendering::Background     m_background;

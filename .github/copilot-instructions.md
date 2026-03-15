@@ -480,6 +480,9 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - `rainbow_ring`: Arena-Ring in animierten Regenbogenfarben (default true)
 - `allow_reentry`: Spieler, die zurück in die Arena prallen, werden wiederbelebt (default true)
 - `show_bot_names`: Namen unter Bot-Spielern anzeigen (default true)
+- `max_entries_per_player`: Wie viele Bälle ein Spieler gleichzeitig haben kann (default 1)
+- `label_text_scale`: Skalierung des Label-Texts auf dem Ball (default 1.0)
+- `avatar_outline_thickness`: Dicke des Rahmens um das Profilbild unter dem Ball (default 1.0)
 
 ---
 
