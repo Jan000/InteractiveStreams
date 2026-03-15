@@ -735,12 +735,25 @@ void CountryElimination::recordRoundWin(const Player& winner) {
 }
 
 void CountryElimination::resetForNextRound() {
-    for (auto& [id, p] : m_players) {
-        if (p.body && m_world) { m_world->DestroyBody(p.body); p.body = nullptr; }
+    if (m_elimPersistRounds) {
+        // Keep eliminated players (dead bodies on the floor), remove only alive players
+        for (auto it = m_players.begin(); it != m_players.end(); ) {
+            if (it->second.alive) {
+                if (it->second.body && m_world) m_world->DestroyBody(it->second.body);
+                it = m_players.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        // m_eliminatedQueue stays untouched
+    } else {
+        for (auto& [id, p] : m_players) {
+            if (p.body && m_world) { m_world->DestroyBody(p.body); p.body = nullptr; }
+        }
+        m_players.clear();
+        m_eliminatedQueue.clear();
     }
-    m_players.clear();
     m_eliminationFeed.clear();
-    m_eliminatedQueue.clear();
     m_winnerId.clear();
     m_particles.clear();
     m_botRespawnTimers.clear();
@@ -885,13 +898,16 @@ void CountryElimination::update(double dt) {
     // Update eliminated ball FIFO fade tracking
     for (auto& eb : m_eliminatedQueue) eb.age += fdt;
     // Mark oldest balls for fading when over limit (0 = no limit)
-    int visibleCount = static_cast<int>(m_eliminatedQueue.size());
-    int overLimit = (m_maxEliminatedVisible > 0) ? visibleCount - m_maxEliminatedVisible : 0;
-    if (overLimit > 0) {
-        for (int i = 0; i < overLimit && i < visibleCount; ++i) {
-            if (!m_eliminatedQueue[i].fading) {
-                m_eliminatedQueue[i].fading = true;
-                m_eliminatedQueue[i].fadeProgress = 0.0f;
+    // When infinite linger is on, skip count-based fading entirely
+    if (!m_elimInfiniteLinger) {
+        int visibleCount = static_cast<int>(m_eliminatedQueue.size());
+        int overLimit = (m_maxEliminatedVisible > 0) ? visibleCount - m_maxEliminatedVisible : 0;
+        if (overLimit > 0) {
+            for (int i = 0; i < overLimit && i < visibleCount; ++i) {
+                if (!m_eliminatedQueue[i].fading) {
+                    m_eliminatedQueue[i].fading = true;
+                    m_eliminatedQueue[i].fadeProgress = 0.0f;
+                }
             }
         }
     }
@@ -2410,6 +2426,8 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_flagOutlineThickness = std::clamp(settings["flag_outline_thickness"].get<float>(), 0.0f, 10.0f);
     if (settings.contains("elim_infinite_linger") && settings["elim_infinite_linger"].is_boolean())
         m_elimInfiniteLinger = settings["elim_infinite_linger"].get<bool>();
+    if (settings.contains("elim_persist_rounds") && settings["elim_persist_rounds"].is_boolean())
+        m_elimPersistRounds = settings["elim_persist_rounds"].get<bool>();
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
@@ -2443,6 +2461,7 @@ nlohmann::json CountryElimination::getSettings() const {
         {"flag_outline", m_flagOutline},
         {"flag_outline_thickness", m_flagOutlineThickness},
         {"elim_infinite_linger", m_elimInfiniteLinger},
+        {"elim_persist_rounds", m_elimPersistRounds},
         {"text_elements", textElementsJson()},
     };
 }

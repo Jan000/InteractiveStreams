@@ -265,6 +265,7 @@ private:
     float  m_elimFadeDuration     = 2.0f;
     float  m_elimLingerDuration   = 8.0f;
     bool   m_elimInfiniteLinger   = false;
+    bool   m_elimPersistRounds    = false;
 
     // Flag display
     bool   m_flagShapeRect        = false;

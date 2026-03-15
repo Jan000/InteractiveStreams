@@ -116,7 +116,8 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "max_eliminated_visible", label: "Max Eliminated Visible", description: "Maximum number of eliminated balls visible on the floor (0 = no limit)", type: "int", min: 0, step: 1, defaultValue: 20 },
     { key: "elim_linger_duration", label: "Eliminated Linger Duration (s)", description: "How long eliminated balls rest on the floor before fading out", type: "float", min: 0.5, step: 0.5, defaultValue: 8.0 },
     { key: "elim_fade_duration", label: "Eliminated Fade Duration (s)", description: "How long the fade-out animation takes for removed eliminated balls", type: "float", min: 0.1, step: 0.1, defaultValue: 2.0 },
-    { key: "elim_infinite_linger", label: "Infinite Linger", description: "Eliminated balls stay forever until max visible count is reached (ignores linger duration)", type: "bool", defaultValue: false },
+    { key: "elim_infinite_linger", label: "Infinite Linger", description: "Eliminated balls stay forever — disables both time-based and count-based fading entirely", type: "bool", defaultValue: false },
+    { key: "elim_persist_rounds", label: "Persist Across Rounds", description: "Eliminated balls remain on the floor between rounds instead of being removed", type: "bool", defaultValue: false },
     // --- Visual ---
     { key: "flag_shape_rect", label: "Rectangular Flags", description: "Display flags as rectangles instead of circles (hitbox adjusts accordingly)", type: "bool", defaultValue: false },
     { key: "flag_outline", label: "Flag Outline", description: "Show a white outline/border around flags", type: "bool", defaultValue: true },

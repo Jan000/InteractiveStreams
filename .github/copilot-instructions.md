@@ -476,6 +476,7 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - `bot_respawn_delay`: Respawn-Verzögerung in Sekunden (default 3.0)
 - `flag_shape_rect`: Flaggen als Rechteck statt Kreis anzeigen, Hitbox passt sich an (default false)
 - `elim_infinite_linger`: Eliminierte Bälle bleiben unendlich, bis max_eliminated_visible erreicht (default false)
+- `elim_persist_rounds`: Eliminierte Bälle bleiben zwischen Runden liegen (default false)
 
 ---
 
