@@ -15,6 +15,32 @@ REGISTER_GAME(CountryElimination, "country_elimination");
 static constexpr float PI  = 3.14159265358979323846f;
 static constexpr float TAU = 2.0f * PI;
 
+static inline bool isBotId(const std::string& id) {
+    return id.size() >= 6 && id.rfind("__bot_", 0) == 0;
+}
+
+static const char* BOT_NAMES[] = {
+    "America", "Britain", "France", "Germany", "Japan",
+    "Brazil", "India", "China", "Russia", "Korea",
+    "Italy", "Spain", "Mexico", "Canada", "Australia",
+    "Portugal", "Holland", "Sweden", "Poland", "Turkey",
+    "Argentina", "Colombia", "Chile", "Peru", "Norway",
+    "Denmark", "Finland", "Belgium", "Austria", "Swiss",
+    "Greece", "Ireland", "NewZealand", "SouthAfrica", "Egypt",
+    "Thailand", "Vietnam", "Philippines", "Indonesia", "Malaysia",
+};
+static const char* BOT_LABELS[] = {
+    "USA", "GBR", "FRA", "DEU", "JPN",
+    "BRA", "IND", "CHN", "RUS", "KOR",
+    "ITA", "ESP", "MEX", "CAN", "AUS",
+    "PRT", "NLD", "SWE", "POL", "TUR",
+    "ARG", "COL", "CHL", "PER", "NOR",
+    "DNK", "FIN", "BEL", "AUT", "CHE",
+    "GRC", "IRL", "NZL", "ZAF", "EGY",
+    "THA", "VNM", "PHL", "IDN", "MYS",
+};
+static constexpr int NUM_BOT_NAMES = sizeof(BOT_NAMES) / sizeof(BOT_NAMES[0]);
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Construction
 // ═════════════════════════════════════════════════════════════════════════════
@@ -65,7 +91,14 @@ void CountryElimination::initialize() {
         m_floorBody->CreateFixture(&fix);
     }
 
+    createBoundaryWalls();
+
+    // Lobby starts with closed ring (no gap)
+    m_currentGapAngle = 0.0f;
     createArenaBody();
+
+    // Arena always rotates
+    if (m_arenaBody) m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
 
     m_postProcessing.initialize(1080, 1920);
     m_background.initialize(1080, 1920, 100);
@@ -82,6 +115,9 @@ void CountryElimination::initialize() {
     m_gameWon = false;
     m_championId.clear();
     m_roundWinners.clear();
+    m_currentBallSpeed = m_initialSpeed;
+
+    spawnBots();
 
     spdlog::info("[CountryElimination] Initialized.");
 }
@@ -93,7 +129,10 @@ void CountryElimination::shutdown() {
     m_players.clear();
     m_eliminationFeed.clear();
     m_particles.clear();
+    m_botRespawnTimers.clear();
     destroyArenaBody();
+    if (m_leftWall && m_world) { m_world->DestroyBody(m_leftWall); m_leftWall = nullptr; }
+    if (m_rightWall && m_world) { m_world->DestroyBody(m_rightWall); m_rightWall = nullptr; }
     if (m_floorBody && m_world) { m_world->DestroyBody(m_floorBody); m_floorBody = nullptr; }
     delete m_world;
     m_world = nullptr;
@@ -143,6 +182,40 @@ ScreenLayout CountryElimination::computeLayout(const sf::RenderTarget& target) c
 // Arena Physics
 // ═════════════════════════════════════════════════════════════════════════════
 
+void CountryElimination::createBoundaryWalls() {
+    if (!m_world) return;
+
+    // Left wall
+    {
+        b2BodyDef bd;
+        bd.type = b2_staticBody;
+        bd.position.Set(0.5f, (WORLD_CY + FLOOR_Y) / 2.0f);
+        m_leftWall = m_world->CreateBody(&bd);
+        b2PolygonShape box;
+        box.SetAsBox(0.5f, (FLOOR_Y - WORLD_CY + ARENA_RADIUS) / 2.0f);
+        b2FixtureDef fix;
+        fix.shape = &box;
+        fix.restitution = 0.4f;
+        fix.friction = 0.5f;
+        m_leftWall->CreateFixture(&fix);
+    }
+
+    // Right wall
+    {
+        b2BodyDef bd;
+        bd.type = b2_staticBody;
+        bd.position.Set(WORLD_W - 0.5f, (WORLD_CY + FLOOR_Y) / 2.0f);
+        m_rightWall = m_world->CreateBody(&bd);
+        b2PolygonShape box;
+        box.SetAsBox(0.5f, (FLOOR_Y - WORLD_CY + ARENA_RADIUS) / 2.0f);
+        b2FixtureDef fix;
+        fix.shape = &box;
+        fix.restitution = 0.4f;
+        fix.friction = 0.5f;
+        m_rightWall->CreateFixture(&fix);
+    }
+}
+
 void CountryElimination::createArenaBody() {
     if (!m_world) return;
     destroyArenaBody();
@@ -158,9 +231,13 @@ void CountryElimination::createArenaBody() {
 
     for (int i = 0; i < WALL_SEGMENTS; ++i) {
         float angle = i * angleStep;
-        float norm = angle;
-        if (norm > PI) norm -= TAU;
-        if (std::abs(norm) < GAP_HALF_ANGLE) continue;
+
+        // Skip gap segments (only if gap > 0)
+        if (m_currentGapAngle > 0.001f) {
+            float norm = angle;
+            if (norm > PI) norm -= TAU;
+            if (std::abs(norm) < m_currentGapAngle) continue;
+        }
 
         float mx = ARENA_RADIUS * std::cos(angle);
         float my = ARENA_RADIUS * std::sin(angle);
@@ -179,6 +256,22 @@ void CountryElimination::createArenaBody() {
     m_arenaAngle = 0.0f;
 }
 
+void CountryElimination::recreateArena() {
+    float savedAngle = 0.0f;
+    float savedAngVel = m_arenaAngularVel;
+    if (m_arenaBody) {
+        savedAngle = m_arenaBody->GetAngle();
+        savedAngVel = m_arenaBody->GetAngularVelocity();
+    }
+    destroyArenaBody();
+    createArenaBody();
+    if (m_arenaBody) {
+        m_arenaBody->SetTransform(m_arenaBody->GetPosition(), savedAngle);
+        m_arenaBody->SetAngularVelocity(savedAngVel);
+        m_arenaAngle = savedAngle;
+    }
+}
+
 void CountryElimination::destroyArenaBody() {
     if (m_arenaBody && m_world) {
         m_world->DestroyBody(m_arenaBody);
@@ -191,7 +284,7 @@ b2Body* CountryElimination::createPlayerBody(float x, float y, float radius) {
     bd.type = b2_dynamicBody;
     bd.position.Set(x, y);
     bd.bullet = true;
-    bd.linearDamping = 0.05f;
+    bd.linearDamping = 0.0f;
     bd.gravityScale = 0.0f;
 
     b2Body* body = m_world->CreateBody(&bd);
@@ -204,6 +297,13 @@ b2Body* CountryElimination::createPlayerBody(float x, float y, float radius) {
     fix.restitution = m_restitution;
     fix.friction = 0.0f;
     body->CreateFixture(&fix);
+
+    // Always give initial velocity
+    std::uniform_real_distribution<float> aDist(0.0f, TAU);
+    float a = aDist(m_rng);
+    body->SetLinearVelocity(b2Vec2(m_currentBallSpeed * std::cos(a),
+                                    m_currentBallSpeed * std::sin(a)));
+
     return body;
 }
 
@@ -253,16 +353,12 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.alive = true;
     p.eliminated = false;
     p.body = createPlayerBody(sx, sy, BALL_RADIUS);
-
-    if (m_phase == GamePhase::Battle) {
-        float va = aDist(m_rng);
-        p.body->SetLinearVelocity(b2Vec2(m_initialSpeed * std::cos(va),
-                                          m_initialSpeed * std::sin(va)));
-    }
     p.prevPos = p.body->GetPosition();
     p.currPos = p.prevPos;
     m_players[userId] = std::move(p);
-    sendChatFeedback(displayName + " [" + label + "] joined!");
+
+    if (!isBotId(userId))
+        sendChatFeedback(displayName + " [" + label + "] joined!");
 }
 
 void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
@@ -328,14 +424,46 @@ void CountryElimination::startBattle() {
     m_roundTimer = 0.0;
     m_roundNumber++;
 
+    // Open the gap and rebuild arena
+    m_currentGapAngle = GAP_INITIAL;
+    m_currentBallSpeed = m_initialSpeed;
+    recreateArena();
+
+    // Arena rotation continues (already set)
     if (m_arenaBody) m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
 
-    std::uniform_real_distribution<float> aDist(0.0f, TAU);
+    // Re-normalize all ball velocities to current speed
     for (auto& [id, p] : m_players) {
         if (!p.alive || !p.body) continue;
-        float a = aDist(m_rng);
-        p.body->SetLinearVelocity(b2Vec2(m_initialSpeed * std::cos(a),
-                                          m_initialSpeed * std::sin(a)));
+        b2Vec2 vel = p.body->GetLinearVelocity();
+        float spd = vel.Length();
+        if (spd > 0.01f) {
+            float scale = m_currentBallSpeed / spd;
+            p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+        } else {
+            std::uniform_real_distribution<float> aDist(0.0f, TAU);
+            float a = aDist(m_rng);
+            p.body->SetLinearVelocity(b2Vec2(m_currentBallSpeed * std::cos(a),
+                                              m_currentBallSpeed * std::sin(a)));
+        }
+    }
+}
+
+void CountryElimination::enforceConstantVelocity() {
+    for (auto& [id, p] : m_players) {
+        if (!p.alive || !p.body) continue;
+        b2Vec2 vel = p.body->GetLinearVelocity();
+        float spd = vel.Length();
+        if (spd < 0.1f) {
+            // Stuck ball — give random velocity
+            std::uniform_real_distribution<float> aDist(0.0f, TAU);
+            float a = aDist(m_rng);
+            p.body->SetLinearVelocity(b2Vec2(m_currentBallSpeed * std::cos(a),
+                                              m_currentBallSpeed * std::sin(a)));
+        } else if (std::abs(spd - m_currentBallSpeed) > 0.1f) {
+            float scale = m_currentBallSpeed / spd;
+            p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+        }
     }
 }
 
@@ -357,32 +485,37 @@ void CountryElimination::checkEliminations() {
                 p.shieldTimer = 0.0f;
                 b2Vec2 dir(-dx, -dy);
                 float len = dir.Length();
-                if (len > 0.01f) dir *= (m_initialSpeed * 2.0f / len);
+                if (len > 0.01f) dir *= (m_currentBallSpeed * 2.0f / len);
                 p.body->SetLinearVelocity(dir);
                 float pullback = ARENA_RADIUS * 0.75f / std::sqrt(d2);
                 p.body->SetTransform(
                     b2Vec2(WORLD_CX + dx * pullback, WORLD_CY + dy * pullback),
                     p.body->GetAngle());
-                sendChatFeedback("🛡️ " + p.displayName + "'s shield saved them!");
+                if (!p.isBot())
+                    sendChatFeedback("🛡️ " + p.displayName + "'s shield saved them!");
                 continue;
             }
 
             p.alive = false;
             p.body->SetGravityScale(1.0f);
+            p.body->SetLinearDamping(0.5f);
             b2Vec2 vel = p.body->GetLinearVelocity();
-            p.body->SetLinearVelocity(b2Vec2(vel.x * 0.3f, 2.0f));
+            p.body->SetLinearVelocity(b2Vec2(vel.x * 0.4f, 2.0f));
 
             m_eliminationFeed.push_front({p.displayName, p.label, p.color, 4.0});
             if (m_eliminationFeed.size() > 8) m_eliminationFeed.pop_back();
-            sendChatFeedback("💀 " + p.displayName + " [" + p.label + "] eliminated!");
 
-            try {
-                is::core::Application::instance().playerDatabase().recordResult(
-                    p.userId, p.displayName, "country_elimination", 1, false);
-            } catch (...) {}
+            if (!p.isBot()) {
+                sendChatFeedback("💀 " + p.displayName + " [" + p.label + "] eliminated!");
+                try {
+                    is::core::Application::instance().playerDatabase().recordResult(
+                        p.userId, p.displayName, "country_elimination", 1, false);
+                } catch (...) {}
+            }
         }
     }
 
+    // Settle eliminated balls at floor
     for (auto& [id, p] : m_players) {
         if (p.alive || p.eliminated || !p.body) continue;
         b2Vec2 pos = p.body->GetPosition();
@@ -400,7 +533,10 @@ void CountryElimination::checkRoundEnd() {
     for (const auto& [id, p] : m_players) {
         if (p.alive) { aliveCount++; lastAlive = id; }
     }
-    if (aliveCount <= 1 && m_players.size() >= 2) {
+
+    // End when 1 or 0 alive, OR round time limit exceeded
+    bool timeUp = m_roundTimer >= m_roundDuration;
+    if ((aliveCount <= 1 && m_players.size() >= 2) || (timeUp && aliveCount <= 2)) {
         m_winnerId = (aliveCount == 1) ? lastAlive : "";
         endRound();
     }
@@ -410,19 +546,19 @@ void CountryElimination::endRound() {
     m_phase = GamePhase::RoundEnd;
     m_roundEndTimer = m_roundEndDuration;
 
-    if (m_arenaBody) m_arenaBody->SetAngularVelocity(0.0f);
-
     if (!m_winnerId.empty() && m_players.count(m_winnerId)) {
         Player& w = m_players[m_winnerId];
         w.score += 100;
         recordRoundWin(w);
-        sendChatFeedback("🏆 " + w.displayName + " [" + w.label + "] wins Round " +
-                          std::to_string(m_roundNumber) + "!");
 
-        try {
-            is::core::Application::instance().playerDatabase().recordResult(
-                w.userId, w.displayName, "country_elimination", 100, true);
-        } catch (...) {}
+        if (!w.isBot()) {
+            sendChatFeedback("🏆 " + w.displayName + " [" + w.label + "] wins Round " +
+                              std::to_string(m_roundNumber) + "!");
+            try {
+                is::core::Application::instance().playerDatabase().recordResult(
+                    w.userId, w.displayName, "country_elimination", 100, true);
+            } catch (...) {}
+        }
     } else {
         sendChatFeedback("Draw! No one wins this round.");
     }
@@ -458,10 +594,79 @@ void CountryElimination::resetForNextRound() {
     m_eliminationFeed.clear();
     m_winnerId.clear();
     m_particles.clear();
+    m_botRespawnTimers.clear();
+
+    // Reset to closed ring for lobby
+    m_currentGapAngle = 0.0f;
+    m_currentBallSpeed = m_initialSpeed;
+    m_arenaAngularVel = 0.3f;
     createArenaBody();
+    if (m_arenaBody) m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
+
     m_phase = GamePhase::Lobby;
     m_lobbyTimer = 0.0;
-    m_arenaAngularVel = 0.3f;
+
+    spawnBots();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Bots
+// ═════════════════════════════════════════════════════════════════════════════
+
+void CountryElimination::spawnBots() {
+    if (m_botFillTarget <= 0) return;
+
+    int currentAlive = 0;
+    for (const auto& [_, p] : m_players) { if (p.alive) currentAlive++; }
+
+    int needed = m_botFillTarget - currentAlive;
+    for (int i = 0; i < needed; ++i) {
+        m_botCounter++;
+        std::string botId = "__bot_" + std::to_string(m_botCounter);
+        int idx = (m_botCounter - 1) % NUM_BOT_NAMES;
+
+        cmdJoin(botId, BOT_NAMES[idx], BOT_LABELS[idx]);
+    }
+}
+
+void CountryElimination::respawnDeadBots(float dt) {
+    if (m_botFillTarget <= 0 || !m_botRespawn) return;
+
+    int currentAlive = 0;
+    for (const auto& [_, p] : m_players) { if (p.alive) currentAlive++; }
+
+    for (auto& [id, p] : m_players) {
+        if (p.alive || !p.isBot()) continue;
+        // Track this dead bot
+        if (m_botRespawnTimers.find(id) == m_botRespawnTimers.end())
+            m_botRespawnTimers[id] = m_botRespawnDelay;
+    }
+
+    // Tick timers and respawn
+    std::vector<std::string> toRespawn;
+    for (auto it = m_botRespawnTimers.begin(); it != m_botRespawnTimers.end(); ) {
+        it->second -= dt;
+        if (it->second <= 0.0f && currentAlive < m_botFillTarget) {
+            toRespawn.push_back(it->first);
+            it = m_botRespawnTimers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (const auto& botId : toRespawn) {
+        // Remove old player entry and respawn fresh
+        if (m_players.count(botId)) {
+            auto& p = m_players[botId];
+            if (p.body && m_world) m_world->DestroyBody(p.body);
+            m_players.erase(botId);
+        }
+        m_botCounter++;
+        std::string newId = "__bot_" + std::to_string(m_botCounter);
+        int idx = (m_botCounter - 1) % NUM_BOT_NAMES;
+        cmdJoin(newId, BOT_NAMES[idx], BOT_LABELS[idx]);
+        currentAlive++;
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -530,31 +735,85 @@ void CountryElimination::update(double dt) {
     switch (m_phase) {
     case GamePhase::Lobby: {
         m_lobbyTimer += dt;
-        int cnt = 0;
-        for (const auto& [_, p] : m_players) if (p.alive) cnt++;
-        if (cnt >= m_minPlayers && m_lobbyTimer >= 5.0)
-            startCountdown();
-        break;
-    }
-    case GamePhase::Countdown:
-        m_countdownTimer -= dt;
-        if (m_countdownTimer <= 0.0) startBattle();
-        break;
 
-    case GamePhase::Battle: {
-        m_roundTimer += dt;
+        // Physics always running — balls bounce around
         for (auto& [id, p] : m_players)
             if (p.body) p.prevPos = p.currPos;
         m_world->Step(fdt, 8, 3);
         for (auto& [id, p] : m_players)
             if (p.body) p.currPos = p.body->GetPosition();
 
+        enforceConstantVelocity();
+
+        // Arena always rotates
+        if (m_arenaBody) {
+            m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
+            m_arenaAngle = m_arenaBody->GetAngle();
+        }
+
+        // Auto-start when enough players
+        int cnt = 0;
+        for (const auto& [_, p] : m_players) if (p.alive) cnt++;
+        if (cnt >= m_minPlayers && m_lobbyTimer >= m_lobbyDuration)
+            startCountdown();
+        break;
+    }
+    case GamePhase::Countdown: {
+        m_countdownTimer -= dt;
+
+        // Physics still running
+        for (auto& [id, p] : m_players)
+            if (p.body) p.prevPos = p.currPos;
+        m_world->Step(fdt, 8, 3);
+        for (auto& [id, p] : m_players)
+            if (p.body) p.currPos = p.body->GetPosition();
+
+        enforceConstantVelocity();
+
+        // Arena continues rotating
+        if (m_arenaBody) {
+            m_arenaAngle = m_arenaBody->GetAngle();
+        }
+
+        if (m_countdownTimer <= 0.0) startBattle();
+        break;
+    }
+    case GamePhase::Battle: {
+        m_roundTimer += dt;
+
+        for (auto& [id, p] : m_players)
+            if (p.body) p.prevPos = p.currPos;
+        m_world->Step(fdt, 8, 3);
+        for (auto& [id, p] : m_players)
+            if (p.body) p.currPos = p.body->GetPosition();
+
+        // Increase ball speed over time
+        m_currentBallSpeed = std::min(m_maxBallSpeed,
+            m_initialSpeed + m_ballSpeedIncrease * static_cast<float>(m_roundTimer));
+        enforceConstantVelocity();
+
+        // Arena acceleration
         m_arenaAngularVel += m_arenaSpeedIncrease * fdt;
         if (m_arenaBody) {
             m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
             m_arenaAngle = m_arenaBody->GetAngle();
         }
+
+        // Gap expansion
+        float newGap = m_currentGapAngle + m_gapExpansionRate * fdt;
+        if (newGap <= m_gapMax) {
+            float segAngle = TAU / WALL_SEGMENTS;
+            // Rebuild when gap crosses next segment boundary
+            if (static_cast<int>(newGap / segAngle) > static_cast<int>(m_currentGapAngle / segAngle)) {
+                m_currentGapAngle = newGap;
+                recreateArena();
+            } else {
+                m_currentGapAngle = newGap;
+            }
+        }
+
         checkEliminations();
+        respawnDeadBots(fdt);
         checkRoundEnd();
         break;
     }
@@ -562,7 +821,14 @@ void CountryElimination::update(double dt) {
         m_world->Step(fdt, 6, 2);
         for (auto& [id, p] : m_players)
             if (p.body) { p.prevPos = p.currPos; p.currPos = p.body->GetPosition(); }
-        m_roundEndTimer -= dt;
+
+        // Arena still rotates (slowing down)
+        if (m_arenaBody) {
+            float curVel = m_arenaBody->GetAngularVelocity();
+            float decel = curVel * 0.98f;
+            m_arenaBody->SetAngularVelocity(decel);
+            m_arenaAngle = m_arenaBody->GetAngle();
+        }
 
         // Celebration particles for winner
         if (!m_winnerId.empty() && m_players.count(m_winnerId)) {
@@ -577,6 +843,7 @@ void CountryElimination::update(double dt) {
             }
         }
 
+        m_roundEndTimer -= dt;
         if (m_roundEndTimer <= 0.0) resetForNextRound();
         break;
     }
@@ -653,8 +920,9 @@ void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayou
 
     // Glow pulsing intensity
     float glowPulse = 0.6f + 0.4f * std::sin(m_arenaGlowPhase);
+    bool hasGap = m_currentGapAngle > 0.001f;
 
-    // Outer glow ring (larger, semi-transparent)
+    // Outer glow ring
     {
         float glowT = thickness * 2.5f;
         float grO = r + glowT / 2.0f;
@@ -669,28 +937,25 @@ void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayou
             float baseA = i * angleStep;
             float normA = baseA;
             if (normA > PI) normA -= TAU;
-            bool inGap = std::abs(normA) < GAP_HALF_ANGLE;
+            bool inGap = hasGap && std::abs(normA) < m_currentGapAngle;
 
             sf::Uint8 alpha = inGap ? 0 : ga;
-            sf::Color gc(80, 140, 255, alpha);
 
             glowRing[vi].position = { L.arenaCX + grO * std::cos(a), L.arenaCY + grO * std::sin(a) };
             glowRing[vi].color = sf::Color(80, 140, 255, 0);
             vi++;
             glowRing[vi].position = { L.arenaCX + grI * std::cos(a), L.arenaCY + grI * std::sin(a) };
-            glowRing[vi].color = gc;
+            glowRing[vi].color = sf::Color(80, 140, 255, alpha);
             vi++;
         }
         target.draw(glowRing);
     }
 
-    // Main ring (solid, smooth thick arc)
+    // Main ring
     {
         sf::VertexArray ring(sf::TriangleStrip, (RING_RESOLUTION + 1) * 2);
         int vi = 0;
         float angleStep = TAU / RING_RESOLUTION;
-
-        // Ring color: white with blue tint, matching reference
         sf::Color ringColor(180, 200, 240, 230);
 
         for (int i = 0; i <= RING_RESOLUTION; ++i) {
@@ -698,12 +963,12 @@ void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayou
             float baseA = i * angleStep;
             float normA = baseA;
             if (normA > PI) normA -= TAU;
-            bool inGap = std::abs(normA) < GAP_HALF_ANGLE;
+            bool inGap = hasGap && std::abs(normA) < m_currentGapAngle;
 
-            // Fade at gap edges for smooth transition
-            float gapDist = std::abs(normA) - GAP_HALF_ANGLE;
+            float gapDist = std::abs(normA) - m_currentGapAngle;
             float edgeFade = 1.0f;
-            if (inGap) edgeFade = 0.0f;
+            if (!hasGap) edgeFade = 1.0f;
+            else if (inGap) edgeFade = 0.0f;
             else if (gapDist < 0.08f) edgeFade = gapDist / 0.08f;
 
             sf::Uint8 alpha = static_cast<sf::Uint8>(ringColor.a * edgeFade);
@@ -719,32 +984,34 @@ void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayou
         target.draw(ring);
     }
 
-    // Gap indicator: two small bright circles at gap edges
-    for (float sign : {-1.0f, 1.0f}) {
-        float edgeAngle = m_arenaAngle + GAP_HALF_ANGLE * sign;
-        float ex = L.arenaCX + r * std::cos(edgeAngle);
-        float ey = L.arenaCY + r * std::sin(edgeAngle);
-        sf::CircleShape dot(thickness * 0.6f);
-        dot.setOrigin(thickness * 0.6f, thickness * 0.6f);
-        dot.setPosition(ex, ey);
-        dot.setFillColor(sf::Color(255, 120, 80, static_cast<sf::Uint8>(180 * glowPulse)));
-        target.draw(dot);
+    // Gap indicators (only when gap is open)
+    if (hasGap) {
+        for (float sign : {-1.0f, 1.0f}) {
+            float edgeAngle = m_arenaAngle + m_currentGapAngle * sign;
+            float ex = L.arenaCX + r * std::cos(edgeAngle);
+            float ey = L.arenaCY + r * std::sin(edgeAngle);
+            sf::CircleShape dot(thickness * 0.6f);
+            dot.setOrigin(thickness * 0.6f, thickness * 0.6f);
+            dot.setPosition(ex, ey);
+            dot.setFillColor(sf::Color(255, 120, 80, static_cast<sf::Uint8>(180 * glowPulse)));
+            target.draw(dot);
+        }
+
+        // Arrow pointing into the gap
+        float gapAngle = m_arenaAngle;
+        float arrowDist = r + thickness + 12.0f;
+        float ax = L.arenaCX + arrowDist * std::cos(gapAngle);
+        float ay = L.arenaCY + arrowDist * std::sin(gapAngle);
+
+        sf::ConvexShape arrow(3);
+        float arrowSize = std::max(8.0f, thickness * 0.8f);
+        float perpAngle = gapAngle + PI / 2.0f;
+        arrow.setPoint(0, { ax + arrowSize * std::cos(gapAngle + PI), ay + arrowSize * std::sin(gapAngle + PI) });
+        arrow.setPoint(1, { ax + arrowSize * 0.6f * std::cos(perpAngle), ay + arrowSize * 0.6f * std::sin(perpAngle) });
+        arrow.setPoint(2, { ax - arrowSize * 0.6f * std::cos(perpAngle), ay - arrowSize * 0.6f * std::sin(perpAngle) });
+        arrow.setFillColor(sf::Color(255, 100, 70, static_cast<sf::Uint8>(200 * glowPulse)));
+        target.draw(arrow);
     }
-
-    // Arrow pointing into the gap
-    float gapAngle = m_arenaAngle;
-    float arrowDist = r + thickness + 12.0f;
-    float ax = L.arenaCX + arrowDist * std::cos(gapAngle);
-    float ay = L.arenaCY + arrowDist * std::sin(gapAngle);
-
-    sf::ConvexShape arrow(3);
-    float arrowSize = std::max(8.0f, thickness * 0.8f);
-    float perpAngle = gapAngle + PI / 2.0f;
-    arrow.setPoint(0, { ax + arrowSize * std::cos(gapAngle + PI), ay + arrowSize * std::sin(gapAngle + PI) });
-    arrow.setPoint(1, { ax + arrowSize * 0.6f * std::cos(perpAngle), ay + arrowSize * 0.6f * std::sin(perpAngle) });
-    arrow.setPoint(2, { ax - arrowSize * 0.6f * std::cos(perpAngle), ay - arrowSize * 0.6f * std::sin(perpAngle) });
-    arrow.setFillColor(sf::Color(255, 100, 70, static_cast<sf::Uint8>(200 * glowPulse)));
-    target.draw(arrow);
 }
 
 // ── Players ──────────────────────────────────────────────────────────────────
@@ -1396,8 +1663,10 @@ nlohmann::json CountryElimination::getCommands() const {
 
 std::vector<std::pair<std::string, int>> CountryElimination::getLeaderboard() const {
     std::vector<std::pair<std::string, int>> result;
-    for (const auto& rw : m_roundWinners)
+    for (const auto& rw : m_roundWinners) {
+        if (isBotId(rw.userId)) continue;
         result.emplace_back(rw.displayName + " [" + rw.label + "]", rw.wins);
+    }
     return result;
 }
 
@@ -1408,6 +1677,10 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_arenaSpeedIncrease = std::max(0.0f, settings["arena_speed_increase"].get<float>());
     if (settings.contains("initial_speed") && settings["initial_speed"].is_number())
         m_initialSpeed = std::max(0.5f, settings["initial_speed"].get<float>());
+    if (settings.contains("ball_speed_increase") && settings["ball_speed_increase"].is_number())
+        m_ballSpeedIncrease = std::max(0.0f, settings["ball_speed_increase"].get<float>());
+    if (settings.contains("max_ball_speed") && settings["max_ball_speed"].is_number())
+        m_maxBallSpeed = std::max(1.0f, settings["max_ball_speed"].get<float>());
     if (settings.contains("restitution") && settings["restitution"].is_number())
         m_restitution = std::clamp(settings["restitution"].get<float>(), 0.0f, 1.0f);
     if (settings.contains("min_players") && settings["min_players"].is_number_integer())
@@ -1418,8 +1691,22 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_roundEndDuration = std::max(1.0, settings["round_end_duration"].get<double>());
     if (settings.contains("champion_threshold") && settings["champion_threshold"].is_number_integer())
         m_championThreshold = std::max(2, settings["champion_threshold"].get<int>());
+    if (settings.contains("gap_expansion_rate") && settings["gap_expansion_rate"].is_number())
+        m_gapExpansionRate = std::max(0.0f, settings["gap_expansion_rate"].get<float>());
+    if (settings.contains("gap_max") && settings["gap_max"].is_number())
+        m_gapMax = std::clamp(settings["gap_max"].get<float>(), 0.3f, 2.5f);
+    if (settings.contains("round_duration") && settings["round_duration"].is_number())
+        m_roundDuration = std::max(10.0, settings["round_duration"].get<double>());
+    if (settings.contains("bot_fill") && settings["bot_fill"].is_number_integer())
+        m_botFillTarget = std::max(0, settings["bot_fill"].get<int>());
+    if (settings.contains("bot_respawn") && settings["bot_respawn"].is_boolean())
+        m_botRespawn = settings["bot_respawn"].get<bool>();
+    if (settings.contains("bot_respawn_delay") && settings["bot_respawn_delay"].is_number())
+        m_botRespawnDelay = std::max(0.5f, settings["bot_respawn_delay"].get<float>());
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
+
+    if (m_world) spawnBots();
 }
 
 nlohmann::json CountryElimination::getSettings() const {
@@ -1427,11 +1714,19 @@ nlohmann::json CountryElimination::getSettings() const {
         {"arena_speed", m_arenaAngularVel},
         {"arena_speed_increase", m_arenaSpeedIncrease},
         {"initial_speed", m_initialSpeed},
+        {"ball_speed_increase", m_ballSpeedIncrease},
+        {"max_ball_speed", m_maxBallSpeed},
         {"restitution", m_restitution},
         {"min_players", m_minPlayers},
         {"lobby_duration", m_lobbyDuration},
         {"round_end_duration", m_roundEndDuration},
         {"champion_threshold", m_championThreshold},
+        {"gap_expansion_rate", m_gapExpansionRate},
+        {"gap_max", m_gapMax},
+        {"round_duration", m_roundDuration},
+        {"bot_fill", m_botFillTarget},
+        {"bot_respawn", m_botRespawn},
+        {"bot_respawn_delay", m_botRespawnDelay},
         {"text_elements", textElementsJson()},
     };
 }

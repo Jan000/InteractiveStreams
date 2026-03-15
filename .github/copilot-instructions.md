@@ -404,24 +404,35 @@ Bei `eventType`-Nachrichten wird `triggerLivestreamReward()` aufgerufen:
 ## Country Elimination – Interna
 
 ### Übersicht
-Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <country>`, Bälle prallen in einer kreisförmigen Begrenzung ab. Die Arena dreht sich und hat eine Lücke – wer herausfällt, ist eliminiert. Letzter Ball gewinnt. Namespace: `is::games::country_elimination`. Dateien: `CountryElimination.h/cpp`.
+Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <country>`, Bälle prallen in einer kreisförmigen Begrenzung ab. Die Arena dreht sich und hat eine Lücke – wer herausfällt, ist eliminiert. Letzter Ball gewinnt. Bot-System füllt automatisch die Arena, sodass das Spiel nie stillsteht. Namespace: `is::games::country_elimination`. Dateien: `CountryElimination.h/cpp`.
 
 ### Spielphasen
 `GamePhase::Lobby` → `Countdown` → `Battle` → `RoundEnd` → zurück zu `Lobby`
 
 ### Physik (Box2D)
 - `b2Vec2 gravity(0.0f, 15.0f)` – Schwerkraft für eliminierte Bälle
-- Spieler im Arena: `GravityScale = 0.0f` (schweben/prallen ab)
-- Spieler nach Eliminierung: `GravityScale = 1.0f` (fallen zum Boden)
+- Spieler im Arena: `GravityScale = 0.0f`, `linearDamping = 0.0f` (schweben/prallen ab, konstante Geschwindigkeit)
+- Spieler nach Eliminierung: `GravityScale = 1.0f`, `linearDamping = 0.5f` (fallen zum Boden, prallen an Seitenwänden)
 - Arena-Boundary: `b2_kinematicBody` mit rotierender Winkelbewegung
 - Boden: `b2_staticBody` am unteren Bildschirmrand
+- Seitenwände: `b2_staticBody` links/rechts für eliminierte Bälle
 - Hohe Restitution (0.95): Bälle prallen energisch ab
+- **Konstante Geschwindigkeit**: `enforceConstantVelocity()` normalisiert Ballgeschwindigkeit jedes Frame auf `m_currentBallSpeed`
 
-### Arena-Rotation
-- Kreisförmige Wand aus `WALL_SEGMENTS` (48) Box-Segmenten
-- Eine Lücke (Gap) am Anfang bei Winkel 0 (`GAP_HALF_ANGLE = 0.26 rad ≈ 15°`)
-- Rotation beschleunigt sich über Zeit (`m_arenaSpeedIncrease`)
-- Arena-Body dreht als `b2_kinematicBody` mit `SetAngularVelocity()`
+### Arena-Rotation & Gap
+- Kreisförmige Wand aus `WALL_SEGMENTS` (64) Box-Segmenten
+- **Lobby**: Geschlossener Ring (`m_currentGapAngle = 0`), Bälle prallen innen ab
+- **Battle**: Gap öffnet sich (`GAP_INITIAL = 0.26 rad`), expandiert über Zeit (`m_gapExpansionRate`)
+- **Arena dreht sich IMMER** – auch in Lobby/Countdown/RoundEnd
+- `recreateArena()` baut Arena-Body bei Gap-Änderung neu auf (Winkel/Geschwindigkeit bleiben erhalten)
+- Rotation beschleunigt sich während Battle (`m_arenaSpeedIncrease`)
+
+### Bot Fill System
+- Füllt die Arena automatisch mit Bot-Bällen (Ländernamen als Labels)
+- 40 vordefinierte Länder: USA, GBR, FRA, DEU, JPN, BRA, etc.
+- `isBot()` via `"__bot_"` userId-Prefix Konvention
+- Settings: `bot_fill` (default 8), `bot_respawn` (default true), `bot_respawn_delay` (default 3.0s)
+- Bots werden gefiltert in: Leaderboard, PlayerDatabase, Chat-Feedback
 
 ### Chat-Befehl-Parsing
 Befehle in `CountryElimination::onChatMessage()`:
@@ -437,11 +448,20 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 
 ### Per-Game Settings
 - `arena_speed`: Anfangs-Rotationsgeschwindigkeit (rad/s, default 0.3)
-- `arena_speed_increase`: Beschleunigung pro Sekunde (default 0.02)
+- `arena_speed_increase`: Beschleunigung pro Sekunde (default 0.03)
 - `initial_speed`: Anfangsgeschwindigkeit der Bälle (default 5.0)
+- `ball_speed_increase`: Geschwindigkeitszunahme pro Sekunde (default 0.5)
+- `max_ball_speed`: Maximale Ballgeschwindigkeit (default 15.0)
+- `gap_expansion_rate`: Gap-Expansion pro Sekunde in rad (default 0.02)
+- `gap_max`: Maximale Gap-Größe in rad (default 1.2)
+- `round_duration`: Maximale Rundendauer in Sekunden (default 120)
 - `restitution`: Abprall-Elastizität (default 0.95)
 - `min_players`: Mindestanzahl für Spielstart (default 2)
-- `lobby_duration`, `round_end_duration`: Timing-Einstellungen
+- `lobby_duration` (default 5.0), `round_end_duration` (default 4.0): Timing-Einstellungen
+- `champion_threshold`: Siege für Champion-Titel (default 4)
+- `bot_fill`: Ziel-Spieleranzahl mit Bots (default 8, 0=disabled)
+- `bot_respawn`: Bots respawnen nach Eliminierung (default true)
+- `bot_respawn_delay`: Respawn-Verzögerung in Sekunden (default 3.0)
 
 ---
 

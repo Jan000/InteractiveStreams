@@ -18,23 +18,22 @@ namespace is::games::country_elimination {
 
 static constexpr float PIXELS_PER_METER = 40.0f;
 
-// World dimensions (based on 1080x1920 at PPM=40)
 static constexpr float WORLD_W  = 27.0f;
 static constexpr float WORLD_H  = 48.0f;
-static constexpr float WORLD_CX = WORLD_W / 2.0f;         // 13.5m
-static constexpr float WORLD_CY = WORLD_H * 0.36f;        // ~17.3m
+static constexpr float WORLD_CX = WORLD_W / 2.0f;
+static constexpr float WORLD_CY = WORLD_H * 0.36f;
 
 static constexpr float ARENA_RADIUS   = 7.5f;
 static constexpr float WALL_THICKNESS = 0.35f;
 static constexpr float BALL_RADIUS    = 0.45f;
 
-// Gap (~30° opening)
-static constexpr float GAP_HALF_ANGLE = 0.26f;
+// Default gap half-angle (~30° opening)
+static constexpr float GAP_INITIAL = 0.26f;
 
 // Floor for eliminated balls
 static constexpr float FLOOR_Y = WORLD_H - 1.5f;
 
-// Physics segments (higher = smoother collision hull)
+// Physics segments
 static constexpr int WALL_SEGMENTS = 64;
 
 // Visual ring smoothness
@@ -83,16 +82,17 @@ struct Player {
 
     b2Vec2      prevPos{0.0f, 0.0f};
     b2Vec2      currPos{0.0f, 0.0f};
+
+    bool isBot() const { return userId.rfind("__bot_", 0) == 0; }
 };
 
-// ── Screen Layout (computed per-frame from render target) ────────────────────
+// ── Screen Layout ────────────────────────────────────────────────────────────
 
 struct ScreenLayout {
     float W, H;
     float arenaCX, arenaCY;
     float arenaRadiusPx;
     float ppm;
-    // 9:16 safe zone
     float safeLeft, safeRight;
     float safeW;
 };
@@ -153,8 +153,15 @@ private:
     void resetForNextRound();
     void createArenaBody();
     void destroyArenaBody();
+    void recreateArena();
+    void createBoundaryWalls();
     b2Body* createPlayerBody(float x, float y, float radius);
     void recordRoundWin(const Player& winner);
+    void enforceConstantVelocity();
+
+    // Bots
+    void spawnBots();
+    void respawnDeadBots(float dt);
 
     // Particles
     void emitParticles(sf::Vector2f pos, sf::Color color, int count,
@@ -176,7 +183,7 @@ private:
 
     sf::Color generateColor();
 
-    // ── State ────────────────────────────────────────────────────────────────
+    // ── State ────────────────────────────────────────────────────────────
 
     GamePhase m_phase = GamePhase::Lobby;
     std::unordered_map<std::string, Player> m_players;
@@ -187,24 +194,45 @@ private:
     b2World*  m_world      = nullptr;
     b2Body*   m_arenaBody  = nullptr;
     b2Body*   m_floorBody  = nullptr;
+    b2Body*   m_leftWall   = nullptr;
+    b2Body*   m_rightWall  = nullptr;
 
     float m_arenaAngle       = 0.0f;
     float m_arenaAngularVel  = 0.3f;
     float m_arenaGlowPhase   = 0.0f;
     float m_globalTime       = 0.0f;
 
+    // Dynamic gap (0 during lobby = closed ring, expands during battle)
+    float m_currentGapAngle    = 0.0f;
+    float m_arenaRebuildTimer  = 0.0f;
+
     double m_countdownTimer  = 0.0;
     double m_lobbyTimer      = 0.0;
     double m_roundTimer      = 0.0;
     double m_roundEndTimer   = 0.0;
 
-    int    m_minPlayers        = 2;
-    float  m_initialSpeed      = 5.0f;
-    float  m_restitution       = 0.95f;
-    double m_lobbyDuration     = 30.0;
-    double m_roundEndDuration  = 5.0;
-    float  m_arenaSpeedIncrease = 0.02f;
+    // ── Settings ─────────────────────────────────────────────────────────
+
+    int    m_minPlayers         = 2;
+    float  m_initialSpeed       = 5.0f;
+    float  m_ballSpeedIncrease  = 0.5f;
+    float  m_maxBallSpeed       = 15.0f;
+    float  m_currentBallSpeed   = 5.0f;
+    float  m_restitution        = 0.95f;
+    double m_lobbyDuration      = 5.0;
+    double m_roundEndDuration   = 4.0;
+    float  m_arenaSpeedIncrease = 0.03f;
+    float  m_gapExpansionRate   = 0.02f;
+    float  m_gapMax             = 1.2f;
     int    m_championThreshold  = 4;
+    double m_roundDuration      = 120.0;
+
+    // Bot settings
+    int   m_botFillTarget   = 8;
+    int   m_botCounter      = 0;
+    bool  m_botRespawn      = true;
+    float m_botRespawnDelay = 3.0f;
+    std::unordered_map<std::string, float> m_botRespawnTimers;
 
     int  m_roundNumber = 0;
     bool m_gameWon     = false;
