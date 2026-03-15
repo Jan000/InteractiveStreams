@@ -414,10 +414,21 @@ Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <
 - Spieler im Arena: `GravityScale = 0.0f`, `linearDamping = 0.0f` (schweben/prallen ab, konstante Geschwindigkeit)
 - Spieler nach Eliminierung: `GravityScale = 1.0f`, `linearDamping = 0.5f` (fallen zum Boden, prallen an Seitenwänden)
 - Arena-Boundary: `b2_kinematicBody` mit rotierender Winkelbewegung
-- Boden: `b2_staticBody` am unteren Bildschirmrand
-- Seitenwände: `b2_staticBody` links/rechts für eliminierte Bälle
+- Boden: `b2_staticBody` bei `FLOOR_Y = WORLD_CY + 17.0f` (sichtbar am unteren Bildschirmrand)
+- Seitenwände: `b2_staticBody` bei `WALL_LEFT_X / WALL_RIGHT_X` (knapp außerhalb der Arena, sichtbar)
+- Decke: `b2_staticBody` bei `CEILING_Y = WORLD_CY - ARENA_RADIUS - 3.0f`
 - Hohe Restitution (0.95): Bälle prallen energisch ab
 - **Konstante Geschwindigkeit**: `enforceConstantVelocity()` normalisiert Ballgeschwindigkeit jedes Frame auf `m_currentBallSpeed`
+- Eliminierte Bälle sind **sichtbar auf dem Bildschirm** – Boden, Wände und Decke halten sie im sichtbaren Bereich
+
+### Flaggen-Rendering
+- `generateFlagTextures()` erzeugt 64×64 `sf::Texture` für alle 40 Ländercodes
+- Jede Flagge: einfache 2-3 Streifen (horizontal/vertikal) in Landesfarben
+- Spezialfall Japan: Weißer Hintergrund mit rotem Kreis
+- Lookup via Label (case-insensitive uppercase): Bot-Labels matchen direkt ("USA", "GBR")
+- Fallback: Wenn kein Flaggen-Textur gefunden, wird wie bisher ein farbiger Kreis gezeichnet
+- `renderPlayers()`: `sf::CircleShape::setTexture()` rendert Flagge kreisförmig auf dem Ball
+- `renderWinnerOverlay()`: Großer Sieger-Ball zeigt ebenfalls die Flagge
 
 ### Arena-Rotation & Gap
 - Kreisförmige Wand aus `WALL_SEGMENTS` (64) Box-Segmenten
