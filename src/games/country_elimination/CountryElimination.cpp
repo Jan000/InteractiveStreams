@@ -109,16 +109,49 @@ void CountryElimination::generateFlagTextures() {
 
     unsigned int sheetW = spriteSheet.getSize().x;
     unsigned int sheetH = spriteSheet.getSize().y;
-    unsigned int flagH  = sheetH / NUM_SPRITE_FLAGS;
 
+    // Auto-detect flag height by finding the first fully-transparent separator row
+    unsigned int flagStride = 0;
+    for (unsigned int y = 1; y < std::min(sheetH, 200u); ++y) {
+        bool isTransparent = true;
+        for (unsigned int x = 0; x < sheetW; ++x) {
+            if (spriteSheet.getPixel(x, y).a != 0) { isTransparent = false; break; }
+        }
+        if (isTransparent) {
+            flagStride = y + 1; // flag content height + 1px separator
+            break;
+        }
+    }
+    if (flagStride == 0) {
+        // Fallback: divide evenly
+        flagStride = sheetH / NUM_SPRITE_FLAGS;
+    }
+    unsigned int flagH = flagStride - 1;
+    unsigned int totalSlots = sheetH / flagStride;
+
+    // Detect if first slot is a black header (skip it)
+    unsigned int startSlot = 0;
+    bool firstIsBlack = true;
+    for (unsigned int x = 0; x < sheetW; ++x) {
+        sf::Color c = spriteSheet.getPixel(x, 0);
+        if (c.r != 0 || c.g != 0 || c.b != 0) { firstIsBlack = false; break; }
+    }
+    if (firstIsBlack && totalSlots > static_cast<unsigned int>(NUM_SPRITE_FLAGS))
+        startSlot = 1;
+
+    int loaded = 0;
     for (int i = 0; i < NUM_SPRITE_FLAGS; ++i) {
-        sf::IntRect area(0, i * flagH, sheetW, flagH);
+        unsigned int slot = startSlot + static_cast<unsigned int>(i);
+        if (slot >= totalSlots) break;
+        unsigned int y = slot * flagStride;
+        sf::IntRect area(0, static_cast<int>(y), static_cast<int>(sheetW), static_cast<int>(flagH));
         m_flagTextures[SPRITE_ORDER[i]].loadFromImage(spriteSheet, area);
         m_flagTextures[SPRITE_ORDER[i]].setSmooth(true);
+        ++loaded;
     }
 
-    spdlog::info("[CountryElimination] Loaded {} flag textures ({}x{}, {}px each)",
-                 NUM_SPRITE_FLAGS, sheetW, sheetH, flagH);
+    spdlog::info("[CountryElimination] Loaded {} flag textures ({}x{}, stride={}px, flagH={}px, startSlot={})",
+                 loaded, sheetW, sheetH, flagStride, flagH, startSlot);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1278,8 +1311,11 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             target.draw(shield);
         }
 
-        // Label text on ball
-        if (m_fontLoaded) {
+        // Label text on ball (only when no flag texture)
+        std::string labelUp2 = p.label;
+        for (auto& ch : labelUp2) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        bool hasFlagForLabel = (m_flagTextures.find(labelUp2) != m_flagTextures.end());
+        if (m_fontLoaded && !hasFlagForLabel) {
             sf::Text lbl;
             lbl.setFont(m_font);
             lbl.setString(p.label);
