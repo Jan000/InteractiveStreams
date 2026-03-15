@@ -90,6 +90,29 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "bot_danger_smash_chance", label: "Bot Danger Smash Chance", description: "Smash probability when a bot is near the black hole", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.6 },
     { key: "bot_event_smash_chance", label: "Bot Event Smash Chance", description: "Smash probability during cosmic events", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.7 },
   ],
+  country_elimination: [
+    // --- Arena ---
+    { key: "arena_speed", label: "Arena Speed (rad/s)", description: "Initial rotation speed of the arena ring", type: "float", min: 0.05, step: 0.05, defaultValue: 0.3 },
+    { key: "arena_speed_increase", label: "Arena Acceleration (/s)", description: "How fast the arena rotation accelerates during battle", type: "float", min: 0, step: 0.01, defaultValue: 0.03 },
+    { key: "gap_expansion_rate", label: "Gap Expansion Rate (rad/s)", description: "How quickly the arena gap widens during battle", type: "float", min: 0, step: 0.005, defaultValue: 0.02 },
+    { key: "gap_max", label: "Gap Maximum (rad)", description: "Maximum gap size in the arena ring", type: "float", min: 0.3, max: 2.5, step: 0.1, defaultValue: 1.2 },
+    // --- Ball Physics ---
+    { key: "initial_speed", label: "Initial Ball Speed (m/s)", description: "Starting velocity of balls when spawned", type: "float", min: 0.5, step: 0.5, defaultValue: 5.0 },
+    { key: "ball_speed_increase", label: "Ball Speed Increase (/s)", description: "How much ball speed increases per second during battle", type: "float", min: 0, step: 0.1, defaultValue: 0.5 },
+    { key: "max_ball_speed", label: "Max Ball Speed (m/s)", description: "Maximum ball velocity", type: "float", min: 1, step: 0.5, defaultValue: 15.0 },
+    { key: "restitution", label: "Restitution (Bounciness)", description: "Elasticity of ball collisions (0 = no bounce, 1 = full bounce)", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.95 },
+    // --- Timing ---
+    { key: "round_duration", label: "Round Duration (s)", description: "Maximum time per round before forced end", type: "float", min: 10, step: 5, defaultValue: 120 },
+    { key: "lobby_duration", label: "Lobby Duration (s)", description: "How long the lobby waits before starting countdown", type: "float", min: 1, step: 1, defaultValue: 5 },
+    { key: "round_end_duration", label: "Round End Duration (s)", description: "How long the winner overlay is shown between rounds", type: "float", min: 1, step: 0.5, defaultValue: 4 },
+    // --- Gameplay ---
+    { key: "min_players", label: "Min Players", description: "Minimum players (including bots) required to start a round", type: "int", min: 2, step: 1, defaultValue: 2 },
+    { key: "champion_threshold", label: "Champion Threshold", description: "Number of round wins needed to become champion (game over)", type: "int", min: 2, step: 1, defaultValue: 4 },
+    // --- Bots ---
+    { key: "bot_fill", label: "Bot Fill", description: "Fill arena to this many players with bots (0 = disabled)", type: "int", min: 0, step: 1, defaultValue: 8 },
+    { key: "bot_respawn", label: "Bot Respawn", description: "Respawn eliminated bots during battle phase", type: "bool", defaultValue: true },
+    { key: "bot_respawn_delay", label: "Bot Respawn Delay (s)", description: "Seconds before an eliminated bot re-enters the arena", type: "float", min: 0.5, step: 0.5, defaultValue: 3.0 },
+  ],
 };
 
 export default function GamesPage() {

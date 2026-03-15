@@ -41,6 +41,61 @@ static const char* BOT_LABELS[] = {
 };
 static constexpr int NUM_BOT_NAMES = sizeof(BOT_NAMES) / sizeof(BOT_NAMES[0]);
 
+// ── Flag definitions (simple tricolor stripes per country code) ──────────────
+
+static constexpr int FLAG_SIZE = 64;
+
+struct FlagDef {
+    const char* code;
+    uint8_t r1,g1,b1, r2,g2,b2, r3,g3,b3;
+    int n;    // number of stripes (2 or 3)
+    bool v;   // vertical stripes
+};
+
+static const FlagDef FLAG_DEFS[] = {
+    // code   stripe-1 (top/left)    stripe-2 (mid)         stripe-3 (bottom/right) #  vert
+    {"USA",   0,40,104,    255,255,255,  191,10,48,     3, false},
+    {"GBR",   0,36,125,    255,255,255,  207,20,43,     3, false},
+    {"FRA",   0,35,149,    255,255,255,  237,41,57,     3, true },
+    {"DEU",   0,0,0,       221,0,0,      255,206,0,     3, false},
+    {"JPN",   255,255,255, 188,0,45,     255,255,255,   3, false},
+    {"BRA",   0,156,59,    255,223,0,    0,156,59,      3, false},
+    {"IND",   255,153,51,  255,255,255,  19,136,8,      3, false},
+    {"CHN",   238,28,37,   255,255,0,    238,28,37,     3, false},
+    {"RUS",   255,255,255, 0,57,166,     213,43,30,     3, false},
+    {"KOR",   255,255,255, 205,46,58,    0,71,160,      3, false},
+    {"ITA",   0,146,70,    255,255,255,  206,43,55,     3, true },
+    {"ESP",   170,21,27,   241,191,0,    170,21,27,     3, false},
+    {"MEX",   0,104,71,    255,255,255,  206,17,38,     3, true },
+    {"CAN",   255,0,0,     255,255,255,  255,0,0,       3, true },
+    {"AUS",   0,0,139,     255,255,255,  0,0,139,       3, false},
+    {"PRT",   0,102,0,     0,102,0,      255,0,0,       3, true },
+    {"NLD",   174,28,40,   255,255,255,  33,70,139,     3, false},
+    {"SWE",   0,106,167,   254,204,2,    0,106,167,     3, false},
+    {"POL",   255,255,255, 220,20,60,    220,20,60,     2, false},
+    {"TUR",   227,10,23,   255,255,255,  227,10,23,     3, false},
+    {"ARG",   108,180,232, 255,255,255,  108,180,232,   3, false},
+    {"COL",   252,209,22,  0,56,147,     206,17,38,     3, false},
+    {"CHL",   255,255,255, 0,57,166,     213,43,30,     3, false},
+    {"PER",   216,30,5,    255,255,255,  216,30,5,      3, true },
+    {"NOR",   186,12,47,   255,255,255,  0,48,135,      3, false},
+    {"DNK",   198,12,48,   255,255,255,  198,12,48,     3, false},
+    {"FIN",   255,255,255, 0,47,108,     255,255,255,   3, false},
+    {"BEL",   0,0,0,       250,224,66,   237,41,57,     3, true },
+    {"AUT",   237,41,57,   255,255,255,  237,41,57,     3, false},
+    {"CHE",   255,0,0,     255,255,255,  255,0,0,       3, false},
+    {"GRC",   13,94,175,   255,255,255,  13,94,175,     3, false},
+    {"IRL",   22,155,98,   255,255,255,  255,136,62,    3, true },
+    {"NZL",   0,36,125,    255,255,255,  0,36,125,      3, false},
+    {"ZAF",   0,119,73,    255,184,28,   0,20,137,      3, false},
+    {"EGY",   206,17,38,   255,255,255,  0,0,0,         3, false},
+    {"THA",   237,28,36,   255,255,255,  45,45,116,     3, false},
+    {"VNM",   218,37,29,   255,255,0,    218,37,29,     3, false},
+    {"PHL",   0,56,168,    255,255,255,  206,17,38,     3, false},
+    {"IDN",   206,17,38,   255,255,255,  255,255,255,   2, false},
+    {"MYS",   204,0,0,     255,255,255,  0,0,153,       3, false},
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Construction
 // ═════════════════════════════════════════════════════════════════════════════
@@ -52,6 +107,62 @@ CountryElimination::CountryElimination()
 
 CountryElimination::~CountryElimination() {
     shutdown();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Flag Texture Generation
+// ═════════════════════════════════════════════════════════════════════════════
+
+void CountryElimination::generateFlagTextures() {
+    for (const auto& f : FLAG_DEFS) {
+        sf::Color colors[3] = {
+            sf::Color(f.r1, f.g1, f.b1),
+            sf::Color(f.r2, f.g2, f.b2),
+            sf::Color(f.r3, f.g3, f.b3)
+        };
+
+        sf::Image img;
+        img.create(FLAG_SIZE, FLAG_SIZE, sf::Color::White);
+
+        if (f.v) {
+            // Vertical stripes
+            int w = FLAG_SIZE / f.n;
+            for (int s = 0; s < f.n; ++s) {
+                int x0 = s * w;
+                int x1 = (s == f.n - 1) ? FLAG_SIZE : (s + 1) * w;
+                for (int x = x0; x < x1; ++x)
+                    for (int y = 0; y < FLAG_SIZE; ++y)
+                        img.setPixel(x, y, colors[std::min(s, 2)]);
+            }
+        } else {
+            // Horizontal stripes
+            int h = FLAG_SIZE / f.n;
+            for (int s = 0; s < f.n; ++s) {
+                int y0 = s * h;
+                int y1 = (s == f.n - 1) ? FLAG_SIZE : (s + 1) * h;
+                for (int y = y0; y < y1; ++y)
+                    for (int x = 0; x < FLAG_SIZE; ++x)
+                        img.setPixel(x, y, colors[std::min(s, 2)]);
+            }
+        }
+
+        // Special case: Japan — draw red circle on white
+        if (std::string(f.code) == "JPN") {
+            img.create(FLAG_SIZE, FLAG_SIZE, sf::Color::White);
+            float cx = FLAG_SIZE / 2.0f;
+            float cy = FLAG_SIZE / 2.0f;
+            float r = FLAG_SIZE * 0.3f;
+            for (int y = 0; y < FLAG_SIZE; ++y)
+                for (int x = 0; x < FLAG_SIZE; ++x) {
+                    float dx = x - cx, dy = y - cy;
+                    if (dx * dx + dy * dy <= r * r)
+                        img.setPixel(x, y, sf::Color(188, 0, 45));
+                }
+        }
+
+        m_flagTextures[f.code].loadFromImage(img);
+        m_flagTextures[f.code].setSmooth(true);
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

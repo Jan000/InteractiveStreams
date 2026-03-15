@@ -5,6 +5,8 @@
 #include "rendering/Background.h"
 
 #include <SFML/Graphics/Font.hpp>
+#include <SFML/Graphics/Image.hpp>
+#include <SFML/Graphics/Texture.hpp>
 #include <SFML/Graphics/VertexArray.hpp>
 #include <box2d/box2d.h>
 #include <vector>
@@ -30,8 +32,11 @@ static constexpr float BALL_RADIUS    = 0.45f;
 // Default gap half-angle (~30° opening)
 static constexpr float GAP_INITIAL = 0.26f;
 
-// Floor for eliminated balls
-static constexpr float FLOOR_Y = WORLD_H - 1.5f;
+// Visible-area boundaries (walls + floor must stay on-screen)
+static constexpr float FLOOR_Y      = WORLD_CY + 17.0f;
+static constexpr float CEILING_Y    = WORLD_CY - ARENA_RADIUS - 3.0f;
+static constexpr float WALL_LEFT_X  = WORLD_CX - ARENA_RADIUS - 1.5f;
+static constexpr float WALL_RIGHT_X = WORLD_CX + ARENA_RADIUS + 1.5f;
 
 // Physics segments
 static constexpr int WALL_SEGMENTS = 64;
@@ -159,6 +164,9 @@ private:
     void recordRoundWin(const Player& winner);
     void enforceConstantVelocity();
 
+    // Flags
+    void generateFlagTextures();
+
     // Bots
     void spawnBots();
     void respawnDeadBots(float dt);
@@ -194,8 +202,9 @@ private:
     b2World*  m_world      = nullptr;
     b2Body*   m_arenaBody  = nullptr;
     b2Body*   m_floorBody  = nullptr;
-    b2Body*   m_leftWall   = nullptr;
-    b2Body*   m_rightWall  = nullptr;
+    b2Body*   m_leftWall    = nullptr;
+    b2Body*   m_rightWall   = nullptr;
+    b2Body*   m_ceilingBody = nullptr;
 
     float m_arenaAngle       = 0.0f;
     float m_arenaAngularVel  = 0.3f;
@@ -243,6 +252,7 @@ private:
     sf::Font  m_font;
     bool      m_fontLoaded = false;
     std::vector<Particle> m_particles;
+    std::unordered_map<std::string, sf::Texture> m_flagTextures;
 
     std::mt19937 m_rng;
 };
