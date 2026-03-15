@@ -235,6 +235,7 @@ set(GAME_SOURCES
     src/games/color_conquest/Grid.cpp
     src/games/gravity_brawl/AvatarCache.cpp
     src/games/gravity_brawl/GravityBrawl.cpp
+    src/games/country_elimination/CountryElimination.cpp
 )
 
 set(PLATFORM_SOURCES

@@ -17,6 +17,7 @@ Das Projekt nutzt den Root-Namespace `is::` mit folgenden Sub-Namespaces:
 | `is::games::chaos_arena` | `src/games/chaos_arena/` | Chaos Arena-Spiel (Physik-Arena-Kampf) |
 | `is::games::color_conquest` | `src/games/color_conquest/` | Color Conquest-Spiel (territoriale Eroberung) |
 | `is::games::gravity_brawl` | `src/games/gravity_brawl/` | Gravity Brawl-Spiel (Physik-Brawler mit Gravitations-Shifts) |
+| `is::games::country_elimination` | `src/games/country_elimination/` | Country Elimination-Spiel (Marble-Race in rotierender Arena) |
 | `is::platform` | `src/platform/` | Chat-Plattform-Abstraktionen und -Implementierungen |
 | `is::rendering` | `src/rendering/` | SFML-basiertes Rendering, Kamera, Partikel, UI |
 | `is::streaming` | `src/streaming/` | FFmpeg-Encoding und RTMP-Stream-Ausgabe |
@@ -397,6 +398,50 @@ Bei `eventType`-Nachrichten wird `triggerLivestreamReward()` aufgerufen:
 - Configure via `configure(json)` / `getSettings()`, gespeichert unter `game_settings.gravity_brawl`
 - API: `GET/PUT /api/games/gravity_brawl/settings`
 - 40+ Parameter: Physik (`orbital_gravity_strength`, `black_hole_*`, `restitution`), Gameplay (`smash_cooldown`, `supernova_radius`, `max_speed`, `respawn_cooldown`), Audio, Kamera-Zoom, Bots, `epoch_duration`, `enable_post_processing`, Anomalien
+
+---
+
+## Country Elimination – Interna
+
+### Übersicht
+Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <country>`, Bälle prallen in einer kreisförmigen Begrenzung ab. Die Arena dreht sich und hat eine Lücke – wer herausfällt, ist eliminiert. Letzter Ball gewinnt. Namespace: `is::games::country_elimination`. Dateien: `CountryElimination.h/cpp`.
+
+### Spielphasen
+`GamePhase::Lobby` → `Countdown` → `Battle` → `RoundEnd` → zurück zu `Lobby`
+
+### Physik (Box2D)
+- `b2Vec2 gravity(0.0f, 15.0f)` – Schwerkraft für eliminierte Bälle
+- Spieler im Arena: `GravityScale = 0.0f` (schweben/prallen ab)
+- Spieler nach Eliminierung: `GravityScale = 1.0f` (fallen zum Boden)
+- Arena-Boundary: `b2_kinematicBody` mit rotierender Winkelbewegung
+- Boden: `b2_staticBody` am unteren Bildschirmrand
+- Hohe Restitution (0.95): Bälle prallen energisch ab
+
+### Arena-Rotation
+- Kreisförmige Wand aus `WALL_SEGMENTS` (48) Box-Segmenten
+- Eine Lücke (Gap) am Anfang bei Winkel 0 (`GAP_HALF_ANGLE = 0.26 rad ≈ 15°`)
+- Rotation beschleunigt sich über Zeit (`m_arenaSpeedIncrease`)
+- Arena-Body dreht als `b2_kinematicBody` mit `SetAngularVelocity()`
+
+### Chat-Befehl-Parsing
+Befehle in `CountryElimination::onChatMessage()`:
+- `join [land/emoji]` / `play [land/emoji]` → Ball spawnen mit Label (max 16 Zeichen)
+- `!` Prefix optional (wie bei allen Spielen)
+
+### Stream-Event-Handling
+Bei `eventType`-Nachrichten in `handleStreamEvent()`:
+- **yt_subscribe / twitch_sub**: Schild (15s) + 300 Punkte – Schild rettet einmal vor Eliminierung
+- **yt_superchat / twitch_bits** (>100): Größerer Ball (1.5×) + Schild (20s) + 500 Punkte
+- **twitch_channel_points**: Schild (10s) + 100 Punkte
+- Events lösen automatisch `join` aus, falls der Nutzer noch nicht im Spiel ist
+
+### Per-Game Settings
+- `arena_speed`: Anfangs-Rotationsgeschwindigkeit (rad/s, default 0.3)
+- `arena_speed_increase`: Beschleunigung pro Sekunde (default 0.02)
+- `initial_speed`: Anfangsgeschwindigkeit der Bälle (default 5.0)
+- `restitution`: Abprall-Elastizität (default 0.95)
+- `min_players`: Mindestanzahl für Spielstart (default 2)
+- `lobby_duration`, `round_end_duration`: Timing-Einstellungen
 
 ---
 
