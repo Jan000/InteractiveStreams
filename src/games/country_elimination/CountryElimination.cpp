@@ -917,6 +917,28 @@ void CountryElimination::resetForNextRound() {
     createArenaBody();
     if (m_arenaBody) m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
 
+    // Reposition survivors safely inside the closed arena so no one gets
+    // trapped inside the rebuilt wall segments.
+    float safeRadius = ARENA_RADIUS - m_wallThickness - m_ballRadius - 0.3f;
+    float safeRadius2 = safeRadius * safeRadius;
+    for (auto& [id, p] : m_players) {
+        if (!p.alive || !p.body) continue;
+        b2Vec2 pos = p.body->GetPosition();
+        float dx = pos.x - WORLD_CX;
+        float dy = pos.y - WORLD_CY;
+        float d2 = dx * dx + dy * dy;
+        if (d2 > safeRadius2) {
+            // Pull back inside
+            float dist = std::sqrt(d2);
+            float factor = (safeRadius * 0.85f) / dist;
+            p.body->SetTransform(
+                b2Vec2(WORLD_CX + dx * factor, WORLD_CY + dy * factor),
+                p.body->GetAngle());
+            p.prevPos = p.body->GetPosition();
+            p.currPos = p.prevPos;
+        }
+    }
+
     // Normalize survivor velocities to initial speed
     for (auto& [id, p] : m_players) {
         if (!p.alive || !p.body) continue;
