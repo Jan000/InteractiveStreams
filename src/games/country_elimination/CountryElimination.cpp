@@ -413,6 +413,40 @@ void CountryElimination::recreateArena() {
         m_arenaBody->SetAngularVelocity(savedAngVel);
         m_arenaAngle = savedAngle;
     }
+
+    // Safety: reposition any alive ball that ended up inside wall segments
+    // after the arena was rebuilt (e.g. during gap expansion).
+    float innerWall = m_arenaRadius - m_wallThickness * 0.5f;
+    float embedLimit = innerWall - m_ballRadius * 0.3f;
+    float embedLimit2 = embedLimit * embedLimit;
+    for (auto& [id, p] : m_players) {
+        if (!p.alive || !p.body) continue;
+        b2Vec2 pos = p.body->GetPosition();
+        float dx = pos.x - WORLD_CX;
+        float dy = pos.y - WORLD_CY;
+        float d2 = dx * dx + dy * dy;
+        if (d2 > embedLimit2) {
+            // Skip balls at the gap opening — they're exiting normally
+            bool inGap = false;
+            if (m_currentGapAngle > 0.001f) {
+                float ballAngle = std::atan2(dy, dx);
+                float localAngle = ballAngle - m_arenaAngle;
+                localAngle = std::fmod(localAngle + PI, TAU);
+                if (localAngle < 0.0f) localAngle += TAU;
+                localAngle -= PI;
+                inGap = std::abs(localAngle) < m_currentGapAngle + 0.2f;
+            }
+            if (!inGap) {
+                float dist = std::sqrt(d2);
+                float safeR = m_arenaRadius - p.radiusM - 0.4f;
+                float rx = dx / dist;
+                float ry = dy / dist;
+                p.body->SetTransform(
+                    b2Vec2(WORLD_CX + safeR * rx, WORLD_CY + safeR * ry),
+                    p.body->GetAngle());
+            }
+        }
+    }
 }
 
 void CountryElimination::destroyArenaBody() {
@@ -704,6 +738,18 @@ void CountryElimination::enforceConstantVelocity() {
                         float scale = m_currentBallSpeed / spd;
                         p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
                     }
+                }
+
+                // Force-reposition if ball is embedded in the arena wall.
+                // Inner wall surface is at (arenaRadius - wallThickness/2).
+                // If ball center is past that minus a fraction of its radius,
+                // it has penetrated the wall and must be pushed back.
+                float innerWall = m_arenaRadius - m_wallThickness * 0.5f;
+                if (dist > innerWall - p.radiusM * 0.3f) {
+                    float safeR = m_arenaRadius - p.radiusM - 0.4f;
+                    p.body->SetTransform(
+                        b2Vec2(WORLD_CX + safeR * rx, WORLD_CY + safeR * ry),
+                        p.body->GetAngle());
                 }
             }
         }
