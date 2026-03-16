@@ -92,16 +92,22 @@ const GAME_FIELDS: Record<string, Array<{
   ],
   country_elimination: [
     // --- Arena ---
+    { key: "arena_radius", label: "Arena Radius (m)", description: "Radius of the arena circle in Box2D meters (controls circle size)", type: "float", min: 3, max: 20, step: 0.5, defaultValue: 7.5 },
     { key: "arena_speed", label: "Arena Speed (rad/s)", description: "Initial rotation speed of the arena ring", type: "float", min: 0.05, step: 0.05, defaultValue: 0.3 },
     { key: "arena_speed_increase", label: "Arena Acceleration (/s)", description: "How fast the arena rotation accelerates during battle", type: "float", min: 0, step: 0.01, defaultValue: 0.03 },
+    { key: "gap_initial", label: "Initial Gap Size (rad)", description: "Gap half-angle at the start of battle (opening width)", type: "float", min: 0.05, max: 1.0, step: 0.01, defaultValue: 0.26 },
     { key: "gap_expansion_rate", label: "Gap Expansion Rate (rad/s)", description: "How quickly the arena gap widens during battle", type: "float", min: 0, step: 0.005, defaultValue: 0.02 },
     { key: "gap_max", label: "Gap Maximum (rad)", description: "Maximum gap size in the arena ring", type: "float", min: 0.3, max: 2.5, step: 0.1, defaultValue: 1.2 },
+    { key: "wall_thickness", label: "Wall Thickness (m)", description: "Thickness of the arena ring wall in meters", type: "float", min: 0.1, max: 1.5, step: 0.05, defaultValue: 0.35 },
     // --- Ball Physics ---
+    { key: "ball_radius", label: "Ball Radius (m)", description: "Default radius of player/bot balls in meters", type: "float", min: 0.2, max: 2.0, step: 0.05, defaultValue: 0.45 },
     { key: "initial_speed", label: "Initial Ball Speed (m/s)", description: "Starting velocity of balls when spawned", type: "float", min: 0.5, step: 0.5, defaultValue: 5.0 },
     { key: "ball_speed_increase", label: "Ball Speed Increase (/s)", description: "How much ball speed increases per second during battle", type: "float", min: 0, step: 0.1, defaultValue: 0.5 },
     { key: "max_ball_speed", label: "Max Ball Speed (m/s)", description: "Maximum ball velocity", type: "float", min: 1, step: 0.5, defaultValue: 15.0 },
     { key: "restitution", label: "Restitution (Bounciness)", description: "Elasticity of ball collisions (0 = no bounce, 1 = full bounce)", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.95 },
+    { key: "gravity", label: "Gravity (m/s²)", description: "Downward gravity for eliminated balls (0 = no gravity)", type: "float", min: 0, max: 50, step: 0.5, defaultValue: 15.0 },
     // --- Timing ---
+    { key: "countdown_duration", label: "Countdown Duration (s)", description: "Seconds of countdown before battle starts", type: "float", min: 1, max: 10, step: 0.5, defaultValue: 3.0 },
     { key: "round_duration", label: "Round Duration (s)", description: "Maximum time per round before forced end", type: "float", min: 10, step: 5, defaultValue: 120 },
     { key: "lobby_duration", label: "Lobby Duration (s)", description: "How long the lobby waits before starting countdown", type: "float", min: 1, step: 1, defaultValue: 5 },
     { key: "round_end_duration", label: "Round End Duration (s)", description: "How long the winner overlay is shown between rounds", type: "float", min: 1, step: 0.5, defaultValue: 4 },
@@ -109,12 +115,23 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "min_players", label: "Min Players", description: "Minimum players (including bots) required to start a round", type: "int", min: 2, step: 1, defaultValue: 2 },
     { key: "champion_threshold", label: "Champion Threshold", description: "Number of round wins needed to become champion (game over)", type: "int", min: 2, step: 1, defaultValue: 4 },
     { key: "max_entries_per_player", label: "Max Entries Per Player", description: "How many balls a single player can have simultaneously (join N times)", type: "int", min: 1, max: 10, step: 1, defaultValue: 1 },
+    // --- Scoring ---
+    { key: "score_win", label: "Score: Round Win", description: "Points awarded for winning a round", type: "int", min: 0, step: 10, defaultValue: 100 },
+    { key: "score_participation", label: "Score: Participation", description: "Points recorded per elimination (participation points)", type: "int", min: 0, step: 1, defaultValue: 1 },
+    { key: "score_sub", label: "Score: Sub/Subscribe", description: "Points for a subscription stream event", type: "int", min: 0, step: 50, defaultValue: 300 },
+    { key: "score_superchat", label: "Score: Superchat/Bits", description: "Points for a superchat or bits stream event", type: "int", min: 0, step: 50, defaultValue: 500 },
+    { key: "score_points", label: "Score: Channel Points", description: "Points for a channel points stream event", type: "int", min: 0, step: 10, defaultValue: 100 },
+    // --- Stream Event Shields ---
+    { key: "shield_duration_sub", label: "Shield: Sub (s)", description: "Shield duration for subscribe events", type: "float", min: 0, max: 60, step: 1, defaultValue: 15 },
+    { key: "shield_duration_superchat", label: "Shield: Superchat (s)", description: "Shield duration for superchat/bits events", type: "float", min: 0, max: 60, step: 1, defaultValue: 20 },
+    { key: "shield_duration_points", label: "Shield: Channel Points (s)", description: "Shield duration for channel points events", type: "float", min: 0, max: 60, step: 1, defaultValue: 10 },
     // --- Bots ---
     { key: "bot_fill", label: "Bot Fill", description: "Fill arena to this many players with bots (0 = disabled)", type: "int", min: 0, step: 1, defaultValue: 8 },
     { key: "bot_respawn", label: "Bot Respawn", description: "Respawn eliminated bots during battle phase", type: "bool", defaultValue: true },
     { key: "bot_respawn_delay", label: "Bot Respawn Delay (s)", description: "Seconds before an eliminated bot re-enters the arena", type: "float", min: 0.5, step: 0.5, defaultValue: 3.0 },
     // --- Eliminated Display ---
     { key: "max_eliminated_visible", label: "Max Eliminated Visible", description: "Maximum number of eliminated balls visible on the floor (0 = no limit)", type: "int", min: 0, step: 1, defaultValue: 20 },
+    { key: "elim_feed_max", label: "Elimination Feed Max", description: "Maximum entries in the on-screen elimination feed", type: "int", min: 0, step: 1, defaultValue: 8 },
     { key: "elim_linger_duration", label: "Eliminated Linger Duration (s)", description: "How long eliminated balls rest on the floor before fading out", type: "float", min: 0.5, step: 0.5, defaultValue: 8.0 },
     { key: "elim_fade_duration", label: "Eliminated Fade Duration (s)", description: "How long the fade-out animation takes for removed eliminated balls", type: "float", min: 0.1, step: 0.1, defaultValue: 2.0 },
     { key: "elim_infinite_linger", label: "Infinite Linger", description: "Eliminated balls stay forever (no time-based fading). Max visible count still applies.", type: "bool", defaultValue: false },

@@ -173,7 +173,7 @@ void CountryElimination::initialize() {
         registerTextElement("sub_info",      "Sub Reward Info",  50.0f, 97.5f,  9, TextAlign::Center, true, "#AAAACC99");
     }
 
-    m_world = new b2World(b2Vec2(0.0f, 15.0f));
+    m_world = new b2World(b2Vec2(0.0f, m_gravity));
 
     // Static floor
     {
@@ -302,7 +302,7 @@ ScreenLayout CountryElimination::computeLayout(const sf::RenderTarget& target) c
     L.arenaCX = (L.safeLeft + L.safeRight) / 2.0f;
     L.arenaCY = L.H * 0.36f;
 
-    L.ppm = L.arenaRadiusPx / ARENA_RADIUS;
+    L.ppm = L.arenaRadiusPx / m_arenaRadius;
 
     return L;
 }
@@ -316,7 +316,7 @@ void CountryElimination::createBoundaryWalls() {
 
     // Walls span from far above the arena down to the floor, so eliminated
     // balls that fly upward can never escape the sides.
-    float wallTop     = WORLD_CY - ARENA_RADIUS - 15.0f;
+    float wallTop     = WORLD_CY - m_arenaRadius - 15.0f;
     float wallCenterY = (wallTop + FLOOR_Y) / 2.0f;
     float wallHalfH   = (FLOOR_Y - wallTop) / 2.0f;
 
@@ -368,7 +368,7 @@ void CountryElimination::createArenaBody() {
     m_arenaBody = m_world->CreateBody(&bd);
 
     const float angleStep = TAU / WALL_SEGMENTS;
-    const float segLen = ARENA_RADIUS * angleStep;
+    const float segLen = m_arenaRadius * angleStep;
 
     for (int i = 0; i < WALL_SEGMENTS; ++i) {
         float angle = i * angleStep;
@@ -380,8 +380,8 @@ void CountryElimination::createArenaBody() {
             if (std::abs(norm) < m_currentGapAngle) continue;
         }
 
-        float mx = ARENA_RADIUS * std::cos(angle);
-        float my = ARENA_RADIUS * std::sin(angle);
+        float mx = m_arenaRadius * std::cos(angle);
+        float my = m_arenaRadius * std::sin(angle);
 
         b2PolygonShape seg;
         seg.SetAsBox(segLen * 0.55f, m_wallThickness * 0.5f,
@@ -519,7 +519,7 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     }
 
     std::uniform_real_distribution<float> aDist(0.0f, TAU);
-    std::uniform_real_distribution<float> rDist(0.0f, ARENA_RADIUS * 0.55f);
+    std::uniform_real_distribution<float> rDist(0.0f, m_arenaRadius * 0.55f);
     float a = aDist(m_rng);
     float r = rDist(m_rng);
     float sx = WORLD_CX + r * std::cos(a);
@@ -576,13 +576,13 @@ void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
 
     if (msg.eventType == "yt_subscribe" || msg.eventType == "twitch_sub") {
         p.hasShield = true;
-        p.shieldTimer = 15.0f;
-        p.score += 300;
-        sendChatFeedback("🛡️ " + p.displayName + " got a shield! +300");
+        p.shieldTimer = m_shieldDurationSub;
+        p.score += m_scoreSub;
+        sendChatFeedback("🛡️ " + p.displayName + " got a shield! +" + std::to_string(m_scoreSub));
     } else if ((msg.eventType == "yt_superchat" || msg.eventType == "twitch_bits") && msg.amount > 100) {
         p.hasShield = true;
-        p.shieldTimer = 20.0f;
-        p.score += 500;
+        p.shieldTimer = m_shieldDurationSuperchat;
+        p.score += m_scoreSuperchat;
         if (p.body) {
             float nr = m_ballRadius * 1.5f;
             p.radiusM = nr;
@@ -599,12 +599,12 @@ void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
                 p.body->CreateFixture(&fd);
             }
         }
-        sendChatFeedback("⭐ " + p.displayName + " powered up! +500");
+        sendChatFeedback("⭐ " + p.displayName + " powered up! +" + std::to_string(m_scoreSuperchat));
     } else if (msg.eventType == "twitch_channel_points") {
         p.hasShield = true;
-        p.shieldTimer = 10.0f;
-        p.score += 100;
-        sendChatFeedback("✨ " + p.displayName + " got a shield! +100");
+        p.shieldTimer = m_shieldDurationPoints;
+        p.score += m_scorePoints;
+        sendChatFeedback("✨ " + p.displayName + " got a shield! +" + std::to_string(m_scorePoints));
     }
 }
 
@@ -618,7 +618,7 @@ void CountryElimination::startCountdown() {
     for (const auto& [_, p] : m_players) if (p.alive) cnt++;
     if (cnt < m_minPlayers) return;
     m_phase = GamePhase::Countdown;
-    m_countdownTimer = 3.0;
+    m_countdownTimer = m_countdownDuration;
 }
 
 void CountryElimination::startBattle() {
@@ -675,7 +675,7 @@ void CountryElimination::enforceConstantVelocity() {
         float dx = pos.x - WORLD_CX;
         float dy = pos.y - WORLD_CY;
         float dist2 = dx * dx + dy * dy;
-        float wallProx = ARENA_RADIUS - p.radiusM - 0.3f;
+        float wallProx = m_arenaRadius - p.radiusM - 0.3f;
         if (dist2 > wallProx * wallProx) {
             // Check if the ball is at the gap opening (in arena-local frame)
             bool inGap = false;
@@ -711,7 +711,7 @@ void CountryElimination::enforceConstantVelocity() {
 }
 
 void CountryElimination::checkEliminations() {
-    float limit = ARENA_RADIUS + m_wallThickness + 0.5f;
+    float limit = m_arenaRadius + m_wallThickness + 0.5f;
     float limit2 = limit * limit;
 
     for (auto& [id, p] : m_players) {
@@ -730,7 +730,7 @@ void CountryElimination::checkEliminations() {
                 float len = dir.Length();
                 if (len > 0.01f) dir *= (m_currentBallSpeed * 2.0f / len);
                 p.body->SetLinearVelocity(dir);
-                float pullback = ARENA_RADIUS * 0.75f / std::sqrt(d2);
+                float pullback = m_arenaRadius * 0.75f / std::sqrt(d2);
                 p.body->SetTransform(
                     b2Vec2(WORLD_CX + dx * pullback, WORLD_CY + dy * pullback),
                     p.body->GetAngle());
@@ -762,13 +762,13 @@ void CountryElimination::checkEliminations() {
             m_eliminatedQueue.push_back({id, 0.0f, false, 0.0f});
 
             m_eliminationFeed.push_front({p.displayName, p.label, p.avatarUrl, p.color, 4.0});
-            if (m_eliminationFeed.size() > 8) m_eliminationFeed.pop_back();
+            if (static_cast<int>(m_eliminationFeed.size()) > m_elimFeedMax) m_eliminationFeed.pop_back();
 
             if (!p.isBot()) {
                 sendChatFeedback("💀 " + p.displayName + " [" + p.label + "] eliminated!");
                 try {
                     is::core::Application::instance().playerDatabase().recordResult(
-                        p.userId, p.displayName, "country_elimination", 1, false);
+                        p.userId, p.displayName, "country_elimination", m_scoreParticipation, false);
                 } catch (...) {}
             }
         }
@@ -796,7 +796,7 @@ void CountryElimination::endRound() {
 
     if (!m_winnerId.empty() && m_players.count(m_winnerId)) {
         Player& w = m_players[m_winnerId];
-        w.score += 100;
+        w.score += m_scoreWin;
         recordRoundWin(w);
         recordCountryWin(w.label);
 
@@ -805,7 +805,7 @@ void CountryElimination::endRound() {
                               std::to_string(m_roundNumber) + "!");
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
-                    w.userId, w.displayName, "country_elimination", 100, true);
+                    w.userId, w.displayName, "country_elimination", m_scoreWin, true);
             } catch (...) {}
         }
     } else {
@@ -919,7 +919,7 @@ void CountryElimination::resetForNextRound() {
 
     // Reposition survivors safely inside the closed arena so no one gets
     // trapped inside the rebuilt wall segments.
-    float safeRadius = ARENA_RADIUS - m_wallThickness - m_ballRadius - 0.3f;
+    float safeRadius = m_arenaRadius - m_wallThickness - m_ballRadius - 0.3f;
     float safeRadius2 = safeRadius * safeRadius;
     for (auto& [id, p] : m_players) {
         if (!p.alive || !p.body) continue;
@@ -1251,7 +1251,7 @@ void CountryElimination::update(double dt) {
 
         // Re-entry: revive eliminated players that bounce back inside the arena
         if (m_allowReentry) {
-            float reentryLimit = ARENA_RADIUS - m_wallThickness - 0.3f;
+            float reentryLimit = m_arenaRadius - m_wallThickness - 0.3f;
             float reentryLimit2 = reentryLimit * reentryLimit;
             for (auto& [id, p] : m_players) {
                 if (p.alive || !p.body) continue;
@@ -2895,6 +2895,30 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_gapInitial = std::clamp(settings["gap_initial"].get<float>(), 0.05f, 1.0f);
     if (settings.contains("wall_thickness") && settings["wall_thickness"].is_number())
         m_wallThickness = std::clamp(settings["wall_thickness"].get<float>(), 0.1f, 1.5f);
+    if (settings.contains("arena_radius") && settings["arena_radius"].is_number())
+        m_arenaRadius = std::clamp(settings["arena_radius"].get<float>(), 3.0f, 20.0f);
+    if (settings.contains("countdown_duration") && settings["countdown_duration"].is_number())
+        m_countdownDuration = std::max(1.0f, settings["countdown_duration"].get<float>());
+    if (settings.contains("gravity") && settings["gravity"].is_number())
+        m_gravity = std::clamp(settings["gravity"].get<float>(), 0.0f, 50.0f);
+    if (settings.contains("elim_feed_max") && settings["elim_feed_max"].is_number_integer())
+        m_elimFeedMax = std::max(0, settings["elim_feed_max"].get<int>());
+    if (settings.contains("shield_duration_sub") && settings["shield_duration_sub"].is_number())
+        m_shieldDurationSub = std::max(0.0f, settings["shield_duration_sub"].get<float>());
+    if (settings.contains("shield_duration_superchat") && settings["shield_duration_superchat"].is_number())
+        m_shieldDurationSuperchat = std::max(0.0f, settings["shield_duration_superchat"].get<float>());
+    if (settings.contains("shield_duration_points") && settings["shield_duration_points"].is_number())
+        m_shieldDurationPoints = std::max(0.0f, settings["shield_duration_points"].get<float>());
+    if (settings.contains("score_win") && settings["score_win"].is_number_integer())
+        m_scoreWin = std::max(0, settings["score_win"].get<int>());
+    if (settings.contains("score_sub") && settings["score_sub"].is_number_integer())
+        m_scoreSub = std::max(0, settings["score_sub"].get<int>());
+    if (settings.contains("score_superchat") && settings["score_superchat"].is_number_integer())
+        m_scoreSuperchat = std::max(0, settings["score_superchat"].get<int>());
+    if (settings.contains("score_points") && settings["score_points"].is_number_integer())
+        m_scorePoints = std::max(0, settings["score_points"].get<int>());
+    if (settings.contains("score_participation") && settings["score_participation"].is_number_integer())
+        m_scoreParticipation = std::max(0, settings["score_participation"].get<int>());
 
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
@@ -2944,6 +2968,18 @@ nlohmann::json CountryElimination::getSettings() const {
         {"ball_radius", m_ballRadius},
         {"gap_initial", m_gapInitial},
         {"wall_thickness", m_wallThickness},
+        {"arena_radius", m_arenaRadius},
+        {"countdown_duration", m_countdownDuration},
+        {"gravity", m_gravity},
+        {"elim_feed_max", m_elimFeedMax},
+        {"shield_duration_sub", m_shieldDurationSub},
+        {"shield_duration_superchat", m_shieldDurationSuperchat},
+        {"shield_duration_points", m_shieldDurationPoints},
+        {"score_win", m_scoreWin},
+        {"score_sub", m_scoreSub},
+        {"score_superchat", m_scoreSuperchat},
+        {"score_points", m_scorePoints},
+        {"score_participation", m_scoreParticipation},
         {"text_elements", textElementsJson()},
     };
 }

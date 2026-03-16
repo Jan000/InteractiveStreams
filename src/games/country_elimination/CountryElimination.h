@@ -306,6 +306,20 @@ private:
     // Configurable sizes
     float  m_ballRadius         = BALL_RADIUS;
     float  m_wallThickness      = WALL_THICKNESS;
+    float  m_arenaRadius        = ARENA_RADIUS;
+    float  m_countdownDuration  = 3.0f;
+    float  m_gravity            = 15.0f;
+    int    m_elimFeedMax        = 8;
+
+    // Stream-event reward settings
+    float  m_shieldDurationSub       = 15.0f;
+    float  m_shieldDurationSuperchat = 20.0f;
+    float  m_shieldDurationPoints    = 10.0f;
+    int    m_scoreWin           = 100;
+    int    m_scoreSub           = 300;
+    int    m_scoreSuperchat     = 500;
+    int    m_scorePoints        = 100;
+    int    m_scoreParticipation = 1;
 
     // Bot settings
     int   m_botFillTarget   = 8;
