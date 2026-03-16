@@ -130,6 +130,12 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "rainbow_ring", label: "Rainbow Ring", description: "Animate the arena ring with rainbow colors", type: "bool", defaultValue: true },
     { key: "allow_reentry", label: "Allow Re-entry", description: "Players that bounce back into the arena are revived and continue playing", type: "bool", defaultValue: true },
     { key: "show_bot_names", label: "Show Bot Names", description: "Display name labels below bot players", type: "bool", defaultValue: true },
+    // --- Quiz ---
+    { key: "quiz_enabled", label: "Enable Quiz", description: "Show periodic geography quiz questions during the game", type: "bool", defaultValue: true },
+    { key: "quiz_interval", label: "Quiz Interval (s)", description: "Seconds between quiz questions (cooldown after each question)", type: "float", min: 5, max: 300, step: 1, defaultValue: 30 },
+    { key: "quiz_duration", label: "Quiz Duration (s)", description: "How many seconds players have to answer each question", type: "float", min: 5, max: 60, step: 1, defaultValue: 15 },
+    { key: "quiz_points", label: "Quiz Points", description: "Points awarded for a correct quiz answer", type: "int", min: 0, max: 1000, step: 10, defaultValue: 50 },
+    { key: "quiz_shield_secs", label: "Quiz Shield Duration (s)", description: "Shield duration awarded to active players for correct answers (0 = no shield)", type: "float", min: 0, max: 60, step: 1, defaultValue: 10 },
   ],
 };
 

@@ -384,7 +384,7 @@ void CountryElimination::createArenaBody() {
         float my = ARENA_RADIUS * std::sin(angle);
 
         b2PolygonShape seg;
-        seg.SetAsBox(segLen * 0.55f, WALL_THICKNESS * 0.5f,
+        seg.SetAsBox(segLen * 0.55f, m_wallThickness * 0.5f,
                      b2Vec2(mx, my), angle + PI / 2.0f);
 
         b2FixtureDef fix;
@@ -531,10 +531,10 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.label = label;
     p.avatarUrl = avatarUrl;
     p.color = generateColor();
-    p.radiusM = BALL_RADIUS;
+    p.radiusM = m_ballRadius;
     p.alive = true;
     p.eliminated = false;
-    p.body = createPlayerBody(sx, sy, BALL_RADIUS);
+    p.body = createPlayerBody(sx, sy, m_ballRadius);
     p.prevPos = p.body->GetPosition();
     p.currPos = p.prevPos;
     m_players[mapKey] = std::move(p);
@@ -584,7 +584,7 @@ void CountryElimination::handleStreamEvent(const platform::ChatMessage& msg) {
         p.shieldTimer = 20.0f;
         p.score += 500;
         if (p.body) {
-            float nr = BALL_RADIUS * 1.5f;
+            float nr = m_ballRadius * 1.5f;
             p.radiusM = nr;
             b2Fixture* fix = p.body->GetFixtureList();
             if (fix) {
@@ -627,7 +627,7 @@ void CountryElimination::startBattle() {
     m_roundNumber++;
 
     // Open the gap and rebuild arena
-    m_currentGapAngle = GAP_INITIAL;
+    m_currentGapAngle = m_gapInitial;
     m_currentBallSpeed = m_initialSpeed;
     recreateArena();
 
@@ -711,7 +711,7 @@ void CountryElimination::enforceConstantVelocity() {
 }
 
 void CountryElimination::checkEliminations() {
-    float limit = ARENA_RADIUS + WALL_THICKNESS + 0.5f;
+    float limit = ARENA_RADIUS + m_wallThickness + 0.5f;
     float limit2 = limit * limit;
 
     for (auto& [id, p] : m_players) {
@@ -798,6 +798,7 @@ void CountryElimination::endRound() {
         Player& w = m_players[m_winnerId];
         w.score += 100;
         recordRoundWin(w);
+        recordCountryWin(w.label);
 
         if (!w.isBot()) {
             sendChatFeedback("🏆 " + w.displayName + " [" + w.label + "] wins Round " +
@@ -835,23 +836,74 @@ void CountryElimination::recordRoundWin(const Player& winner) {
               [](const RoundWinEntry& a, const RoundWinEntry& b) { return a.wins > b.wins; });
 }
 
+void CountryElimination::recordCountryWin(const std::string& label) {
+    std::string upper = label;
+    for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (auto& cw : m_countryWins) {
+        if (cw.label == upper) {
+            cw.wins++;
+            std::sort(m_countryWins.begin(), m_countryWins.end(),
+                      [](const CountryWinEntry& a, const CountryWinEntry& b) { return a.wins > b.wins; });
+            return;
+        }
+    }
+    m_countryWins.push_back({upper, 1});
+    std::sort(m_countryWins.begin(), m_countryWins.end(),
+              [](const CountryWinEntry& a, const CountryWinEntry& b) { return a.wins > b.wins; });
+}
+
+void CountryElimination::refreshPlayerLeaderboardCache() {
+    try {
+        auto entries = is::core::Application::instance().playerDatabase().getTopRecent(10, 24);
+        m_cachedPlayerLeaderboard.clear();
+        for (const auto& e : entries) {
+            // Try to find avatar URL from active players
+            std::string avatarUrl;
+            auto it = m_players.find(e.userId);
+            if (it != m_players.end()) avatarUrl = it->second.avatarUrl;
+            m_cachedPlayerLeaderboard.push_back({e.displayName, avatarUrl, e.points, e.wins});
+        }
+    } catch (...) {}
+}
+
 void CountryElimination::resetForNextRound() {
-    if (m_elimPersistRounds) {
-        for (auto it = m_players.begin(); it != m_players.end(); ) {
-            if (it->second.alive) {
+    // ── Survivors persist: keep alive players, remove eliminated ones ──
+    for (auto it = m_players.begin(); it != m_players.end(); ) {
+        if (it->second.alive) {
+            // Survivor — reset power-ups but keep in the game
+            Player& p = it->second;
+            p.hasShield = false;
+            p.shieldTimer = 0.0f;
+            // Reset enlarged balls back to default
+            if (std::abs(p.radiusM - m_ballRadius) > 0.01f && p.body) {
+                b2Fixture* fix = p.body->GetFixtureList();
+                if (fix) {
+                    p.body->DestroyFixture(fix);
+                    b2CircleShape c;
+                    c.m_radius = m_ballRadius;
+                    b2FixtureDef fd;
+                    fd.shape = &c;
+                    fd.density = 1.0f;
+                    fd.restitution = m_restitution;
+                    fd.friction = 0.0f;
+                    fd.filter.categoryBits = CAT_ALIVE;
+                    fd.filter.maskBits     = MASK_ALIVE;
+                    p.body->CreateFixture(&fd);
+                }
+                p.radiusM = m_ballRadius;
+            }
+            ++it;
+        } else {
+            // Eliminated — clean up unless visual persistence is on
+            if (!m_elimPersistRounds) {
                 if (it->second.body && m_world) m_world->DestroyBody(it->second.body);
                 it = m_players.erase(it);
             } else {
                 ++it;
             }
         }
-    } else {
-        for (auto& [id, p] : m_players) {
-            if (p.body && m_world) { m_world->DestroyBody(p.body); p.body = nullptr; }
-        }
-        m_players.clear();
-        m_eliminatedQueue.clear();
     }
+    if (!m_elimPersistRounds) m_eliminatedQueue.clear();
     m_eliminationFeed.clear();
     m_winnerId.clear();
     m_particles.clear();
@@ -861,9 +913,20 @@ void CountryElimination::resetForNextRound() {
     // Reset to closed ring for lobby
     m_currentGapAngle = 0.0f;
     m_currentBallSpeed = m_initialSpeed;
-    m_arenaAngularVel = 0.3f;
+    m_arenaAngularVel = m_arenaSpeedDefault;
     createArenaBody();
     if (m_arenaBody) m_arenaBody->SetAngularVelocity(m_arenaAngularVel);
+
+    // Normalize survivor velocities to initial speed
+    for (auto& [id, p] : m_players) {
+        if (!p.alive || !p.body) continue;
+        b2Vec2 vel = p.body->GetLinearVelocity();
+        float spd = vel.Length();
+        if (spd > 0.01f) {
+            float scale = m_initialSpeed / spd;
+            p.body->SetLinearVelocity(b2Vec2(vel.x * scale, vel.y * scale));
+        }
+    }
 
     m_phase = GamePhase::Lobby;
     m_lobbyTimer = 0.0;
@@ -1016,7 +1079,15 @@ void CountryElimination::update(double dt) {
     m_arenaGlowPhase += fdt * 1.5f;
     m_background.update(fdt);
     updateParticles(fdt);
+    updateQuiz(fdt);
     m_avatarCache.processPendingUploads(2);
+
+    // Periodically refresh player leaderboard cache from PlayerDatabase
+    m_leaderboardCacheTimer -= dt;
+    if (m_leaderboardCacheTimer <= 0.0) {
+        m_leaderboardCacheTimer = 5.0;
+        refreshPlayerLeaderboardCache();
+    }
 
     for (auto& [id, p] : m_players) {
         if (p.hasShield) {
@@ -1158,7 +1229,7 @@ void CountryElimination::update(double dt) {
 
         // Re-entry: revive eliminated players that bounce back inside the arena
         if (m_allowReentry) {
-            float reentryLimit = ARENA_RADIUS - WALL_THICKNESS - 0.3f;
+            float reentryLimit = ARENA_RADIUS - m_wallThickness - 0.3f;
             float reentryLimit2 = reentryLimit * reentryLimit;
             for (auto& [id, p] : m_players) {
                 if (p.alive || !p.body) continue;
@@ -1190,7 +1261,6 @@ void CountryElimination::update(double dt) {
         }
 
         respawnDeadBots(fdt);
-        updateQuiz(fdt);
         checkRoundEnd();
         break;
     }
@@ -1319,7 +1389,7 @@ void CountryElimination::renderBackground(sf::RenderTarget& target, const Screen
 
 void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayout& L) {
     float r = L.arenaRadiusPx;
-    float thickness = WALL_THICKNESS * L.ppm * 1.2f;
+    float thickness = m_wallThickness * L.ppm * 1.2f;
     float rOuter = r + thickness / 2.0f;
     float rInner = r - thickness / 2.0f;
 
@@ -1619,7 +1689,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 sf::Text name;
                 name.setFont(m_font);
                 name.setString(p.displayName);
-                name.setCharacterSize(fs(static_cast<int>(11 * m_nameTextScale)));
+                name.setCharacterSize(fs(static_cast<int>(20 * m_nameTextScale)));
                 auto nb = name.getLocalBounds();
                 float totalW = avatarDiam + 3.0f + nb.width;
                 float startX = sp.x - totalW / 2.0f;
@@ -1646,7 +1716,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 sf::Text name;
                 name.setFont(m_font);
                 name.setString(p.displayName);
-                name.setCharacterSize(fs(static_cast<int>(11 * m_nameTextScale)));
+                name.setCharacterSize(fs(static_cast<int>(20 * m_nameTextScale)));
                 name.setFillColor(sf::Color(255, 255, 255, 180));
                 name.setOutlineColor(sf::Color(0, 0, 0, 140));
                 name.setOutlineThickness(1.0f);
@@ -1860,26 +1930,26 @@ void CountryElimination::renderCountdown(sf::RenderTarget& target, const ScreenL
     target.draw(t);
 }
 
-// ── Round Winners Panel ──────────────────────────────────────────────────────
+// ── Country Leaderboard Panel ─────────────────────────────────────────────────
 
 void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const ScreenLayout& L) {
-    if (!m_fontLoaded || m_roundWinners.empty()) return;
+    if (!m_fontLoaded || m_countryWins.empty()) return;
 
     // Panel position: top-right of safe zone
-    float panelW = std::min(280.0f, L.safeW * 0.5f);
+    float panelW = std::min(320.0f, L.safeW * 0.5f);
     float panelX = L.safeRight - panelW - 10.0f;
     float panelY = L.H * 0.015f;
-    int maxShow = std::min(static_cast<int>(m_roundWinners.size()), 10);
+    int maxShow = std::min(static_cast<int>(m_countryWins.size()), 10);
 
-    float lineH = fs(16) + 6.0f;
-    float headerH = fs(14) + fs(10) + 18.0f;
-    float panelH = headerH + maxShow * lineH + 10.0f;
+    float lineH = fs(24) + 10.0f;
+    float headerH = fs(26) + fs(20) + 20.0f;
+    float panelH = headerH + maxShow * lineH + 12.0f;
 
     // Semi-transparent background
     sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
     bg.setPosition(panelX, panelY);
-    bg.setFillColor(sf::Color(0, 0, 0, 140));
-    bg.setOutlineColor(sf::Color(255, 255, 255, 40));
+    bg.setFillColor(sf::Color(0, 0, 0, 160));
+    bg.setOutlineColor(sf::Color(255, 215, 0, 60));
     bg.setOutlineThickness(1.0f);
     target.draw(bg);
 
@@ -1887,8 +1957,8 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
     {
         sf::Text header;
         header.setFont(m_font);
-        header.setString("Round Winners (Top 10)");
-        header.setCharacterSize(fs(14));
+        header.setString("COUNTRIES");
+        header.setCharacterSize(fs(26));
         header.setFillColor(sf::Color(255, 215, 0, 220));
         header.setOutlineColor(sf::Color(0, 0, 0, 200));
         header.setOutlineThickness(1.0f);
@@ -1900,54 +1970,63 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
         sf::Text sub;
         sub.setFont(m_font);
         sub.setString("First to " + std::to_string(m_championThreshold) + " wins");
-        sub.setCharacterSize(fs(10));
+        sub.setCharacterSize(fs(20));
         sub.setFillColor(sf::Color(200, 200, 200, 160));
         auto sb = sub.getLocalBounds();
         sub.setOrigin(sb.left + sb.width / 2.0f, 0.0f);
-        sub.setPosition(panelX + panelW / 2.0f, panelY + fs(14) + 10.0f);
+        sub.setPosition(panelX + panelW / 2.0f, panelY + fs(26) + 10.0f);
         target.draw(sub);
     }
 
-    // Entries
+    // Entries — flag + country label + wins
     float y = panelY + headerH;
     for (int i = 0; i < maxShow; ++i) {
-        const auto& rw = m_roundWinners[i];
+        const auto& cw = m_countryWins[i];
 
         // Rank
         sf::Text rank;
         rank.setFont(m_font);
         rank.setString(std::to_string(i + 1) + ".");
-        rank.setCharacterSize(fs(15));
-        rank.setFillColor(sf::Color(200, 200, 200, 200));
+        rank.setCharacterSize(fs(24));
+        rank.setFillColor(i == 0 ? sf::Color(255, 215, 0, 220) : sf::Color(200, 200, 200, 200));
         rank.setPosition(panelX + 8.0f, y);
         target.draw(rank);
 
-        // Color dot
-        float dotR = 5.0f;
-        sf::CircleShape dot(dotR);
-        dot.setOrigin(dotR, dotR);
-        dot.setPosition(panelX + 42.0f, y + fs(15) / 2.0f + 2.0f);
-        dot.setFillColor(rw.color);
-        dot.setOutlineColor(sf::Color(255, 255, 255, 100));
-        dot.setOutlineThickness(1.0f);
-        target.draw(dot);
+        // Flag circle
+        float flagR = fs(24) * 0.45f;
+        sf::CircleShape flag(flagR);
+        flag.setOrigin(flagR, flagR);
+        flag.setPosition(panelX + 50.0f, y + lineH / 2.0f);
+        auto fit = m_flagTextures.find(cw.label);
+        if (fit != m_flagTextures.end()) {
+            flag.setTexture(&fit->second);
+            auto ts = fit->second.getSize();
+            int sq = std::min(ts.x, ts.y);
+            int ox = (ts.x - sq) / 2;
+            int oy = (ts.y - sq) / 2;
+            flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
+            flag.setFillColor(sf::Color::White);
+        } else {
+            flag.setFillColor(sf::Color(180, 180, 180));
+        }
+        flag.setOutlineColor(sf::Color(255, 255, 255, 100));
+        flag.setOutlineThickness(1.0f);
+        target.draw(flag);
 
-        // Name + label
+        // Country label
         sf::Text name;
         name.setFont(m_font);
-        std::string display = rw.displayName;
-        if (display.size() > 14) display = display.substr(0, 12) + "..";
-        name.setString(display + " [" + rw.label + "]");
-        name.setCharacterSize(fs(13));
-        name.setFillColor(sf::Color(255, 255, 255, 200));
-        name.setPosition(panelX + 55.0f, y + 1.0f);
+        name.setString(cw.label);
+        name.setCharacterSize(fs(22));
+        name.setFillColor(sf::Color(255, 255, 255, 210));
+        name.setPosition(panelX + 50.0f + flagR + 8.0f, y + 2.0f);
         target.draw(name);
 
         // Wins count
         sf::Text wins;
         wins.setFont(m_font);
-        wins.setString(std::to_string(rw.wins));
-        wins.setCharacterSize(fs(15));
+        wins.setString(std::to_string(cw.wins) + "W");
+        wins.setCharacterSize(fs(24));
         wins.setFillColor(sf::Color(255, 215, 0, 220));
         auto wb = wins.getLocalBounds();
         wins.setOrigin(wb.left + wb.width, 0.0f);
@@ -1974,70 +2053,10 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
     target.draw(dim);
 
     float cx = (L.safeLeft + L.safeRight) / 2.0f;
-
-    // Winner ball (large)
-    float bigR = L.arenaRadiusPx * 0.2f;
-    float bigH = m_flagShapeRect ? (bigR / FLAG_ASPECT) : bigR;
-    float ballY = L.arenaCY - bigR * 0.5f;
     float bounce = std::sin(m_globalTime * 3.0f) * 8.0f;
 
-    std::string wLabelUp = w.label;
-    for (auto& c : wLabelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    auto wFlagIt = m_flagTextures.find(wLabelUp);
-    bool wHasFlag = (wFlagIt != m_flagTextures.end());
-
-    if (m_flagShapeRect) {
-        sf::RectangleShape bigBall(sf::Vector2f(bigR * 2, bigH * 2));
-        bigBall.setOrigin(bigR, bigH);
-        bigBall.setPosition(cx, ballY + bounce);
-
-        if (wHasFlag) {
-            bigBall.setFillColor(sf::Color::White);
-            bigBall.setTexture(&wFlagIt->second);
-        } else {
-            bigBall.setFillColor(w.color);
-        }
-        bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
-        bigBall.setOutlineThickness(m_flagOutline ? 3.0f : 0.0f);
-        target.draw(bigBall);
-    } else {
-        sf::CircleShape bigBall(bigR, 48);
-        bigBall.setOrigin(bigR, bigR);
-        bigBall.setPosition(cx, ballY + bounce);
-
-        if (wHasFlag) {
-            bigBall.setFillColor(sf::Color::White);
-            auto& tex = wFlagIt->second;
-            bigBall.setTexture(&tex);
-            auto ts = tex.getSize();
-            int side = static_cast<int>(std::min(ts.x, ts.y));
-            int ox = (static_cast<int>(ts.x) - side) / 2;
-            int oy = (static_cast<int>(ts.y) - side) / 2;
-            bigBall.setTextureRect(sf::IntRect(ox, oy, side, side));
-        } else {
-            bigBall.setFillColor(w.color);
-        }
-        bigBall.setOutlineColor(sf::Color(255, 255, 255, 200));
-        bigBall.setOutlineThickness(m_flagOutline ? 3.0f : 0.0f);
-        target.draw(bigBall);
-    }
-
-    // Label on big ball (only when no flag)
-    if (m_fontLoaded && !wHasFlag) {
-        sf::Text lbl;
-        lbl.setFont(m_font);
-        lbl.setString(w.label);
-        lbl.setCharacterSize(fs(static_cast<int>(bigR * 0.7f)));
-        lbl.setFillColor(sf::Color::White);
-        lbl.setOutlineColor(sf::Color(0, 0, 0, 200));
-        lbl.setOutlineThickness(2.0f);
-        auto llb = lbl.getLocalBounds();
-        lbl.setOrigin(llb.left + llb.width / 2.0f, llb.top + llb.height / 2.0f);
-        lbl.setPosition(cx, ballY + bounce);
-        target.draw(lbl);
-    }
-
-    // "WINNER!" text above
+    // ── "WINNER!" text ──
+    float winnerTextY = L.arenaCY - L.arenaRadiusPx * 0.55f;
     {
         auto r = resolve("winner_text", L.W, L.H);
         sf::Text t;
@@ -2056,11 +2075,92 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
 
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(cx, ballY - bigR - 40.0f);
+        t.setPosition(cx, winnerTextY + bounce * 0.5f);
         target.draw(t);
     }
 
-    // Name + label below ball
+    // ── Large avatar circle (profile picture) ──
+    float avatarR = L.arenaRadiusPx * 0.22f; // large avatar radius
+    float avatarY = winnerTextY + fs(52) * 0.5f + avatarR + 15.0f;
+    const sf::Texture* avatarTex = (!w.avatarUrl.empty())
+        ? m_avatarCache.getTexture(w.avatarUrl) : nullptr;
+
+    if (avatarTex) {
+        sf::Sprite avatarSprite(*avatarTex);
+        auto ts = avatarTex->getSize();
+        float scale = (avatarR * 2.0f) / static_cast<float>(std::max(ts.x, ts.y));
+        avatarSprite.setOrigin(ts.x / 2.0f, ts.y / 2.0f);
+        avatarSprite.setScale(scale, scale);
+        avatarSprite.setPosition(cx, avatarY + bounce);
+        avatarSprite.setColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(255 * fadeIn)));
+        target.draw(avatarSprite);
+
+        // Circular outline ring
+        sf::CircleShape ring(avatarR, 48);
+        ring.setOrigin(avatarR, avatarR);
+        ring.setPosition(cx, avatarY + bounce);
+        ring.setFillColor(sf::Color::Transparent);
+        ring.setOutlineColor(sf::Color(255, 215, 0, static_cast<sf::Uint8>(200 * fadeIn)));
+        ring.setOutlineThickness(3.0f);
+        target.draw(ring);
+    }
+
+    // ── Flag ball below avatar ──
+    float flagR = L.arenaRadiusPx * 0.15f;
+    float flagH = m_flagShapeRect ? (flagR / FLAG_ASPECT) : flagR;
+    float flagY = avatarTex ? (avatarY + avatarR + flagR + 15.0f)
+                            : (winnerTextY + fs(52) * 0.5f + flagR + 15.0f);
+
+    std::string wLabelUp = w.label;
+    for (auto& c : wLabelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    auto wFlagIt = m_flagTextures.find(wLabelUp);
+    bool wHasFlag = (wFlagIt != m_flagTextures.end());
+
+    if (m_flagShapeRect) {
+        sf::RectangleShape bigBall(sf::Vector2f(flagR * 2, flagH * 2));
+        bigBall.setOrigin(flagR, flagH);
+        bigBall.setPosition(cx, flagY + bounce);
+        if (wHasFlag) { bigBall.setFillColor(sf::Color::White); bigBall.setTexture(&wFlagIt->second); }
+        else bigBall.setFillColor(w.color);
+        bigBall.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(200 * fadeIn)));
+        bigBall.setOutlineThickness(m_flagOutline ? 3.0f : 0.0f);
+        target.draw(bigBall);
+    } else {
+        sf::CircleShape bigBall(flagR, 48);
+        bigBall.setOrigin(flagR, flagR);
+        bigBall.setPosition(cx, flagY + bounce);
+        if (wHasFlag) {
+            bigBall.setFillColor(sf::Color::White);
+            auto& tex = wFlagIt->second;
+            bigBall.setTexture(&tex);
+            auto ts = tex.getSize();
+            int side = static_cast<int>(std::min(ts.x, ts.y));
+            int ox = (static_cast<int>(ts.x) - side) / 2;
+            int oy = (static_cast<int>(ts.y) - side) / 2;
+            bigBall.setTextureRect(sf::IntRect(ox, oy, side, side));
+        } else bigBall.setFillColor(w.color);
+        bigBall.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(200 * fadeIn)));
+        bigBall.setOutlineThickness(m_flagOutline ? 3.0f : 0.0f);
+        target.draw(bigBall);
+    }
+
+    // Label on flag ball (only when no flag texture)
+    if (!wHasFlag) {
+        sf::Text lbl;
+        lbl.setFont(m_font);
+        lbl.setString(w.label);
+        lbl.setCharacterSize(fs(static_cast<int>(flagR * 0.7f)));
+        lbl.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(255 * fadeIn)));
+        lbl.setOutlineColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(200 * fadeIn)));
+        lbl.setOutlineThickness(2.0f);
+        auto llb = lbl.getLocalBounds();
+        lbl.setOrigin(llb.left + llb.width / 2.0f, llb.top + llb.height / 2.0f);
+        lbl.setPosition(cx, flagY + bounce);
+        target.draw(lbl);
+    }
+
+    // ── Display name (large, below flag) ──
+    float nameY = flagY + (m_flagShapeRect ? flagH : flagR) + 20.0f;
     {
         auto r = resolve("winner_label", L.W, L.H);
         sf::Text t;
@@ -2075,11 +2175,11 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
         t.setCharacterSize(r.fontSize);
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(cx, ballY + bigR + 35.0f);
+        t.setPosition(cx, nameY);
         target.draw(t);
     }
 
-    // Wins count
+    // ── Wins count ──
     {
         int wins = 0;
         for (const auto& rw : m_roundWinners) {
@@ -2088,27 +2188,27 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
         sf::Text t;
         t.setFont(m_font);
         t.setString("Wins: " + std::to_string(wins));
-        t.setCharacterSize(fs(18));
+        t.setCharacterSize(fs(28));
         t.setFillColor(sf::Color(200, 200, 200, static_cast<sf::Uint8>(180 * fadeIn)));
         t.setOutlineColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(120 * fadeIn)));
         t.setOutlineThickness(1.0f);
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(cx, ballY + bigR + 70.0f);
+        t.setPosition(cx, nameY + 40.0f);
         target.draw(t);
     }
 
-    // Next round countdown
+    // ── Next round countdown ──
     if (m_roundEndTimer < m_roundEndDuration) {
         sf::Text t;
         t.setFont(m_font);
         std::string nxt = "Next round in " + std::to_string(std::max(0, static_cast<int>(std::ceil(m_roundEndTimer)))) + "s";
         t.setString(nxt);
-        t.setCharacterSize(fs(14));
+        t.setCharacterSize(fs(24));
         t.setFillColor(sf::Color(180, 180, 180, static_cast<sf::Uint8>(150 * fadeIn)));
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(cx, ballY + bigR + 100.0f);
+        t.setPosition(cx, nameY + 80.0f);
         target.draw(t);
     }
 }
@@ -2128,8 +2228,8 @@ void CountryElimination::renderEliminationFeed(sf::RenderTarget& target, const S
         sf::Uint8 a = static_cast<sf::Uint8>(alpha * 200);
 
         // Background pill
-        float entryW = 240.0f;
-        float entryH = fs(14) + 8.0f;
+        float entryW = 300.0f;
+        float entryH = fs(22) + 8.0f;
         sf::RectangleShape pill(sf::Vector2f(entryW, entryH));
         pill.setOrigin(entryW / 2.0f, 0.0f);
         pill.setPosition(cx, startY);
@@ -2149,7 +2249,7 @@ void CountryElimination::renderEliminationFeed(sf::RenderTarget& target, const S
         sf::Text t;
         t.setFont(m_font);
         t.setString("X  " + e.displayName + " [" + e.label + "]");
-        t.setCharacterSize(fs(13));
+        t.setCharacterSize(fs(22));
         t.setFillColor(sf::Color(255, 100, 100, a));
         t.setOutlineColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(a * 0.6f)));
         t.setOutlineThickness(1.0f);
@@ -2169,7 +2269,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
 
     const float pad = 12.0f;
     const float cornerR = 6.0f;
-    const float lineH = fs(15) + 5.0f;
+    const float lineH = fs(24) + 8.0f;
 
     // Helper: draw a card background with subtle border
     auto drawCard = [&](float x, float y, float w, float h) {
@@ -2183,7 +2283,8 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
 
     // Helper: draw a card header
     auto drawHeader = [&](float x, float y, float w, const std::string& title, sf::Color col) {
-        sf::RectangleShape hdr(sf::Vector2f(w, fs(16) + 10.0f));
+        float hdrH = fs(28) + 12.0f;
+        sf::RectangleShape hdr(sf::Vector2f(w, hdrH));
         hdr.setPosition(x, y);
         hdr.setFillColor(sf::Color(col.r, col.g, col.b, 40));
         target.draw(hdr);
@@ -2191,36 +2292,36 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
         sf::Text t;
         t.setFont(m_font);
         t.setString(title);
-        t.setCharacterSize(fs(13));
+        t.setCharacterSize(fs(24));
         t.setFillColor(col);
         t.setOutlineColor(sf::Color(0, 0, 0, 180));
         t.setOutlineThickness(1.0f);
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(x + w / 2.0f, y + (fs(16) + 10.0f) / 2.0f);
+        t.setPosition(x + w / 2.0f, y + hdrH / 2.0f);
         target.draw(t);
-        return y + fs(16) + 10.0f + 6.0f;
+        return y + hdrH + 6.0f;
     };
 
-    // ── LEFT PANEL: Leaderboard ──────────────────────────────────────────
+    // ── LEFT PANEL: Country + Player Leaderboards ─────────────────────────
     if (L.leftPanelW > 60.0f) {
         float px = L.leftPanelX;
         float pw = L.leftPanelW;
         float py = pad;
 
-        // Card: Round Winners
+        // Card: Country Leaderboard
         {
-            int maxShow = std::min(static_cast<int>(m_roundWinners.size()), 10);
-            float headerH = fs(16) + 10.0f;
+            int maxShow = std::min(static_cast<int>(m_countryWins.size()), 10);
+            float headerH = fs(28) + 12.0f;
             float cardH = headerH + 6.0f + std::max(1, maxShow) * lineH + pad;
             drawCard(px, py, pw, cardH);
-            float cy = drawHeader(px, py, pw, "LEADERBOARD", sf::Color(255, 215, 0, 220));
+            float cy = drawHeader(px, py, pw, "COUNTRIES", sf::Color(255, 215, 0, 220));
 
-            if (m_roundWinners.empty()) {
+            if (m_countryWins.empty()) {
                 sf::Text t;
                 t.setFont(m_font);
                 t.setString("No winners yet");
-                t.setCharacterSize(fs(11));
+                t.setCharacterSize(fs(20));
                 t.setFillColor(sf::Color(150, 150, 150, 140));
                 auto lb = t.getLocalBounds();
                 t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
@@ -2228,72 +2329,53 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 target.draw(t);
             } else {
                 for (int i = 0; i < maxShow; ++i) {
-                    const auto& rw = m_roundWinners[i];
+                    const auto& cw = m_countryWins[i];
                     float ey = cy + i * lineH;
 
                     // Rank number
                     sf::Text rank;
                     rank.setFont(m_font);
                     rank.setString(std::to_string(i + 1) + ".");
-                    rank.setCharacterSize(fs(13));
+                    rank.setCharacterSize(fs(22));
                     rank.setFillColor(i == 0 ? sf::Color(255, 215, 0, 220) : sf::Color(180, 180, 180, 200));
                     rank.setPosition(px + 6.0f, ey);
                     target.draw(rank);
 
-                    // Avatar or flag circle
-                    float flagR = fs(13) * 0.5f;
-                    const sf::Texture* avatarTex = nullptr;
-                    if (!rw.avatarUrl.empty())
-                        avatarTex = m_avatarCache.getTexture(rw.avatarUrl);
-
-                    if (avatarTex) {
-                        sf::CircleShape av(flagR);
-                        av.setOrigin(flagR, flagR);
-                        av.setPosition(px + 30.0f, ey + lineH / 2.0f);
-                        av.setTexture(avatarTex);
-                        av.setFillColor(sf::Color::White);
-                        av.setOutlineColor(sf::Color(255, 255, 255, 80));
-                        av.setOutlineThickness(1.0f);
-                        target.draw(av);
+                    // Flag circle
+                    float flagR = fs(22) * 0.5f;
+                    sf::CircleShape flag(flagR);
+                    flag.setOrigin(flagR, flagR);
+                    flag.setPosition(px + 40.0f, ey + lineH / 2.0f);
+                    auto fit = m_flagTextures.find(cw.label);
+                    if (fit != m_flagTextures.end()) {
+                        flag.setTexture(&fit->second);
+                        auto ts = fit->second.getSize();
+                        int sq = std::min(ts.x, ts.y);
+                        int ox = (ts.x - sq) / 2;
+                        int oy = (ts.y - sq) / 2;
+                        flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
+                        flag.setFillColor(sf::Color::White);
                     } else {
-                        sf::CircleShape flag(flagR);
-                        flag.setOrigin(flagR, flagR);
-                        flag.setPosition(px + 30.0f, ey + lineH / 2.0f);
-                        auto fit = m_flagTextures.find(rw.label);
-                        if (fit != m_flagTextures.end()) {
-                            flag.setTexture(&fit->second);
-                            auto ts = fit->second.getSize();
-                            int sq = std::min(ts.x, ts.y);
-                            int ox = (ts.x - sq) / 2;
-                            int oy = (ts.y - sq) / 2;
-                            flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
-                            flag.setFillColor(sf::Color::White);
-                        } else {
-                            flag.setFillColor(rw.color);
-                        }
-                        flag.setOutlineColor(sf::Color(255, 255, 255, 80));
-                        flag.setOutlineThickness(1.0f);
-                        target.draw(flag);
+                        flag.setFillColor(sf::Color(180, 180, 180));
                     }
+                    flag.setOutlineColor(sf::Color(255, 255, 255, 80));
+                    flag.setOutlineThickness(1.0f);
+                    target.draw(flag);
 
-                    // Name
+                    // Country label
                     sf::Text name;
                     name.setFont(m_font);
-                    std::string disp = rw.displayName;
-                    int maxChars = static_cast<int>(pw - 80.0f) / std::max(1, static_cast<int>(fs(11) * 0.6f));
-                    if (static_cast<int>(disp.size()) > maxChars && maxChars > 3)
-                        disp = disp.substr(0, maxChars - 2) + "..";
-                    name.setString(disp);
-                    name.setCharacterSize(fs(11));
+                    name.setString(cw.label);
+                    name.setCharacterSize(fs(20));
                     name.setFillColor(sf::Color(230, 230, 240, 210));
-                    name.setPosition(px + 30.0f + flagR + 6.0f, ey + 1.0f);
+                    name.setPosition(px + 40.0f + flagR + 6.0f, ey + 1.0f);
                     target.draw(name);
 
                     // Wins
                     sf::Text wins;
                     wins.setFont(m_font);
-                    wins.setString(std::to_string(rw.wins) + "W");
-                    wins.setCharacterSize(fs(13));
+                    wins.setString(std::to_string(cw.wins) + "W");
+                    wins.setCharacterSize(fs(22));
                     wins.setFillColor(sf::Color(255, 215, 0, 200));
                     auto wb = wins.getLocalBounds();
                     wins.setOrigin(wb.left + wb.width, 0.0f);
@@ -2304,24 +2386,20 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
             py += cardH + pad;
         }
 
-        // Card: Player Leaderboard (real players only)
+        // Card: Player Leaderboard (from PlayerDatabase, real players only)
         {
-            std::vector<const RoundWinEntry*> playerWins;
-            for (const auto& rw : m_roundWinners) {
-                if (rw.userId.rfind("__bot_", 0) != 0)
-                    playerWins.push_back(&rw);
-            }
-            int maxShow = std::min(static_cast<int>(playerWins.size()), 10);
-            float headerH = fs(16) + 10.0f;
-            float cardH = headerH + 6.0f + std::max(1, maxShow) * lineH + pad;
+            int maxShow = std::min(static_cast<int>(m_cachedPlayerLeaderboard.size()), 8);
+            float playerLineH = fs(26) + 10.0f;
+            float headerH = fs(28) + 12.0f;
+            float cardH = headerH + 6.0f + std::max(1, maxShow) * playerLineH + pad;
             drawCard(px, py, pw, cardH);
             float cy = drawHeader(px, py, pw, "PLAYERS", sf::Color(100, 200, 255, 220));
 
-            if (playerWins.empty()) {
+            if (m_cachedPlayerLeaderboard.empty()) {
                 sf::Text t;
                 t.setFont(m_font);
-                t.setString("No player wins yet");
-                t.setCharacterSize(fs(11));
+                t.setString("No players yet");
+                t.setCharacterSize(fs(20));
                 t.setFillColor(sf::Color(150, 150, 150, 140));
                 auto lb = t.getLocalBounds();
                 t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
@@ -2329,73 +2407,62 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 target.draw(t);
             } else {
                 for (int i = 0; i < maxShow; ++i) {
-                    const auto& rw = *playerWins[i];
-                    float ey = cy + i * lineH;
+                    const auto& pe = m_cachedPlayerLeaderboard[i];
+                    float ey = cy + i * playerLineH;
 
                     sf::Text rank;
                     rank.setFont(m_font);
                     rank.setString(std::to_string(i + 1) + ".");
-                    rank.setCharacterSize(fs(13));
+                    rank.setCharacterSize(fs(22));
                     rank.setFillColor(i == 0 ? sf::Color(100, 200, 255, 220) : sf::Color(180, 180, 180, 200));
                     rank.setPosition(px + 6.0f, ey);
                     target.draw(rank);
 
-                    // Avatar or flag
-                    float flagR = fs(13) * 0.5f;
+                    // Avatar
+                    float avR = fs(22) * 0.55f;
                     const sf::Texture* avatarTex = nullptr;
-                    if (!rw.avatarUrl.empty())
-                        avatarTex = m_avatarCache.getTexture(rw.avatarUrl);
+                    if (!pe.avatarUrl.empty())
+                        avatarTex = m_avatarCache.getTexture(pe.avatarUrl);
                     if (avatarTex) {
-                        sf::CircleShape av(flagR);
-                        av.setOrigin(flagR, flagR);
-                        av.setPosition(px + 30.0f, ey + lineH / 2.0f);
+                        sf::CircleShape av(avR);
+                        av.setOrigin(avR, avR);
+                        av.setPosition(px + 40.0f, ey + playerLineH / 2.0f);
                         av.setTexture(avatarTex);
                         av.setFillColor(sf::Color::White);
-                        av.setOutlineColor(sf::Color(255, 255, 255, 80));
+                        av.setOutlineColor(sf::Color(100, 200, 255, 100));
                         av.setOutlineThickness(1.0f);
                         target.draw(av);
                     } else {
-                        sf::CircleShape flag(flagR);
-                        flag.setOrigin(flagR, flagR);
-                        flag.setPosition(px + 30.0f, ey + lineH / 2.0f);
-                        auto fit = m_flagTextures.find(rw.label);
-                        if (fit != m_flagTextures.end()) {
-                            flag.setTexture(&fit->second);
-                            auto ts = fit->second.getSize();
-                            int sq = std::min(ts.x, ts.y);
-                            int ox = (ts.x - sq) / 2;
-                            int oy = (ts.y - sq) / 2;
-                            flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
-                            flag.setFillColor(sf::Color::White);
-                        } else {
-                            flag.setFillColor(rw.color);
-                        }
-                        flag.setOutlineColor(sf::Color(255, 255, 255, 80));
-                        flag.setOutlineThickness(1.0f);
-                        target.draw(flag);
+                        sf::CircleShape dot(avR);
+                        dot.setOrigin(avR, avR);
+                        dot.setPosition(px + 40.0f, ey + playerLineH / 2.0f);
+                        dot.setFillColor(sf::Color(100, 200, 255, 60));
+                        dot.setOutlineColor(sf::Color(100, 200, 255, 80));
+                        dot.setOutlineThickness(1.0f);
+                        target.draw(dot);
                     }
 
                     sf::Text name;
                     name.setFont(m_font);
-                    std::string disp = rw.displayName;
-                    int maxChars = static_cast<int>(pw - 80.0f) / std::max(1, static_cast<int>(fs(11) * 0.6f));
+                    std::string disp = pe.displayName;
+                    int maxChars = static_cast<int>(pw - 90.0f) / std::max(1, static_cast<int>(fs(20) * 0.6f));
                     if (static_cast<int>(disp.size()) > maxChars && maxChars > 3)
                         disp = disp.substr(0, maxChars - 2) + "..";
                     name.setString(disp);
-                    name.setCharacterSize(fs(11));
+                    name.setCharacterSize(fs(20));
                     name.setFillColor(sf::Color(230, 230, 240, 210));
-                    name.setPosition(px + 30.0f + flagR + 6.0f, ey + 1.0f);
+                    name.setPosition(px + 40.0f + avR + 6.0f, ey + 1.0f);
                     target.draw(name);
 
-                    sf::Text wins;
-                    wins.setFont(m_font);
-                    wins.setString(std::to_string(rw.wins) + "W");
-                    wins.setCharacterSize(fs(13));
-                    wins.setFillColor(sf::Color(100, 200, 255, 200));
-                    auto wb = wins.getLocalBounds();
-                    wins.setOrigin(wb.left + wb.width, 0.0f);
-                    wins.setPosition(px + pw - 8.0f, ey);
-                    target.draw(wins);
+                    sf::Text pts;
+                    pts.setFont(m_font);
+                    pts.setString(std::to_string(pe.points) + "p");
+                    pts.setCharacterSize(fs(22));
+                    pts.setFillColor(sf::Color(100, 200, 255, 200));
+                    auto pb = pts.getLocalBounds();
+                    pts.setOrigin(pb.left + pb.width, 0.0f);
+                    pts.setPosition(px + pw - 8.0f, ey);
+                    target.draw(pts);
                 }
             }
             py += cardH + pad;
@@ -2404,7 +2471,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
         // Card: Recent Eliminations
         {
             int maxShow = std::min(static_cast<int>(m_eliminationFeed.size()), 8);
-            float headerH = fs(16) + 10.0f;
+            float headerH = fs(28) + 12.0f;
             float cardH = headerH + 6.0f + std::max(1, maxShow) * lineH + pad;
             drawCard(px, py, pw, cardH);
             float cy = drawHeader(px, py, pw, "ELIMINATIONS", sf::Color(255, 80, 80, 220));
@@ -2413,7 +2480,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 sf::Text t;
                 t.setFont(m_font);
                 t.setString("None yet");
-                t.setCharacterSize(fs(11));
+                t.setCharacterSize(fs(20));
                 t.setFillColor(sf::Color(150, 150, 150, 140));
                 auto lb = t.getLocalBounds();
                 t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
@@ -2427,7 +2494,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     sf::Uint8 a = static_cast<sf::Uint8>(alpha * 200);
 
                     // Avatar or flag circle
-                    float flagR = 5.0f;
+                    float flagR = 8.0f;
                     const sf::Texture* avatarTex = nullptr;
                     if (!e.avatarUrl.empty())
                         avatarTex = m_avatarCache.getTexture(e.avatarUrl);
@@ -2435,7 +2502,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     if (avatarTex) {
                         sf::CircleShape av(flagR);
                         av.setOrigin(flagR, flagR);
-                        av.setPosition(px + 10.0f, ey + lineH / 2.0f);
+                        av.setPosition(px + 14.0f, ey + lineH / 2.0f);
                         av.setTexture(avatarTex);
                         av.setFillColor(sf::Color(255, 255, 255, a));
                         av.setOutlineColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(a / 3)));
@@ -2444,7 +2511,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     } else {
                         sf::CircleShape dot(flagR);
                         dot.setOrigin(flagR, flagR);
-                        dot.setPosition(px + 10.0f, ey + lineH / 2.0f);
+                        dot.setPosition(px + 14.0f, ey + lineH / 2.0f);
                         auto fit = m_flagTextures.find(e.label);
                         if (fit != m_flagTextures.end()) {
                             dot.setTexture(&fit->second);
@@ -2466,11 +2533,11 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     sf::Text t;
                     t.setFont(m_font);
                     t.setString(e.displayName + " [" + e.label + "]");
-                    t.setCharacterSize(fs(11));
+                    t.setCharacterSize(fs(20));
                     t.setFillColor(sf::Color(255, 120, 120, a));
                     t.setOutlineColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(a * 0.5f)));
                     t.setOutlineThickness(1.0f);
-                    t.setPosition(px + 22.0f, ey);
+                    t.setPosition(px + 28.0f, ey);
                     target.draw(t);
                 }
             }
@@ -2509,7 +2576,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
             }
             stats.push_back({"Champion At", std::to_string(m_championThreshold) + " wins", sf::Color(255, 215, 0)});
 
-            float headerH = fs(16) + 10.0f;
+            float headerH = fs(28) + 12.0f;
             float cardH = headerH + 6.0f + static_cast<float>(stats.size()) * lineH + pad;
             drawCard(px, py, pw, cardH);
             float cy = drawHeader(px, py, pw, "GAME STATS", sf::Color(100, 180, 255, 220));
@@ -2519,7 +2586,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 sf::Text lbl;
                 lbl.setFont(m_font);
                 lbl.setString(stats[i].label);
-                lbl.setCharacterSize(fs(11));
+                lbl.setCharacterSize(fs(20));
                 lbl.setFillColor(sf::Color(160, 160, 180, 180));
                 lbl.setPosition(px + 8.0f, ey);
                 target.draw(lbl);
@@ -2527,7 +2594,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 sf::Text val;
                 val.setFont(m_font);
                 val.setString(stats[i].value);
-                val.setCharacterSize(fs(12));
+                val.setCharacterSize(fs(22));
                 val.setFillColor(stats[i].col);
                 auto vb = val.getLocalBounds();
                 val.setOrigin(vb.left + vb.width, 0.0f);
@@ -2560,7 +2627,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
             for (const auto& [_, p] : m_players) { if (p.isBot()) botCount++; }
             info.push_back({"Bots", std::to_string(botCount), sf::Color(180, 180, 180)});
 
-            float headerH = fs(16) + 10.0f;
+            float headerH = fs(28) + 12.0f;
             float cardH = headerH + 6.0f + static_cast<float>(info.size()) * lineH + pad;
             drawCard(px, py, pw, cardH);
             float cy = drawHeader(px, py, pw, "ARENA INFO", sf::Color(180, 140, 255, 220));
@@ -2570,7 +2637,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 sf::Text lbl;
                 lbl.setFont(m_font);
                 lbl.setString(info[i].label);
-                lbl.setCharacterSize(fs(11));
+                lbl.setCharacterSize(fs(20));
                 lbl.setFillColor(sf::Color(160, 160, 180, 180));
                 lbl.setPosition(px + 8.0f, ey);
                 target.draw(lbl);
@@ -2578,7 +2645,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 sf::Text val;
                 val.setFont(m_font);
                 val.setString(info[i].value);
-                val.setCharacterSize(fs(12));
+                val.setCharacterSize(fs(22));
                 val.setFillColor(info[i].col);
                 auto vb = val.getLocalBounds();
                 val.setOrigin(vb.left + vb.width, 0.0f);
@@ -2602,8 +2669,8 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 "BITS > 100 = Big Ball",
             };
 
-            float headerH = fs(16) + 10.0f;
-            float smallH = fs(10) + 4.0f;
+            float headerH = fs(28) + 12.0f;
+            float smallH = fs(20) + 4.0f;
             float cardH = headerH + 6.0f + lines.size() * smallH + pad;
             drawCard(px, py, pw, cardH);
             float cy = drawHeader(px, py, pw, "HOW TO PLAY", sf::Color(100, 255, 150, 220));
@@ -2613,7 +2680,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                 sf::Text t;
                 t.setFont(m_font);
                 t.setString(lines[i]);
-                t.setCharacterSize(fs(10));
+                t.setCharacterSize(fs(20));
                 t.setFillColor(sf::Color(190, 200, 210, 180));
                 auto lb = t.getLocalBounds();
                 t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
@@ -2711,16 +2778,17 @@ nlohmann::json CountryElimination::getCommands() const {
 
 std::vector<std::pair<std::string, int>> CountryElimination::getLeaderboard() const {
     std::vector<std::pair<std::string, int>> result;
-    for (const auto& rw : m_roundWinners) {
-        if (isBotId(rw.userId)) continue;
-        result.emplace_back(rw.displayName + " [" + rw.label + "]", rw.wins);
+    for (const auto& cw : m_countryWins) {
+        result.emplace_back(cw.label, cw.wins);
     }
     return result;
 }
 
 void CountryElimination::configure(const nlohmann::json& settings) {
-    if (settings.contains("arena_speed") && settings["arena_speed"].is_number())
+    if (settings.contains("arena_speed") && settings["arena_speed"].is_number()) {
         m_arenaAngularVel = std::max(0.05f, settings["arena_speed"].get<float>());
+        m_arenaSpeedDefault = m_arenaAngularVel;
+    }
     if (settings.contains("arena_speed_increase") && settings["arena_speed_increase"].is_number())
         m_arenaSpeedIncrease = std::max(0.0f, settings["arena_speed_increase"].get<float>());
     if (settings.contains("initial_speed") && settings["initial_speed"].is_number())
@@ -2798,6 +2866,14 @@ void CountryElimination::configure(const nlohmann::json& settings) {
     if (settings.contains("quiz_shield_secs") && settings["quiz_shield_secs"].is_number())
         m_quizShieldSecs = std::max(0.0f, settings["quiz_shield_secs"].get<float>());
 
+    // Configurable sizes
+    if (settings.contains("ball_radius") && settings["ball_radius"].is_number())
+        m_ballRadius = std::clamp(settings["ball_radius"].get<float>(), 0.2f, 2.0f);
+    if (settings.contains("gap_initial") && settings["gap_initial"].is_number())
+        m_gapInitial = std::clamp(settings["gap_initial"].get<float>(), 0.05f, 1.0f);
+    if (settings.contains("wall_thickness") && settings["wall_thickness"].is_number())
+        m_wallThickness = std::clamp(settings["wall_thickness"].get<float>(), 0.1f, 1.5f);
+
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
 
@@ -2806,7 +2882,7 @@ void CountryElimination::configure(const nlohmann::json& settings) {
 
 nlohmann::json CountryElimination::getSettings() const {
     return {
-        {"arena_speed", m_arenaAngularVel},
+        {"arena_speed", m_arenaSpeedDefault},
         {"arena_speed_increase", m_arenaSpeedIncrease},
         {"initial_speed", m_initialSpeed},
         {"ball_speed_increase", m_ballSpeedIncrease},
@@ -2843,6 +2919,9 @@ nlohmann::json CountryElimination::getSettings() const {
         {"quiz_duration", m_quizDuration},
         {"quiz_points", m_quizPoints},
         {"quiz_shield_secs", m_quizShieldSecs},
+        {"ball_radius", m_ballRadius},
+        {"gap_initial", m_gapInitial},
+        {"wall_thickness", m_wallThickness},
         {"text_elements", textElementsJson()},
     };
 }
@@ -3009,7 +3088,7 @@ void CountryElimination::renderQuizOverlay(sf::RenderTarget& target, const Scree
         sf::Text qt;
         qt.setFont(m_font);
         qt.setString(q.question);
-        qt.setCharacterSize(fs(16));
+        qt.setCharacterSize(fs(28));
         qt.setFillColor(sf::Color(255, 255, 255, 230));
         qt.setOutlineColor(sf::Color(0, 0, 0, 180));
         qt.setOutlineThickness(1.0f);
@@ -3069,7 +3148,7 @@ void CountryElimination::renderQuizOverlay(sf::RenderTarget& target, const Scree
         sf::Text ot;
         ot.setFont(m_font);
         ot.setString(std::string(labels[i]) + " " + q.options[i]);
-        ot.setCharacterSize(fs(13));
+        ot.setCharacterSize(fs(24));
         ot.setFillColor(sf::Color(255, 255, 255, showingReveal && !isCorrect ? static_cast<sf::Uint8>(100) : static_cast<sf::Uint8>(220)));
         ot.setOutlineColor(sf::Color(0, 0, 0, 150));
         ot.setOutlineThickness(1.0f);
@@ -3093,7 +3172,7 @@ void CountryElimination::renderQuizOverlay(sf::RenderTarget& target, const Scree
             rt.setString(std::to_string(m_quizCorrectCount) + " correct!");
         else
             rt.setString("Nobody got it!");
-        rt.setCharacterSize(fs(14));
+        rt.setCharacterSize(fs(24));
         rt.setFillColor(m_quizCorrectCount > 0 ? sf::Color(80, 255, 120, 230) : sf::Color(255, 100, 100, 230));
         rt.setOutlineColor(sf::Color(0, 0, 0, 180));
         rt.setOutlineThickness(1.0f);
@@ -3108,7 +3187,7 @@ void CountryElimination::renderQuizOverlay(sf::RenderTarget& target, const Scree
         sf::Text ht;
         ht.setFont(m_font);
         ht.setString("Type 1-4 in chat to answer!");
-        ht.setCharacterSize(fs(11));
+        ht.setCharacterSize(fs(20));
         ht.setFillColor(sf::Color(200, 200, 255, 180));
         ht.setOutlineColor(sf::Color(0, 0, 0, 120));
         ht.setOutlineThickness(1.0f);

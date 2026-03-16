@@ -98,6 +98,11 @@ struct RoundWinEntry {
     int         wins = 0;
 };
 
+struct CountryWinEntry {
+    std::string label;      // country code (uppercased)
+    int         wins = 0;
+};
+
 struct Particle {
     sf::Vector2f pos, vel;
     sf::Color    color;
@@ -168,7 +173,7 @@ public:
 
 private:
     unsigned int fs(int base) const {
-        return static_cast<unsigned int>(std::max(1.0f, base * m_fontScale));
+        return static_cast<unsigned int>(std::max(20.0f, base * m_fontScale));
     }
 
     ScreenLayout computeLayout(const sf::RenderTarget& target) const;
@@ -199,6 +204,8 @@ private:
     void createBoundaryWalls();
     b2Body* createPlayerBody(float x, float y, float radius);
     void recordRoundWin(const Player& winner);
+    void recordCountryWin(const std::string& label);
+    void refreshPlayerLeaderboardCache();
     void enforceConstantVelocity();
 
     // Flags
@@ -246,6 +253,17 @@ private:
     std::deque<EliminationEntry>            m_eliminationFeed;
     std::string                             m_winnerId;
     std::vector<RoundWinEntry>              m_roundWinners;
+    std::vector<CountryWinEntry>            m_countryWins;
+
+    // Player leaderboard cache (from PlayerDatabase)
+    struct CachedPlayerEntry {
+        std::string displayName;
+        std::string avatarUrl;
+        int points = 0;
+        int wins   = 0;
+    };
+    std::vector<CachedPlayerEntry> m_cachedPlayerLeaderboard;
+    double m_leaderboardCacheTimer = 0.0;
 
     b2World*  m_world      = nullptr;
     b2Body*   m_arenaBody  = nullptr;
@@ -278,10 +296,16 @@ private:
     double m_lobbyDuration      = 5.0;
     double m_roundEndDuration   = 4.0;
     float  m_arenaSpeedIncrease = 0.03f;
+    float  m_arenaSpeedDefault  = 0.3f;   // configurable default arena rotation
     float  m_gapExpansionRate   = 0.02f;
+    float  m_gapInitial         = GAP_INITIAL;
     float  m_gapMax             = 1.2f;
     int    m_championThreshold  = 4;
     double m_roundDuration      = 120.0;
+
+    // Configurable sizes
+    float  m_ballRadius         = BALL_RADIUS;
+    float  m_wallThickness      = WALL_THICKNESS;
 
     // Bot settings
     int   m_botFillTarget   = 8;
