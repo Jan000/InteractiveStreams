@@ -1,6 +1,7 @@
 #include "core/StreamInstance.h"
 #include "core/Config.h"
 #include "core/Application.h"
+#include "core/AudioMixer.h"
 #include "core/ChannelManager.h"
 #include "rendering/Renderer.h"
 #include "games/GameRegistry.h"
@@ -29,6 +30,15 @@ StreamInstance::StreamInstance(const StreamConfig& config)
                 cm.sendMessageToChannel(chId, message);
             }
         } catch (...) {}
+    });
+
+    // Install spectrum callback – games can query real-time audio spectrum data
+    m_gameManager->setSpectrumCallback([](float* out, int numBands) -> bool {
+        try {
+            return Application::instance().audioMixer().getSpectrumBands(out, numBands);
+        } catch (...) {
+            return false;
+        }
     });
 
     // Font for vote overlay (may fail if not found)

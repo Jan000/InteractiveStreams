@@ -55,6 +55,9 @@ public:
     /// Set a chat feedback callback that will be installed on every loaded game.
     void setChatFeedback(games::ChatFeedbackCallback cb);
 
+    /// Set a spectrum callback that will be installed on every loaded game.
+    void setSpectrumCallback(games::SpectrumCallback cb);
+
     /// Update the active game.
     void update(double dt);
 
@@ -87,6 +90,7 @@ private:
 
     // Chat feedback callback (installed on every newly loaded game)
     games::ChatFeedbackCallback   m_chatFeedback;
+    games::SpectrumCallback         m_spectrumCallback;
 
     // Per-game configuration settings
     std::unordered_map<std::string, nlohmann::json> m_gameSettings;

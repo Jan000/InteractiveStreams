@@ -3,6 +3,7 @@
 #include <SFML/Audio.hpp>
 #include <string>
 #include <vector>
+#include <array>
 #include <mutex>
 #include <random>
 #include <memory>
@@ -77,6 +78,16 @@ public:
     static constexpr unsigned int SAMPLE_RATE = 44100;
     static constexpr unsigned int CHANNELS    = 2;
 
+    // ── Spectrum analysis ─────────────────────────────────────────────────
+
+    static constexpr int SPECTRUM_SIZE = 512;
+
+    /// Compute magnitude spectrum and group into numBands logarithmic bands.
+    /// @param out       Destination (must hold numBands floats, normalised 0–1)
+    /// @param numBands  Number of output bands (e.g. 32 or 64)
+    /// @return true if data was available, false if silent / no data
+    bool getSpectrumBands(float* out, int numBands) const;
+
 private:
     // Music state
     std::unique_ptr<sf::InputSoundFile> m_musicFile;
@@ -118,6 +129,11 @@ private:
 
     std::mt19937       m_rng;
     mutable std::mutex m_mutex;
+
+    // Ring buffer for spectrum analysis (mono-downmixed, float -1..1)
+    mutable std::array<float, SPECTRUM_SIZE> m_spectrumRing{};
+    int m_spectrumWritePos = 0;
+    bool m_spectrumHasData = false;
 };
 
 } // namespace is::core

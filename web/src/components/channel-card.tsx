@@ -86,6 +86,19 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
   const [ytChannelId, setYtChannelId] = useState("");
   const [ytPollInterval, setYtPollInterval] = useState(2000);
   const [ytAuthLoading, setYtAuthLoading] = useState(false);
+  // YouTube detection / gRPC constants
+  const [ytMaxAutoAttempts, setYtMaxAutoAttempts] = useState(2);
+  const [ytDelayBeforeFirst, setYtDelayBeforeFirst] = useState(10000);
+  const [ytDelayBetweenAttempts, setYtDelayBetweenAttempts] = useState(30000);
+  const [ytMaxWait, setYtMaxWait] = useState(300000);
+  const [ytStabilise, setYtStabilise] = useState(5000);
+  const [ytQuotaPause, setYtQuotaPause] = useState(3600);
+  const [ytGrpcReconnectActive, setYtGrpcReconnectActive] = useState(8);
+  const [ytGrpcReconnectIdle, setYtGrpcReconnectIdle] = useState(60);
+  const [ytGrpcReconnectError, setYtGrpcReconnectError] = useState(20);
+  const [ytGrpcMaxConsErrors, setYtGrpcMaxConsErrors] = useState(3);
+  const [ytGrpcMaxNotFound, setYtGrpcMaxNotFound] = useState(2);
+  const [ytGrpcMaxResults, setYtGrpcMaxResults] = useState(200);
   // Local
   const [consoleInput, setConsoleInput] = useState(true);
 
@@ -277,6 +290,19 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       setYtLiveChatId((s.live_chat_id as string) ?? "");
       setYtChannelId((s.channel_id as string) ?? "");
       setYtPollInterval((s.poll_interval as number) ?? 2000);
+      // YouTube detection / gRPC constants
+      setYtMaxAutoAttempts((s.max_auto_attempts as number) ?? 2);
+      setYtDelayBeforeFirst((s.delay_before_first_ms as number) ?? 10000);
+      setYtDelayBetweenAttempts((s.delay_between_attempts_ms as number) ?? 30000);
+      setYtMaxWait((s.max_wait_ms as number) ?? 300000);
+      setYtStabilise((s.stabilise_ms as number) ?? 5000);
+      setYtQuotaPause((s.quota_pause_sec as number) ?? 3600);
+      setYtGrpcReconnectActive((s.grpc_reconnect_active as number) ?? 8);
+      setYtGrpcReconnectIdle((s.grpc_reconnect_idle as number) ?? 60);
+      setYtGrpcReconnectError((s.grpc_reconnect_error as number) ?? 20);
+      setYtGrpcMaxConsErrors((s.grpc_max_cons_errors as number) ?? 3);
+      setYtGrpcMaxNotFound((s.grpc_max_not_found as number) ?? 2);
+      setYtGrpcMaxResults((s.grpc_max_results as number) ?? 200);
       // Local
       setConsoleInput((s.console_input as boolean) ?? true);
     }
@@ -321,6 +347,18 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
         live_chat_id: ytLiveChatId,
         channel_id: ytChannelId,
         poll_interval: ytPollInterval,
+        max_auto_attempts: ytMaxAutoAttempts,
+        delay_before_first_ms: ytDelayBeforeFirst,
+        delay_between_attempts_ms: ytDelayBetweenAttempts,
+        max_wait_ms: ytMaxWait,
+        stabilise_ms: ytStabilise,
+        quota_pause_sec: ytQuotaPause,
+        grpc_reconnect_active: ytGrpcReconnectActive,
+        grpc_reconnect_idle: ytGrpcReconnectIdle,
+        grpc_reconnect_error: ytGrpcReconnectError,
+        grpc_max_cons_errors: ytGrpcMaxConsErrors,
+        grpc_max_not_found: ytGrpcMaxNotFound,
+        grpc_max_results: ytGrpcMaxResults,
         stream_url: streamUrl,
         stream_key: streamKey,
         ...verticalFields,
@@ -1007,6 +1045,72 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
                     onChange={markDirty(setYtPollInterval)}
                   />
                 </div>
+                {/* Advanced: Detection & gRPC Settings */}
+                <details className="rounded border border-dashed p-2">
+                  <summary className="cursor-pointer text-[10px] font-medium text-muted-foreground">
+                    Advanced: Detection &amp; gRPC Settings
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    <Label className="text-[10px] font-medium text-muted-foreground">
+                      Broadcast Detection
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Max Auto Attempts</Label>
+                        <NumericInput className="h-7 text-xs" integer min={1} max={10} step={1} value={ytMaxAutoAttempts} onChange={markDirty(setYtMaxAutoAttempts)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Delay Before 1st (ms)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={0} max={120000} step={1000} value={ytDelayBeforeFirst} onChange={markDirty(setYtDelayBeforeFirst)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Delay Between (ms)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={1000} max={120000} step={1000} value={ytDelayBetweenAttempts} onChange={markDirty(setYtDelayBetweenAttempts)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Max Wait (ms)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={10000} max={600000} step={10000} value={ytMaxWait} onChange={markDirty(setYtMaxWait)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Stabilise (ms)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={0} max={30000} step={1000} value={ytStabilise} onChange={markDirty(setYtStabilise)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Quota Pause (sec)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={60} max={7200} step={60} value={ytQuotaPause} onChange={markDirty(setYtQuotaPause)} />
+                      </div>
+                    </div>
+                    <Label className="text-[10px] font-medium text-muted-foreground">
+                      gRPC Streaming
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Reconnect Active (s)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={1} max={120} step={1} value={ytGrpcReconnectActive} onChange={markDirty(setYtGrpcReconnectActive)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Reconnect Idle (s)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={5} max={300} step={5} value={ytGrpcReconnectIdle} onChange={markDirty(setYtGrpcReconnectIdle)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Reconnect Error (s)</Label>
+                        <NumericInput className="h-7 text-xs" integer min={1} max={120} step={1} value={ytGrpcReconnectError} onChange={markDirty(setYtGrpcReconnectError)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Max Errors</Label>
+                        <NumericInput className="h-7 text-xs" integer min={1} max={20} step={1} value={ytGrpcMaxConsErrors} onChange={markDirty(setYtGrpcMaxConsErrors)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Max Not Found</Label>
+                        <NumericInput className="h-7 text-xs" integer min={1} max={10} step={1} value={ytGrpcMaxNotFound} onChange={markDirty(setYtGrpcMaxNotFound)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] text-muted-foreground">Max Results</Label>
+                        <NumericInput className="h-7 text-xs" integer min={10} max={2000} step={10} value={ytGrpcMaxResults} onChange={markDirty(setYtGrpcMaxResults)} />
+                      </div>
+                    </div>
+                  </div>
+                </details>
                 {/* RTMP Streaming Output */}
                 <div className="space-y-1.5 rounded border border-dashed p-2">
                   <Label className="text-[10px] font-medium text-muted-foreground">

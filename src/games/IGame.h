@@ -15,6 +15,12 @@ namespace is::games {
 /// Games call this to send confirmation messages (e.g. "Player joined!").
 using ChatFeedbackCallback = std::function<void(const std::string& message)>;
 
+/// Callback type for fetching audio spectrum data.
+/// @param out       Destination buffer (numBands floats, normalised 0–1)
+/// @param numBands  Number of desired frequency bands
+/// @return true if data was available
+using SpectrumCallback = std::function<bool(float* out, int numBands)>;
+
 // ── Text-element layout ──────────────────────────────────────────────────────
 
 /// Alignment modes for a text element.
@@ -94,6 +100,10 @@ public:
     /// Set the chat feedback callback.  The stream instance installs this
     /// so that games can send confirmation messages to viewers.
     void setChatFeedback(ChatFeedbackCallback cb) { m_chatFeedback = std::move(cb); }
+
+    /// Set the spectrum callback.  The stream instance installs this
+    /// so that games can query real-time audio spectrum data.
+    void setSpectrumCallback(SpectrumCallback cb) { m_spectrumCallback = std::move(cb); }
 
     /// Initialize game state. Called once when the game is loaded.
     virtual void initialize() = 0;
@@ -252,8 +262,15 @@ protected:
         m_textElements.push_back({id, label, x, y, fontSize, align, visible, defaultColor});
     }
 
+    /// Fetch audio spectrum.  Returns false when no data (e.g. no audio mixer).
+    bool getSpectrum(float* bands, int numBands) {
+        if (m_spectrumCallback) return m_spectrumCallback(bands, numBands);
+        return false;
+    }
+
     float m_fontScale = 1.0f;
     ChatFeedbackCallback m_chatFeedback;
+    SpectrumCallback m_spectrumCallback;
     std::vector<TextElement> m_textElements;
 };
 

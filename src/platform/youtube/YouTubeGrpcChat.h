@@ -80,6 +80,14 @@ public:
     /// YoutubePlatform when it refreshes the access token.
     void updateToken(const std::string& newToken);
 
+    // ── Configurable gRPC streaming parameters ──────────────────────────
+    int  reconnectWaitActive  = 8;    ///< Seconds before reconnect after traffic
+    int  reconnectWaitIdle    = 60;   ///< Seconds before reconnect without traffic
+    int  reconnectWaitError   = 20;   ///< Seconds before reconnect on non-fatal error
+    int  maxConsecutiveErrors = 3;    ///< Give up after N errors without messages
+    int  maxNotFoundRetries   = 2;    ///< NOT_FOUND retries before treating chat as ended
+    int  maxResults           = 200;  ///< max_results per gRPC request
+
 private:
     /// Background thread entry point.
     void streamLoop();

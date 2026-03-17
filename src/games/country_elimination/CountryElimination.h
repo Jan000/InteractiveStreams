@@ -238,6 +238,7 @@ private:
     void renderEliminationFeed(sf::RenderTarget& target, const ScreenLayout& L);
     void renderSidePanels(sf::RenderTarget& target, const ScreenLayout& L);
     void renderQuizOverlay(sf::RenderTarget& target, const ScreenLayout& L);
+    void renderVisualizer(sf::RenderTarget& target, const ScreenLayout& L);
 
     // Quiz
     void startQuiz();
@@ -359,6 +360,15 @@ private:
     bool   m_showBotNames   = true;
     bool   m_allowFlaglessJoin  = false;  // allow join/play without a country
     bool   m_autoDetectCountry  = true;   // detect country from any message
+
+    // Audio visualizer
+    bool   m_visualizerEnabled = false;
+    int    m_visualizerStyle   = 0;       // 0=Bars, 1=Dots, 2=Pulse, 3=Wave
+    float  m_visualizerHeight  = 40.0f;   // max bar height in pixels
+    float  m_visualizerOpacity = 0.7f;    // 0..1
+    int    m_visualizerBands   = 64;      // number of bands to display
+    float  m_visualizerSmoothing = 0.3f;  // smoothing factor (0=no smoothing, 1=max)
+    std::vector<float> m_vizSmoothed;     // smoothed band values
 
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {

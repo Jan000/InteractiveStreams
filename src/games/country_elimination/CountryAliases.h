@@ -389,7 +389,7 @@ inline const std::unordered_map<std::string, std::string>& getCountryAliases() {
         // Monaco
         {"MC", "MC"}, {"MCO", "MC"}, {"MONACO", "MC"},
         // Montenegro
-        {"ME", "ME"}, {"MNE", "ME"}, {"MONTENEGRO", "ME"},
+        {"MNE", "ME"}, {"MONTENEGRO", "ME"},
         // Netherlands
         {"NL", "NL"}, {"NLD", "NL"}, {"NETHERLANDS", "NL"}, {"HOLLAND", "NL"}, {"NIEDERLANDE", "NL"}, {"PAYS-BAS", "NL"}, {"PAISES BAJOS", "NL"},
         // North Macedonia

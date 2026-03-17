@@ -35,6 +35,22 @@ void YoutubePlatform::configure(const nlohmann::json& settings) {
     if (settings.contains("oauth_refresh_token"))  m_oauthRefreshToken = settings["oauth_refresh_token"];
     if (settings.contains("oauth_token_expiry"))   m_oauthTokenExpiry  = settings["oauth_token_expiry"];
 
+    // Detection constants
+    if (settings.contains("max_auto_attempts"))         m_maxAutoAttempts        = settings["max_auto_attempts"];
+    if (settings.contains("delay_before_first_ms"))     m_delayBeforeFirstMs     = settings["delay_before_first_ms"];
+    if (settings.contains("delay_between_attempts_ms")) m_delayBetweenAttemptsMs = settings["delay_between_attempts_ms"];
+    if (settings.contains("max_wait_ms"))               m_maxWaitMs              = settings["max_wait_ms"];
+    if (settings.contains("stabilise_ms"))              m_stabiliseMs            = settings["stabilise_ms"];
+    if (settings.contains("quota_pause_sec"))           m_quotaPauseSec          = settings["quota_pause_sec"];
+
+    // gRPC streaming parameters
+    if (settings.contains("grpc_reconnect_active"))  m_grpcReconnectActive  = settings["grpc_reconnect_active"];
+    if (settings.contains("grpc_reconnect_idle"))    m_grpcReconnectIdle    = settings["grpc_reconnect_idle"];
+    if (settings.contains("grpc_reconnect_error"))   m_grpcReconnectError   = settings["grpc_reconnect_error"];
+    if (settings.contains("grpc_max_cons_errors"))   m_grpcMaxConsErrors    = settings["grpc_max_cons_errors"];
+    if (settings.contains("grpc_max_not_found"))     m_grpcMaxNotFound      = settings["grpc_max_not_found"];
+    if (settings.contains("grpc_max_results"))       m_grpcMaxResults       = settings["grpc_max_results"];
+
     spdlog::info("[YouTube] Configured for channel: {}", m_channelId);
 }
 
@@ -221,6 +237,21 @@ nlohmann::json YoutubePlatform::getCurrentSettings() const {
     if (!m_broadcastId.empty()) {
         s["broadcast_id"] = m_broadcastId;
     }
+
+    // Expose configurable constants so the dashboard can read them
+    s["max_auto_attempts"]         = m_maxAutoAttempts;
+    s["delay_before_first_ms"]     = m_delayBeforeFirstMs;
+    s["delay_between_attempts_ms"] = m_delayBetweenAttemptsMs;
+    s["max_wait_ms"]               = m_maxWaitMs;
+    s["stabilise_ms"]              = m_stabiliseMs;
+    s["quota_pause_sec"]           = m_quotaPauseSec;
+    s["grpc_reconnect_active"]     = m_grpcReconnectActive;
+    s["grpc_reconnect_idle"]       = m_grpcReconnectIdle;
+    s["grpc_reconnect_error"]      = m_grpcReconnectError;
+    s["grpc_max_cons_errors"]      = m_grpcMaxConsErrors;
+    s["grpc_max_not_found"]        = m_grpcMaxNotFound;
+    s["grpc_max_results"]          = m_grpcMaxResults;
+
     return s;
 }
 
@@ -247,10 +278,10 @@ bool YoutubePlatform::waitForStreaming() {
             streamDetected = true;
             break;
         }
-        if (totalWaited >= MAX_WAIT_MS) {
+        if (totalWaited >= m_maxWaitMs) {
             spdlog::info("[YouTube] Streaming wait timed out after {}s "
                          "— proceeding with broadcast detection.",
-                         MAX_WAIT_MS / 1000);
+                         m_maxWaitMs / 1000);
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -264,8 +295,8 @@ bool YoutubePlatform::waitForStreaming() {
     if (streamDetected) {
         constexpr int STABILISE_MS = 5000;
         spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register the broadcast...",
-                     STABILISE_MS / 1000);
-        for (int waited = 0; waited < STABILISE_MS && m_shouldRun; waited += 500) {
+                     m_stabiliseMs / 1000);
+        for (int waited = 0; waited < m_stabiliseMs && m_shouldRun; waited += 500) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     }
@@ -317,18 +348,18 @@ void YoutubePlatform::pollLoop() {
 
         // If manual detection already resolved the chat, skip auto-detection.
         if (m_liveChatId.empty()) {
-            // Stream started — wait 10 seconds for YouTube to register the ingest
+            // Stream started — wait for YouTube to register the ingest
             spdlog::info("[YouTube] Stream detected — waiting {}s for YouTube to register...",
-                        DELAY_BEFORE_FIRST_MS / 1000);
-            for (int w = 0; w < DELAY_BEFORE_FIRST_MS && m_shouldRun; w += 500)
+                        m_delayBeforeFirstMs / 1000);
+            for (int w = 0; w < m_delayBeforeFirstMs && m_shouldRun; w += 500)
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (!m_shouldRun) return;
 
             // Try detection up to MAX_AUTO_ATTEMPTS times
             // Auto-detection only uses cheap OAuth path (1 unit).
-            for (int attempt = 0; attempt < MAX_AUTO_ATTEMPTS && m_shouldRun && m_liveChatId.empty(); ++attempt) {
+            for (int attempt = 0; attempt < m_maxAutoAttempts && m_shouldRun && m_liveChatId.empty(); ++attempt) {
                 refreshTokenIfNeeded();
-                spdlog::info("[YouTube] Auto-detection attempt {}/{} ...", attempt + 1, MAX_AUTO_ATTEMPTS);
+                spdlog::info("[YouTube] Auto-detection attempt {}/{} ...", attempt + 1, m_maxAutoAttempts);
                 std::string chatId = fetchLiveChatId();
                 if (!chatId.empty()) {
                     m_liveChatId = chatId;
@@ -336,19 +367,19 @@ void YoutubePlatform::pollLoop() {
                     spdlog::info("[YouTube] Broadcast detected! liveChatId: {}", m_liveChatId);
                     break;
                 }
-                if (attempt + 1 < MAX_AUTO_ATTEMPTS) {
+                if (attempt + 1 < m_maxAutoAttempts) {
                     spdlog::info("[YouTube] Attempt {} failed — retrying in {}s...",
-                                attempt + 1, DELAY_BETWEEN_ATTEMPTS_MS / 1000);
-                    for (int w = 0; w < DELAY_BETWEEN_ATTEMPTS_MS && m_shouldRun; w += 500)
+                                attempt + 1, m_delayBetweenAttemptsMs / 1000);
+                    for (int w = 0; w < m_delayBetweenAttemptsMs && m_shouldRun; w += 500)
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
             }
 
             if (m_liveChatId.empty() && m_shouldRun) {
-                m_detectionStatus = "Auto-detection exhausted (2 attempts). Use manual detect.";
+                m_detectionStatus = "Auto-detection exhausted (" + std::to_string(m_maxAutoAttempts) + " attempts). Use manual detect.";
                 spdlog::warn("[YouTube] Auto-detection exhausted after {} attempts. "
                             "Waiting for manual detection request from dashboard.",
-                            MAX_AUTO_ATTEMPTS);
+                            m_maxAutoAttempts);
             }
         }
     }
@@ -583,6 +614,12 @@ bool YoutubePlatform::tryGrpcStream() {
     m_grpcActive = true;
 
     m_grpcChat = std::make_unique<YouTubeGrpcChat>();
+    m_grpcChat->reconnectWaitActive  = m_grpcReconnectActive;
+    m_grpcChat->reconnectWaitIdle    = m_grpcReconnectIdle;
+    m_grpcChat->reconnectWaitError   = m_grpcReconnectError;
+    m_grpcChat->maxConsecutiveErrors = m_grpcMaxConsErrors;
+    m_grpcChat->maxNotFoundRetries   = m_grpcMaxNotFound;
+    m_grpcChat->maxResults           = m_grpcMaxResults;
     m_grpcChat->start(
         m_apiKey, m_oauthToken, m_liveChatId, m_channelId,
         [this](ChatMessage msg) {
@@ -629,11 +666,10 @@ bool YoutubePlatform::tryGrpcStream() {
     // YouTube-side quota exhausted — REST would hit the same limit.
     // Pause for 1 hour instead of burning quota on REST retries.
     if (quotaHit) {
-        constexpr int QUOTA_PAUSE_SEC = 3600;
         spdlog::warn("[YouTube] YouTube quota exhausted — pausing for {} min before retrying.",
-                     QUOTA_PAUSE_SEC / 60);
-        m_detectionStatus = "YouTube quota exhausted. Pausing for 1 hour.";
-        for (int i = 0; i < QUOTA_PAUSE_SEC && m_shouldRun; ++i) {
+                     m_quotaPauseSec / 60);
+        m_detectionStatus = "YouTube quota exhausted. Pausing for " + std::to_string(m_quotaPauseSec / 60) + " min.";
+        for (int i = 0; i < m_quotaPauseSec && m_shouldRun; ++i) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         // After pause, cycle back to outer loop (will retry gRPC)

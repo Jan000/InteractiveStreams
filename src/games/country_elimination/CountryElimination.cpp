@@ -521,26 +521,36 @@ void CountryElimination::onChatMessage(const platform::ChatMessage& msg) {
 
     bool handled = false;
 
-    if (cmdLower == "join" || cmdLower == "play") {
+    if (cmdLower == "join" || cmdLower == "play" || cmdLower == "me") {
         std::string label;
         std::getline(iss >> std::ws, label);
         while (!label.empty() && (label.back() == '\r' || label.back() == '\n' || label.back() == ' '))
             label.pop_back();
         label = stripTrailing(label);
-        // Resolve country name/code to 2-letter ISO code
-        std::string code = resolveCountryCode(label);
-        if (code.empty() && !label.empty()) {
-            // Try the full raw text after cmd (flag emoji may have trailing chars)
-            code = resolveCountryCode(stripTrailing(msg.text.substr(msg.text.find(cmd) + cmd.size())));
-        }
-        if (code.empty()) {
+
+        // "me" is always a flagless join (no country code resolution)
+        if (cmdLower == "me") {
             if (m_allowFlaglessJoin) {
                 cmdJoin(msg.userId, msg.displayName, "", msg.avatarUrl, true);
             } else {
                 cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng), msg.avatarUrl);
             }
         } else {
-            cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
+            // Resolve country name/code to 2-letter ISO code
+            std::string code = resolveCountryCode(label);
+            if (code.empty() && !label.empty()) {
+                // Try the full raw text after cmd (flag emoji may have trailing chars)
+                code = resolveCountryCode(stripTrailing(msg.text.substr(msg.text.find(cmd) + cmd.size())));
+            }
+            if (code.empty()) {
+                if (m_allowFlaglessJoin) {
+                    cmdJoin(msg.userId, msg.displayName, "", msg.avatarUrl, true);
+                } else {
+                    cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng), msg.avatarUrl);
+                }
+            } else {
+                cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
+            }
         }
         handled = true;
     }
@@ -1451,6 +1461,7 @@ void CountryElimination::render(sf::RenderTarget& target, double alpha) {
     }
 
     renderArena(target, L);
+    renderVisualizer(target, L);
     renderPlayers(target, L, alpha);
     renderParticles(target);
     renderEliminationFeed(target, L);
@@ -1630,6 +1641,259 @@ void CountryElimination::renderArena(sf::RenderTarget& target, const ScreenLayou
     }
 }
 
+// ── Audio Visualizer ─────────────────────────────────────────────────────────
+
+void CountryElimination::renderVisualizer(sf::RenderTarget& target, const ScreenLayout& L) {
+    if (!m_visualizerEnabled) return;
+
+    const int numBands = std::clamp(m_visualizerBands, 8, 128);
+    std::vector<float> bands(numBands, 0.0f);
+    if (!getSpectrum(bands.data(), numBands)) return;
+
+    // Ensure smoothed buffer matches
+    if (static_cast<int>(m_vizSmoothed.size()) != numBands)
+        m_vizSmoothed.assign(numBands, 0.0f);
+
+    // Exponential smoothing
+    float smooth = std::clamp(m_visualizerSmoothing, 0.0f, 0.95f);
+    for (int i = 0; i < numBands; ++i) {
+        m_vizSmoothed[i] = smooth * m_vizSmoothed[i] + (1.0f - smooth) * bands[i];
+    }
+
+    float r = L.arenaRadiusPx;
+    float thickness = m_wallThickness * L.ppm * 1.2f;
+    float rOuter = r + thickness / 2.0f + 2.0f;  // just outside the ring
+    float maxH = m_visualizerHeight * (L.ppm / REF_PPM); // scale with resolution
+    float opacity = std::clamp(m_visualizerOpacity, 0.0f, 1.0f);
+
+    bool hasGap = m_currentGapAngle > 0.001f;
+
+    // Each band occupies an angular slice around the ring
+    float totalAngle = TAU;
+    float bandAngle = totalAngle / numBands;
+
+    if (m_visualizerStyle == 0) {
+        // ── Style 0: Bars ────────────────────────────────────────────────
+        // Radial bars emanating outward from the ring, with rounded-end dots
+        for (int i = 0; i < numBands; ++i) {
+            float centerAngle = m_arenaAngle + i * bandAngle;
+            float baseA = i * bandAngle;
+            float normA = baseA;
+            if (normA > PI) normA -= TAU;
+            if (hasGap && std::abs(normA) < m_currentGapAngle) continue;
+
+            float val = std::clamp(m_vizSmoothed[i], 0.0f, 1.0f);
+            if (val < 0.01f) continue;
+
+            float barH = val * maxH;
+            float barW = bandAngle * rOuter * 0.6f; // width at the ring surface
+
+            // Color: hue mapped to position around circle
+            float hue = std::fmod(static_cast<float>(i) / numBands + m_globalTime * 0.1f, 1.0f);
+            float h6 = hue * 6.0f;
+            int hi = static_cast<int>(h6) % 6;
+            float f = h6 - static_cast<float>(hi);
+            float rr, gg, bb;
+            switch (hi) {
+                case 0: rr=1; gg=f; bb=0; break;
+                case 1: rr=1-f; gg=1; bb=0; break;
+                case 2: rr=0; gg=1; bb=f; break;
+                case 3: rr=0; gg=1-f; bb=1; break;
+                case 4: rr=f; gg=0; bb=1; break;
+                default: rr=1; gg=0; bb=1-f; break;
+            }
+            sf::Uint8 alpha = static_cast<sf::Uint8>(255 * opacity * (0.5f + 0.5f * val));
+            sf::Color col(static_cast<sf::Uint8>(rr * 255),
+                          static_cast<sf::Uint8>(gg * 255),
+                          static_cast<sf::Uint8>(bb * 255), alpha);
+
+            // Draw bar as a quad (trapezoid along radial direction)
+            float halfW = barW * 0.5f;
+            float cosA = std::cos(centerAngle);
+            float sinA = std::sin(centerAngle);
+            float perpCos = std::cos(centerAngle + PI * 0.5f);
+            float perpSin = std::sin(centerAngle + PI * 0.5f);
+
+            float r1 = rOuter;
+            float r2 = rOuter + barH;
+
+            sf::ConvexShape bar(4);
+            bar.setPoint(0, { L.arenaCX + r1 * cosA + halfW * perpCos,
+                              L.arenaCY + r1 * sinA + halfW * perpSin });
+            bar.setPoint(1, { L.arenaCX + r1 * cosA - halfW * perpCos,
+                              L.arenaCY + r1 * sinA - halfW * perpSin });
+            bar.setPoint(2, { L.arenaCX + r2 * cosA - halfW * 0.6f * perpCos,
+                              L.arenaCY + r2 * sinA - halfW * 0.6f * perpSin });
+            bar.setPoint(3, { L.arenaCX + r2 * cosA + halfW * 0.6f * perpCos,
+                              L.arenaCY + r2 * sinA + halfW * 0.6f * perpSin });
+            bar.setFillColor(col);
+            target.draw(bar);
+
+            // Bright tip dot
+            float dotR = barW * 0.3f;
+            sf::CircleShape tip(dotR, 8);
+            tip.setOrigin(dotR, dotR);
+            tip.setPosition(L.arenaCX + r2 * cosA, L.arenaCY + r2 * sinA);
+            tip.setFillColor(sf::Color(col.r, col.g, col.b, static_cast<sf::Uint8>(alpha * 0.8f)));
+            target.draw(tip);
+        }
+    } else if (m_visualizerStyle == 1) {
+        // ── Style 1: Dots ────────────────────────────────────────────────
+        // Concentric layers of dots radiating outward, size = amplitude
+        for (int i = 0; i < numBands; ++i) {
+            float centerAngle = m_arenaAngle + i * bandAngle;
+            float baseA = i * bandAngle;
+            float normA = baseA;
+            if (normA > PI) normA -= TAU;
+            if (hasGap && std::abs(normA) < m_currentGapAngle) continue;
+
+            float val = std::clamp(m_vizSmoothed[i], 0.0f, 1.0f);
+            if (val < 0.02f) continue;
+
+            float hue = std::fmod(static_cast<float>(i) / numBands + m_globalTime * 0.1f, 1.0f);
+            float h6 = hue * 6.0f;
+            int hi = static_cast<int>(h6) % 6;
+            float f = h6 - static_cast<float>(hi);
+            float rr, gg, bb;
+            switch (hi) {
+                case 0: rr=1; gg=f; bb=0; break;
+                case 1: rr=1-f; gg=1; bb=0; break;
+                case 2: rr=0; gg=1; bb=f; break;
+                case 3: rr=0; gg=1-f; bb=1; break;
+                case 4: rr=f; gg=0; bb=1; break;
+                default: rr=1; gg=0; bb=1-f; break;
+            }
+
+            // 3 concentric dot layers
+            for (int layer = 0; layer < 3; ++layer) {
+                float layerVal = val * (1.0f - layer * 0.25f);
+                if (layerVal < 0.02f) continue;
+                float dist = rOuter + (layer + 1) * maxH * 0.3f * layerVal;
+                float dotSize = std::max(1.5f, bandAngle * rOuter * 0.3f * layerVal);
+                sf::Uint8 alpha = static_cast<sf::Uint8>(255 * opacity * layerVal * (1.0f - layer * 0.3f));
+                sf::CircleShape dot(dotSize, 10);
+                dot.setOrigin(dotSize, dotSize);
+                dot.setPosition(L.arenaCX + dist * std::cos(centerAngle),
+                                L.arenaCY + dist * std::sin(centerAngle));
+                dot.setFillColor(sf::Color(static_cast<sf::Uint8>(rr * 255),
+                                           static_cast<sf::Uint8>(gg * 255),
+                                           static_cast<sf::Uint8>(bb * 255), alpha));
+                target.draw(dot);
+            }
+        }
+    } else if (m_visualizerStyle == 2) {
+        // ── Style 2: Pulse ───────────────────────────────────────────────
+        // Continuous ring that pulses outward based on average amplitude
+        float avgVal = 0.0f;
+        for (int i = 0; i < numBands; ++i)
+            avgVal += m_vizSmoothed[i];
+        avgVal /= numBands;
+        avgVal = std::clamp(avgVal, 0.0f, 1.0f);
+
+        if (avgVal > 0.01f) {
+            float pulseR = rOuter + avgVal * maxH;
+            float pulseThickness = std::max(2.0f, 4.0f * avgVal);
+            float pRO = pulseR + pulseThickness * 0.5f;
+            float pRI = pulseR - pulseThickness * 0.5f;
+
+            sf::VertexArray pulseRing(sf::TriangleStrip, (RING_RESOLUTION + 1) * 2);
+            int vi = 0;
+            float angleStep = TAU / RING_RESOLUTION;
+            for (int i = 0; i <= RING_RESOLUTION; ++i) {
+                float a = i * angleStep;
+                float baseA = a;
+                float normA = baseA;
+                if (normA > PI) normA -= TAU;
+                bool inGap = hasGap && std::abs(normA - m_arenaAngle) < m_currentGapAngle;
+
+                // Per-band variation for organic look
+                int bandIdx = static_cast<int>(static_cast<float>(i) / RING_RESOLUTION * numBands) % numBands;
+                float localVal = m_vizSmoothed[bandIdx];
+                float localR = rOuter + localVal * maxH;
+                float lpRO = localR + pulseThickness * 0.5f;
+                float lpRI = localR - pulseThickness * 0.5f;
+
+                float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
+                float h6 = hue * 6.0f;
+                int hi = static_cast<int>(h6) % 6;
+                float f = h6 - static_cast<float>(hi);
+                float rr, gg, bb;
+                switch (hi) {
+                    case 0: rr=1; gg=f; bb=0; break;
+                    case 1: rr=1-f; gg=1; bb=0; break;
+                    case 2: rr=0; gg=1; bb=f; break;
+                    case 3: rr=0; gg=1-f; bb=1; break;
+                    case 4: rr=f; gg=0; bb=1; break;
+                    default: rr=1; gg=0; bb=1-f; break;
+                }
+                sf::Uint8 alpha = inGap ? 0 : static_cast<sf::Uint8>(200 * opacity * localVal);
+                sf::Color col(static_cast<sf::Uint8>(rr * 255),
+                              static_cast<sf::Uint8>(gg * 255),
+                              static_cast<sf::Uint8>(bb * 255), alpha);
+
+                pulseRing[vi].position = { L.arenaCX + lpRO * std::cos(a), L.arenaCY + lpRO * std::sin(a) };
+                pulseRing[vi].color = sf::Color(col.r, col.g, col.b, static_cast<sf::Uint8>(alpha * 0.3f));
+                vi++;
+                pulseRing[vi].position = { L.arenaCX + lpRI * std::cos(a), L.arenaCY + lpRI * std::sin(a) };
+                pulseRing[vi].color = col;
+                vi++;
+            }
+            target.draw(pulseRing);
+        }
+    } else if (m_visualizerStyle == 3) {
+        // ── Style 3: Wave ────────────────────────────────────────────────
+        // Smooth filled waveform that ripples outward from the ring
+        sf::VertexArray wave(sf::TriangleStrip, (RING_RESOLUTION + 1) * 2);
+        int vi = 0;
+        float angleStep = TAU / RING_RESOLUTION;
+        for (int i = 0; i <= RING_RESOLUTION; ++i) {
+            float a = m_arenaAngle + i * angleStep;
+            float baseA = i * angleStep;
+            float normA = baseA;
+            if (normA > PI) normA -= TAU;
+            bool inGap = hasGap && std::abs(normA) < m_currentGapAngle;
+
+            // Interpolate the nearest bands for smooth waveform
+            float bandPos = static_cast<float>(i) / RING_RESOLUTION * numBands;
+            int b0 = static_cast<int>(bandPos) % numBands;
+            int b1 = (b0 + 1) % numBands;
+            float frac = bandPos - static_cast<float>(static_cast<int>(bandPos));
+            float val = m_vizSmoothed[b0] * (1.0f - frac) + m_vizSmoothed[b1] * frac;
+            val = std::clamp(val, 0.0f, 1.0f);
+
+            float waveR = rOuter + val * maxH;
+
+            float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
+            float h6 = hue * 6.0f;
+            int hi = static_cast<int>(h6) % 6;
+            float f = h6 - static_cast<float>(hi);
+            float rr, gg, bb;
+            switch (hi) {
+                case 0: rr=1; gg=f; bb=0; break;
+                case 1: rr=1-f; gg=1; bb=0; break;
+                case 2: rr=0; gg=1; bb=f; break;
+                case 3: rr=0; gg=1-f; bb=1; break;
+                case 4: rr=f; gg=0; bb=1; break;
+                default: rr=1; gg=0; bb=1-f; break;
+            }
+            sf::Uint8 alpha = inGap ? 0 : static_cast<sf::Uint8>(220 * opacity * (0.3f + 0.7f * val));
+            sf::Color col(static_cast<sf::Uint8>(rr * 255),
+                          static_cast<sf::Uint8>(gg * 255),
+                          static_cast<sf::Uint8>(bb * 255), alpha);
+
+            // Outer edge (wave)
+            wave[vi].position = { L.arenaCX + waveR * std::cos(a), L.arenaCY + waveR * std::sin(a) };
+            wave[vi].color = col;
+            vi++;
+            // Inner edge (ring surface)
+            wave[vi].position = { L.arenaCX + rOuter * std::cos(a), L.arenaCY + rOuter * std::sin(a) };
+            wave[vi].color = sf::Color(col.r, col.g, col.b, static_cast<sf::Uint8>(alpha * 0.2f));
+            vi++;
+        }
+        target.draw(wave);
+    }
+}
+
 // ── Players ──────────────────────────────────────────────────────────────────
 
 void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLayout& L, double alpha) {
@@ -1708,6 +1972,12 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 } else if (avatarOnBall) {
                     ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
                     ball.setTexture(avatarTex);
+                    // Center-square crop to avoid distortion on rectangular textures
+                    auto ts = avatarTex->getSize();
+                    int side = static_cast<int>(std::min(ts.x, ts.y));
+                    int ox = (static_cast<int>(ts.x) - side) / 2;
+                    int oy = (static_cast<int>(ts.y) - side) / 2;
+                    ball.setTextureRect(sf::IntRect(ox, oy, side, side));
                 } else {
                     sf::Color fill = p.color;
                     fill.a = baseAlpha;
@@ -2901,7 +3171,7 @@ nlohmann::json CountryElimination::getState() const {
 
 nlohmann::json CountryElimination::getCommands() const {
     return nlohmann::json::array({
-        {{"command", "join"}, {"description", "Join with a country label"}, {"aliases", nlohmann::json::array({"play"})}},
+        {{"command", "join"}, {"description", "Join with a country label"}, {"aliases", nlohmann::json::array({"play", "me"})}},
         {{"command", "1/2/3/4"}, {"description", "Answer quiz questions (A-D)"}, {"aliases", nlohmann::json::array({"a","b","c","d"})}},
     });
 }
@@ -3032,6 +3302,20 @@ void CountryElimination::configure(const nlohmann::json& settings) {
     if (settings.contains("auto_detect_country") && settings["auto_detect_country"].is_boolean())
         m_autoDetectCountry = settings["auto_detect_country"].get<bool>();
 
+    // Audio visualizer
+    if (settings.contains("visualizer_enabled") && settings["visualizer_enabled"].is_boolean())
+        m_visualizerEnabled = settings["visualizer_enabled"].get<bool>();
+    if (settings.contains("visualizer_style") && settings["visualizer_style"].is_number_integer())
+        m_visualizerStyle = std::clamp(settings["visualizer_style"].get<int>(), 0, 3);
+    if (settings.contains("visualizer_height") && settings["visualizer_height"].is_number())
+        m_visualizerHeight = std::clamp(settings["visualizer_height"].get<float>(), 5.0f, 200.0f);
+    if (settings.contains("visualizer_opacity") && settings["visualizer_opacity"].is_number())
+        m_visualizerOpacity = std::clamp(settings["visualizer_opacity"].get<float>(), 0.0f, 1.0f);
+    if (settings.contains("visualizer_bands") && settings["visualizer_bands"].is_number_integer())
+        m_visualizerBands = std::clamp(settings["visualizer_bands"].get<int>(), 8, 128);
+    if (settings.contains("visualizer_smoothing") && settings["visualizer_smoothing"].is_number())
+        m_visualizerSmoothing = std::clamp(settings["visualizer_smoothing"].get<float>(), 0.0f, 0.95f);
+
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
 
@@ -3094,6 +3378,12 @@ nlohmann::json CountryElimination::getSettings() const {
         {"score_participation", m_scoreParticipation},
         {"allow_flagless_join", m_allowFlaglessJoin},
         {"auto_detect_country", m_autoDetectCountry},
+        {"visualizer_enabled", m_visualizerEnabled},
+        {"visualizer_style", m_visualizerStyle},
+        {"visualizer_height", m_visualizerHeight},
+        {"visualizer_opacity", m_visualizerOpacity},
+        {"visualizer_bands", m_visualizerBands},
+        {"visualizer_smoothing", m_visualizerSmoothing},
         {"text_elements", textElementsJson()},
     };
 }

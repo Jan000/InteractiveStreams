@@ -24,6 +24,8 @@ void GameManager::loadGame(const std::string& name) {
     m_activeGameName = name;
     if (m_chatFeedback)
         m_activeGame->setChatFeedback(m_chatFeedback);
+    if (m_spectrumCallback)
+        m_activeGame->setSpectrumCallback(m_spectrumCallback);
     m_activeGame->initialize();
 
     // Apply stored per-game settings
@@ -128,6 +130,12 @@ void GameManager::setChatFeedback(games::ChatFeedbackCallback cb) {
     // Also install on the currently active game (if any)
     if (m_activeGame && m_chatFeedback)
         m_activeGame->setChatFeedback(m_chatFeedback);
+}
+
+void GameManager::setSpectrumCallback(games::SpectrumCallback cb) {
+    m_spectrumCallback = std::move(cb);
+    if (m_activeGame && m_spectrumCallback)
+        m_activeGame->setSpectrumCallback(m_spectrumCallback);
 }
 
 void GameManager::handleChatMessage(const platform::ChatMessage& msg) {

@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <complex>
 #include <cmath>
 #include <cstring>
 
@@ -371,7 +372,101 @@ size_t AudioMixer::pullSamples(sf::Int16* output, size_t frameCount) {
         }
     }
 
+    // ── Capture samples for spectrum analysis ────────────────────────────
+    {
+        for (size_t i = 0; i < frameCount; ++i) {
+            float l = output[i * 2]     / 32768.0f;
+            float r = output[i * 2 + 1] / 32768.0f;
+            m_spectrumRing[m_spectrumWritePos] = (l + r) * 0.5f;
+            m_spectrumWritePos = (m_spectrumWritePos + 1) % SPECTRUM_SIZE;
+        }
+        m_spectrumHasData = true;
+    }
+
     return frameCount;
+}
+
+// ── Spectrum analysis (in-place iterative Cooley-Tukey FFT) ──────────────
+
+namespace {
+
+void fftInPlace(std::complex<float>* x, int N) {
+    // Bit-reversal permutation
+    for (int i = 1, j = 0; i < N; ++i) {
+        int bit = N >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) std::swap(x[i], x[j]);
+    }
+    // Butterfly stages
+    for (int len = 2; len <= N; len <<= 1) {
+        const float ang = -2.0f * 3.14159265358979f / static_cast<float>(len);
+        std::complex<float> wlen(std::cos(ang), std::sin(ang));
+        for (int i = 0; i < N; i += len) {
+            std::complex<float> w(1.0f, 0.0f);
+            for (int j = 0; j < len / 2; ++j) {
+                auto u = x[i + j];
+                auto v = x[i + j + len / 2] * w;
+                x[i + j]           = u + v;
+                x[i + j + len / 2] = u - v;
+                w *= wlen;
+            }
+        }
+    }
+}
+
+} // anon
+
+bool AudioMixer::getSpectrumBands(float* out, int numBands) const {
+    if (numBands <= 0) return false;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_spectrumHasData) {
+        std::memset(out, 0, numBands * sizeof(float));
+        return false;
+    }
+
+    // Copy ring buffer into linear array with Hann window
+    std::complex<float> buf[SPECTRUM_SIZE];
+    for (int i = 0; i < SPECTRUM_SIZE; ++i) {
+        int idx = (m_spectrumWritePos + i) % SPECTRUM_SIZE;
+        float window = 0.5f * (1.0f - std::cos(2.0f * 3.14159265358979f * i / (SPECTRUM_SIZE - 1)));
+        buf[i] = std::complex<float>(m_spectrumRing[idx] * window, 0.0f);
+    }
+
+    fftInPlace(buf, SPECTRUM_SIZE);
+
+    // Compute magnitudes for the first half (Nyquist)
+    const int halfN = SPECTRUM_SIZE / 2;
+    float mags[SPECTRUM_SIZE / 2];
+    for (int i = 0; i < halfN; ++i) {
+        mags[i] = std::abs(buf[i]) / static_cast<float>(SPECTRUM_SIZE);
+    }
+
+    // Group into logarithmic bands
+    for (int b = 0; b < numBands; ++b) {
+        // Map band index to frequency range logarithmically
+        float lo = static_cast<float>(halfN) * std::pow(
+            static_cast<float>(halfN), static_cast<float>(b) / numBands - 1.0f);
+        float hi = static_cast<float>(halfN) * std::pow(
+            static_cast<float>(halfN), static_cast<float>(b + 1) / numBands - 1.0f);
+
+        int iLo = std::max(1, static_cast<int>(lo));
+        int iHi = std::max(iLo + 1, static_cast<int>(hi));
+        if (iHi > halfN) iHi = halfN;
+
+        float sum = 0.0f;
+        int count = 0;
+        for (int i = iLo; i < iHi; ++i) {
+            sum += mags[i];
+            ++count;
+        }
+        // Normalise: typical music peaks around 0.02–0.08 after windowing;
+        // multiply to get a usable 0–1 range.
+        out[b] = std::min(1.0f, (count > 0 ? sum / count : 0.0f) * 25.0f);
+    }
+
+    return true;
 }
 
 } // namespace is::core

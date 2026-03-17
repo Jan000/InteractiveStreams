@@ -149,6 +149,13 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "rainbow_ring", label: "Rainbow Ring", description: "Animate the arena ring with rainbow colors", type: "bool", defaultValue: true },
     { key: "allow_reentry", label: "Allow Re-entry", description: "Players that bounce back into the arena are revived and continue playing", type: "bool", defaultValue: true },
     { key: "show_bot_names", label: "Show Bot Names", description: "Display name labels below bot players", type: "bool", defaultValue: true },
+    // --- Audio Visualizer ---
+    { key: "visualizer_enabled", label: "Audio Visualizer", description: "Show an audio-reactive visualizer around the arena ring", type: "bool", defaultValue: false },
+    { key: "visualizer_style", label: "Visualizer Style", description: "Visual style: 0=Bars, 1=Dots, 2=Pulse, 3=Wave", type: "int", min: 0, max: 3, step: 1, defaultValue: 0 },
+    { key: "visualizer_height", label: "Visualizer Height (px)", description: "Maximum height of visualizer bars/waves in pixels", type: "float", min: 5, max: 200, step: 5, defaultValue: 40 },
+    { key: "visualizer_opacity", label: "Visualizer Opacity", description: "Opacity of the visualizer (0.0–1.0)", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.7 },
+    { key: "visualizer_bands", label: "Visualizer Bands", description: "Number of frequency bands displayed around the ring", type: "int", min: 8, max: 128, step: 4, defaultValue: 64 },
+    { key: "visualizer_smoothing", label: "Visualizer Smoothing", description: "Smoothing factor for band values (0=instant, 0.95=very smooth)", type: "float", min: 0, max: 0.95, step: 0.05, defaultValue: 0.3 },
     // --- Quiz ---
     { key: "quiz_enabled", label: "Enable Quiz", description: "Show periodic geography quiz questions during the game", type: "bool", defaultValue: true },
     { key: "quiz_interval", label: "Quiz Interval (s)", description: "Seconds between quiz questions (cooldown after each question)", type: "float", min: 5, max: 300, step: 1, defaultValue: 30 },

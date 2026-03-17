@@ -73,11 +73,11 @@ void YouTubeGrpcChat::streamLoop() {
     // Each iteration opens a new gRPC stream.
     // When the stream ends (offline, error, token expiry), we wait and retry.
 
-    constexpr int RECONNECT_WAIT_SEC_ACTIVE = 8;   // stream ended after traffic
-    constexpr int RECONNECT_WAIT_SEC_IDLE   = 60;  // stream ended without traffic
-    constexpr int RECONNECT_WAIT_SEC_ERROR  = 20;  // non-fatal error backoff
-    constexpr int MAX_CONSECUTIVE_ERRORS  = 3;   // give up after N errors without messages
-    constexpr int MAX_NOT_FOUND_RETRIES   = 2;
+    const int RECONNECT_WAIT_SEC_ACTIVE = reconnectWaitActive;
+    const int RECONNECT_WAIT_SEC_IDLE   = reconnectWaitIdle;
+    const int RECONNECT_WAIT_SEC_ERROR  = reconnectWaitError;
+    const int MAX_CONSECUTIVE_ERRORS    = maxConsecutiveErrors;
+    const int MAX_NOT_FOUND_RETRIES     = maxNotFoundRetries;
 
     size_t reconnects        = 0;
     int    consecutiveErrors = 0;
@@ -95,7 +95,7 @@ void YouTubeGrpcChat::streamLoop() {
         request.set_live_chat_id(m_liveChatId);
         request.add_part("snippet");
         request.add_part("authorDetails");
-        request.set_max_results(200);
+        request.set_max_results(maxResults);
 
         if (!m_nextPageToken.empty()) {
             request.set_page_token(m_nextPageToken);

@@ -77,6 +77,22 @@ private:
     int         m_pollIntervalMs = 2000;
     bool        m_autoDetectedChatId = false; ///< true if liveChatId was resolved automatically
 
+    // Configurable detection / gRPC constants (settable via configure())
+    int m_maxAutoAttempts        = 2;      ///< Broadcast detection: max auto-attempts
+    int m_delayBeforeFirstMs     = 10000;  ///< ms after stream start before first detection
+    int m_delayBetweenAttemptsMs = 30000;  ///< ms between detection attempts
+    int m_maxWaitMs              = 300000; ///< ms to wait for stream start (5 min)
+    int m_stabiliseMs            = 5000;   ///< ms to wait after detecting stream
+    int m_quotaPauseSec          = 3600;   ///< seconds to pause after quota exhaustion
+
+    // gRPC streaming parameters (forwarded to YouTubeGrpcChat)
+    int m_grpcReconnectActive  = 8;
+    int m_grpcReconnectIdle    = 60;
+    int m_grpcReconnectError   = 20;
+    int m_grpcMaxConsErrors    = 3;
+    int m_grpcMaxNotFound      = 2;
+    int m_grpcMaxResults       = 200;
+
     // State
     std::atomic<bool> m_connected{false};
     std::atomic<bool> m_shouldRun{false};
