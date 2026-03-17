@@ -115,6 +115,8 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "min_players", label: "Min Players", description: "Minimum players (including bots) required to start a round", type: "int", min: 2, step: 1, defaultValue: 2 },
     { key: "champion_threshold", label: "Champion Threshold", description: "Number of round wins needed to become champion (game over)", type: "int", min: 2, step: 1, defaultValue: 4 },
     { key: "max_entries_per_player", label: "Max Entries Per Player", description: "How many balls a single player can have simultaneously (join N times)", type: "int", min: 1, max: 10, step: 1, defaultValue: 1 },
+    { key: "allow_flagless_join", label: "Allow Flagless Join", description: "Let players join with just 'join' (no country) — their avatar is shown on the ball instead of a flag", type: "bool", defaultValue: false },
+    { key: "auto_detect_country", label: "Auto-Detect Country", description: "Automatically detect country names, codes, or flag emojis from any chat message and auto-join", type: "bool", defaultValue: true },
     // --- Scoring ---
     { key: "score_win", label: "Score: Round Win", description: "Points awarded for winning a round", type: "int", min: 0, step: 10, defaultValue: 100 },
     { key: "score_participation", label: "Score: Participation", description: "Points recorded per elimination (participation points)", type: "int", min: 0, step: 1, defaultValue: 1 },

@@ -505,31 +505,73 @@ void CountryElimination::onChatMessage(const platform::ChatMessage& msg) {
     std::string cmd;
     iss >> cmd;
     if (!cmd.empty() && cmd[0] == '!') cmd = cmd.substr(1);
-    std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
+    std::string cmdLower = cmd;
+    std::transform(cmdLower.begin(), cmdLower.end(), cmdLower.begin(), ::tolower);
 
-    if (cmd == "join" || cmd == "play") {
+    // Helper: strip trailing non-alphanumeric characters (handles "de!!!!", "usa!!")
+    auto stripTrailing = [](const std::string& s) -> std::string {
+        std::string r = s;
+        while (!r.empty()) {
+            unsigned char c = static_cast<unsigned char>(r.back());
+            if (std::isalnum(c) || c >= 0x80) break; // keep unicode and alnum
+            r.pop_back();
+        }
+        return r;
+    };
+
+    bool handled = false;
+
+    if (cmdLower == "join" || cmdLower == "play") {
         std::string label;
         std::getline(iss >> std::ws, label);
         while (!label.empty() && (label.back() == '\r' || label.back() == '\n' || label.back() == ' '))
             label.pop_back();
+        label = stripTrailing(label);
         // Resolve country name/code to 2-letter ISO code
         std::string code = resolveCountryCode(label);
-        if (code.empty()) code = randomCountryCode(m_rng);
-        cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
+        if (code.empty() && !label.empty()) {
+            // Try the full raw text after cmd (flag emoji may have trailing chars)
+            code = resolveCountryCode(stripTrailing(msg.text.substr(msg.text.find(cmd) + cmd.size())));
+        }
+        if (code.empty()) {
+            if (m_allowFlaglessJoin) {
+                cmdJoin(msg.userId, msg.displayName, "", msg.avatarUrl, true);
+            } else {
+                cmdJoin(msg.userId, msg.displayName, randomCountryCode(m_rng), msg.avatarUrl);
+            }
+        } else {
+            cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
+        }
+        handled = true;
+    }
+
+    // Auto-detect country from any message (e.g. "usa", "🇩🇪", "de")
+    if (!handled && m_autoDetectCountry) {
+        // Try the whole message stripped of trailing junk
+        std::string stripped = stripTrailing(msg.text);
+        while (!stripped.empty() && (stripped.front() == '!' || stripped.front() == ' '))
+            stripped.erase(stripped.begin());
+        stripped = stripTrailing(stripped);
+        std::string code = resolveCountryCode(stripped);
+        if (!code.empty()) {
+            cmdJoin(msg.userId, msg.displayName, code, msg.avatarUrl);
+            handled = true;
+        }
     }
 
     // Quiz answers: 1-4 or a-d
-    if (m_quizActive && cmd.size() == 1) {
+    if (m_quizActive && cmdLower.size() == 1) {
         int ans = -1;
-        if (cmd[0] >= '1' && cmd[0] <= '4') ans = cmd[0] - '1';
-        else if (cmd[0] >= 'a' && cmd[0] <= 'd') ans = cmd[0] - 'a';
+        if (cmdLower[0] >= '1' && cmdLower[0] <= '4') ans = cmdLower[0] - '1';
+        else if (cmdLower[0] >= 'a' && cmdLower[0] <= 'd') ans = cmdLower[0] - 'a';
         if (ans >= 0)
             handleQuizAnswer(msg.userId, msg.displayName, ans);
     }
 }
 
 void CountryElimination::cmdJoin(const std::string& userId, const std::string& displayName,
-                                  const std::string& label, const std::string& avatarUrl) {
+                                  const std::string& label, const std::string& avatarUrl,
+                                  bool flagless) {
     // Joins are allowed in ALL phases — viewers can join at any time.
 
     // Count alive entries for this user
@@ -564,6 +606,7 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.displayName = displayName;
     p.label = label;
     p.avatarUrl = avatarUrl;
+    p.flagless = flagless;
     p.color = generateColor();
     p.radiusM = m_ballRadius;
     p.alive = true;
@@ -577,10 +620,14 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
         m_avatarCache.request(avatarUrl);
 
     if (totalCount == 0 && !isBotId(userId)) {
-        const auto& names = getCountryDisplayNames();
-        auto nameIt = names.find(label);
-        std::string countryName = (nameIt != names.end()) ? nameIt->second : label;
-        sendChatFeedback(displayName + " [" + countryName + "] joined!");
+        if (flagless) {
+            sendChatFeedback(displayName + " joined!");
+        } else {
+            const auto& names = getCountryDisplayNames();
+            auto nameIt = names.find(label);
+            std::string countryName = (nameIt != names.end()) ? nameIt->second : label;
+            sendChatFeedback(displayName + " [" + countryName + "] joined!");
+        }
     }
 }
 
@@ -1618,7 +1665,12 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
         std::string labelUp = p.label;
         for (auto& c : labelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         auto flagIt = m_flagTextures.find(labelUp);
-        bool hasFlag = (flagIt != m_flagTextures.end());
+        bool hasFlag = (flagIt != m_flagTextures.end()) && !p.flagless;
+
+        // Avatar texture (needed early for flagless ball rendering)
+        const sf::Texture* avatarTex = (!p.avatarUrl.empty())
+            ? m_avatarCache.getTexture(p.avatarUrl) : nullptr;
+        bool avatarOnBall = p.flagless && avatarTex;
 
         float halfW = rpx;
         float halfH = m_flagShapeRect ? (rpx / FLAG_ASPECT) : rpx;
@@ -1653,6 +1705,9 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 if (hasFlag) {
                     ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
                     ball.setTexture(&flagIt->second);
+                } else if (avatarOnBall) {
+                    ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
+                    ball.setTexture(avatarTex);
                 } else {
                     sf::Color fill = p.color;
                     fill.a = baseAlpha;
@@ -1676,6 +1731,14 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                     int ox = (static_cast<int>(ts.x) - side) / 2;
                     int oy = (static_cast<int>(ts.y) - side) / 2;
                     ball.setTextureRect(sf::IntRect(ox, oy, side, side));
+                } else if (avatarOnBall) {
+                    ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
+                    ball.setTexture(avatarTex);
+                    auto ts = avatarTex->getSize();
+                    int side = static_cast<int>(std::min(ts.x, ts.y));
+                    int ox = (static_cast<int>(ts.x) - side) / 2;
+                    int oy = (static_cast<int>(ts.y) - side) / 2;
+                    ball.setTextureRect(sf::IntRect(ox, oy, side, side));
                 } else {
                     sf::Color fill = p.color;
                     fill.a = baseAlpha;
@@ -1685,8 +1748,8 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 ball.setOutlineThickness(outlineThk);
                 target.draw(ball);
 
-                // Inner highlight (only for non-flag circle balls)
-                if (!hasFlag) {
+                // Inner highlight (only for plain colored circle balls)
+                if (!hasFlag && !avatarOnBall) {
                     float hlR = rpx * 0.35f;
                     sf::CircleShape hl(hlR, 16);
                     hl.setOrigin(hlR, hlR);
@@ -1720,8 +1783,8 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             }
         }
 
-        // Label text on ball (only when no flag texture)
-        if (m_fontLoaded && !hasFlag) {
+        // Label text on ball (only when plain colored ball)
+        if (m_fontLoaded && !hasFlag && !avatarOnBall) {
             sf::Text lbl;
             lbl.setFont(m_font);
             lbl.setString(p.label);
@@ -1739,15 +1802,14 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
         if (m_fontLoaded && p.alive && (!p.isBot() || m_showBotNames)) {
             float nameY = sp.y + halfH + 4.0f;
 
-            // Avatar circle (left of name)
-            const sf::Texture* avatarTex = (!p.avatarUrl.empty())
-                ? m_avatarCache.getTexture(p.avatarUrl) : nullptr;
+            // Avatar circle (left of name) — skip if avatar is already on the ball
+            const sf::Texture* nameAvatarTex = avatarOnBall ? nullptr : avatarTex;
 
             float avatarDiam = rpx * 0.9f * m_avatarScale;
             float avatarOffset = 0.0f;
 
-            if (avatarTex) {
-                sf::Sprite avatar(*avatarTex);
+            if (nameAvatarTex) {
+                sf::Sprite avatar(*nameAvatarTex);
                 avatar.setOrigin(32.0f, 32.0f);
                 float avatarS = avatarDiam / 64.0f;
                 avatar.setScale(avatarS, avatarS);
@@ -2965,6 +3027,10 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_scorePoints = std::max(0, settings["score_points"].get<int>());
     if (settings.contains("score_participation") && settings["score_participation"].is_number_integer())
         m_scoreParticipation = std::max(0, settings["score_participation"].get<int>());
+    if (settings.contains("allow_flagless_join") && settings["allow_flagless_join"].is_boolean())
+        m_allowFlaglessJoin = settings["allow_flagless_join"].get<bool>();
+    if (settings.contains("auto_detect_country") && settings["auto_detect_country"].is_boolean())
+        m_autoDetectCountry = settings["auto_detect_country"].get<bool>();
 
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
@@ -3026,6 +3092,8 @@ nlohmann::json CountryElimination::getSettings() const {
         {"score_superchat", m_scoreSuperchat},
         {"score_points", m_scorePoints},
         {"score_participation", m_scoreParticipation},
+        {"allow_flagless_join", m_allowFlaglessJoin},
+        {"auto_detect_country", m_autoDetectCountry},
         {"text_elements", textElementsJson()},
     };
 }

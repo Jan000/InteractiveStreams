@@ -115,6 +115,7 @@ struct Player {
     std::string label;
     std::string avatarUrl;
     sf::Color   color;
+    bool        flagless   = false;  // joined without a flag — avatar shown on ball
 
     b2Body*     body       = nullptr;
     float       radiusM    = BALL_RADIUS;
@@ -188,7 +189,8 @@ private:
 
     // Commands
     void cmdJoin(const std::string& userId, const std::string& displayName,
-                 const std::string& label, const std::string& avatarUrl = "");
+                 const std::string& label, const std::string& avatarUrl = "",
+                 bool flagless = false);
     void handleStreamEvent(const platform::ChatMessage& msg);
 
     // Game logic
@@ -355,6 +357,8 @@ private:
     bool   m_rainbowRing    = true;
     bool   m_allowReentry   = true;
     bool   m_showBotNames   = true;
+    bool   m_allowFlaglessJoin  = false;  // allow join/play without a country
+    bool   m_autoDetectCountry  = true;   // detect country from any message
 
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {
