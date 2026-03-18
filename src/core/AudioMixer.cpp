@@ -461,9 +461,8 @@ bool AudioMixer::getSpectrumBands(float* out, int numBands) const {
             sum += mags[i];
             ++count;
         }
-        // Normalise: typical music peaks around 0.02–0.08 after windowing;
-        // multiply to get a usable 0–1 range.
-        out[b] = std::min(1.0f, (count > 0 ? sum / count : 0.0f) * 25.0f);
+        // Normalise: scale up to a usable 0–1 range.
+        out[b] = std::min(1.0f, (count > 0 ? sum / count : 0.0f) * 80.0f);
     }
 
     return true;

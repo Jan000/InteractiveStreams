@@ -368,6 +368,7 @@ private:
     float  m_visualizerOpacity = 0.7f;    // 0..1
     int    m_visualizerBands   = 64;      // number of bands to display
     float  m_visualizerSmoothing = 0.3f;  // smoothing factor (0=no smoothing, 1=max)
+    float  m_visualizerGain     = 2.0f;   // amplitude gain multiplier
     std::vector<float> m_vizSmoothed;     // smoothed band values
 
     // Eliminated player fade tracking (FIFO)

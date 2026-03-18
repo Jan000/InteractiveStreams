@@ -1654,10 +1654,12 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
     if (static_cast<int>(m_vizSmoothed.size()) != numBands)
         m_vizSmoothed.assign(numBands, 0.0f);
 
-    // Exponential smoothing
+    // Apply gain and exponential smoothing
+    float gain = std::max(0.1f, m_visualizerGain);
     float smooth = std::clamp(m_visualizerSmoothing, 0.0f, 0.95f);
     for (int i = 0; i < numBands; ++i) {
-        m_vizSmoothed[i] = smooth * m_vizSmoothed[i] + (1.0f - smooth) * bands[i];
+        float val = std::min(1.0f, bands[i] * gain);
+        m_vizSmoothed[i] = smooth * m_vizSmoothed[i] + (1.0f - smooth) * val;
     }
 
     float r = L.arenaRadiusPx;
@@ -1666,21 +1668,14 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
     float maxH = m_visualizerHeight * (L.ppm / REF_PPM); // scale with resolution
     float opacity = std::clamp(m_visualizerOpacity, 0.0f, 1.0f);
 
-    bool hasGap = m_currentGapAngle > 0.001f;
-
-    // Each band occupies an angular slice around the ring
-    float totalAngle = TAU;
-    float bandAngle = totalAngle / numBands;
+    // Each band occupies an angular slice around the ring (full circle, no gap)
+    float bandAngle = TAU / numBands;
 
     if (m_visualizerStyle == 0) {
         // ── Style 0: Bars ────────────────────────────────────────────────
         // Radial bars emanating outward from the ring, with rounded-end dots
         for (int i = 0; i < numBands; ++i) {
-            float centerAngle = m_arenaAngle + i * bandAngle;
-            float baseA = i * bandAngle;
-            float normA = baseA;
-            if (normA > PI) normA -= TAU;
-            if (hasGap && std::abs(normA) < m_currentGapAngle) continue;
+            float centerAngle = i * bandAngle - PI * 0.5f; // start from top
 
             float val = std::clamp(m_vizSmoothed[i], 0.0f, 1.0f);
             if (val < 0.01f) continue;
@@ -1741,11 +1736,7 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
         // ── Style 1: Dots ────────────────────────────────────────────────
         // Concentric layers of dots radiating outward, size = amplitude
         for (int i = 0; i < numBands; ++i) {
-            float centerAngle = m_arenaAngle + i * bandAngle;
-            float baseA = i * bandAngle;
-            float normA = baseA;
-            if (normA > PI) normA -= TAU;
-            if (hasGap && std::abs(normA) < m_currentGapAngle) continue;
+            float centerAngle = i * bandAngle - PI * 0.5f; // start from top
 
             float val = std::clamp(m_vizSmoothed[i], 0.0f, 1.0f);
             if (val < 0.02f) continue;
@@ -1800,11 +1791,7 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
             int vi = 0;
             float angleStep = TAU / RING_RESOLUTION;
             for (int i = 0; i <= RING_RESOLUTION; ++i) {
-                float a = i * angleStep;
-                float baseA = a;
-                float normA = baseA;
-                if (normA > PI) normA -= TAU;
-                bool inGap = hasGap && std::abs(normA - m_arenaAngle) < m_currentGapAngle;
+                float a = i * angleStep - PI * 0.5f; // start from top
 
                 // Per-band variation for organic look
                 int bandIdx = static_cast<int>(static_cast<float>(i) / RING_RESOLUTION * numBands) % numBands;
@@ -1826,7 +1813,7 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
                     case 4: rr=f; gg=0; bb=1; break;
                     default: rr=1; gg=0; bb=1-f; break;
                 }
-                sf::Uint8 alpha = inGap ? 0 : static_cast<sf::Uint8>(200 * opacity * localVal);
+                sf::Uint8 alpha = static_cast<sf::Uint8>(200 * opacity * localVal);
                 sf::Color col(static_cast<sf::Uint8>(rr * 255),
                               static_cast<sf::Uint8>(gg * 255),
                               static_cast<sf::Uint8>(bb * 255), alpha);
@@ -1847,11 +1834,7 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
         int vi = 0;
         float angleStep = TAU / RING_RESOLUTION;
         for (int i = 0; i <= RING_RESOLUTION; ++i) {
-            float a = m_arenaAngle + i * angleStep;
-            float baseA = i * angleStep;
-            float normA = baseA;
-            if (normA > PI) normA -= TAU;
-            bool inGap = hasGap && std::abs(normA) < m_currentGapAngle;
+            float a = i * angleStep - PI * 0.5f; // start from top
 
             // Interpolate the nearest bands for smooth waveform
             float bandPos = static_cast<float>(i) / RING_RESOLUTION * numBands;
@@ -1876,7 +1859,7 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
                 case 4: rr=f; gg=0; bb=1; break;
                 default: rr=1; gg=0; bb=1-f; break;
             }
-            sf::Uint8 alpha = inGap ? 0 : static_cast<sf::Uint8>(220 * opacity * (0.3f + 0.7f * val));
+            sf::Uint8 alpha = static_cast<sf::Uint8>(220 * opacity * (0.3f + 0.7f * val));
             sf::Color col(static_cast<sf::Uint8>(rr * 255),
                           static_cast<sf::Uint8>(gg * 255),
                           static_cast<sf::Uint8>(bb * 255), alpha);
@@ -2080,8 +2063,13 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
 
             if (nameAvatarTex) {
                 sf::Sprite avatar(*nameAvatarTex);
-                avatar.setOrigin(32.0f, 32.0f);
-                float avatarS = avatarDiam / 64.0f;
+                auto ats = nameAvatarTex->getSize();
+                int aSide = static_cast<int>(std::min(ats.x, ats.y));
+                int aox = (static_cast<int>(ats.x) - aSide) / 2;
+                int aoy = (static_cast<int>(ats.y) - aSide) / 2;
+                avatar.setTextureRect(sf::IntRect(aox, aoy, aSide, aSide));
+                avatar.setOrigin(aSide / 2.0f, aSide / 2.0f);
+                float avatarS = avatarDiam / static_cast<float>(aSide);
                 avatar.setScale(avatarS, avatarS);
                 // Will position after we measure the name text
                 avatarOffset = avatarDiam / 2.0f + 3.0f;
@@ -3315,6 +3303,8 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_visualizerBands = std::clamp(settings["visualizer_bands"].get<int>(), 8, 128);
     if (settings.contains("visualizer_smoothing") && settings["visualizer_smoothing"].is_number())
         m_visualizerSmoothing = std::clamp(settings["visualizer_smoothing"].get<float>(), 0.0f, 0.95f);
+    if (settings.contains("visualizer_gain") && settings["visualizer_gain"].is_number())
+        m_visualizerGain = std::clamp(settings["visualizer_gain"].get<float>(), 0.1f, 10.0f);
 
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
@@ -3384,6 +3374,7 @@ nlohmann::json CountryElimination::getSettings() const {
         {"visualizer_opacity", m_visualizerOpacity},
         {"visualizer_bands", m_visualizerBands},
         {"visualizer_smoothing", m_visualizerSmoothing},
+        {"visualizer_gain", m_visualizerGain},
         {"text_elements", textElementsJson()},
     };
 }

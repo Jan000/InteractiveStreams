@@ -156,6 +156,7 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "visualizer_opacity", label: "Visualizer Opacity", description: "Opacity of the visualizer (0.0–1.0)", type: "float", min: 0, max: 1, step: 0.05, defaultValue: 0.7 },
     { key: "visualizer_bands", label: "Visualizer Bands", description: "Number of frequency bands displayed around the ring", type: "int", min: 8, max: 128, step: 4, defaultValue: 64 },
     { key: "visualizer_smoothing", label: "Visualizer Smoothing", description: "Smoothing factor for band values (0=instant, 0.95=very smooth)", type: "float", min: 0, max: 0.95, step: 0.05, defaultValue: 0.3 },
+    { key: "visualizer_gain", label: "Visualizer Gain", description: "Amplitude gain multiplier for the spectrum (higher = louder bars)", type: "float", min: 0.1, max: 10, step: 0.1, defaultValue: 2.0 },
     // --- Quiz ---
     { key: "quiz_enabled", label: "Enable Quiz", description: "Show periodic geography quiz questions during the game", type: "bool", defaultValue: true },
     { key: "quiz_interval", label: "Quiz Interval (s)", description: "Seconds between quiz questions (cooldown after each question)", type: "float", min: 5, max: 300, step: 1, defaultValue: 30 },
