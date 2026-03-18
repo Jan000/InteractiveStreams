@@ -1668,41 +1668,52 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
     float maxH = m_visualizerHeight * (L.ppm / REF_PPM); // scale with resolution
     float opacity = std::clamp(m_visualizerOpacity, 0.0f, 1.0f);
 
-    // Each band occupies an angular slice around the ring (full circle, no gap)
-    float bandAngle = TAU / numBands;
+    // Mirror spectrum: left half = bands 0..N-1, right half = N-1..0
+    // This ensures both halves of the circle look equally active.
+    const int totalSlots = numBands * 2;
+    std::vector<float> vizMirrored(totalSlots);
+    for (int i = 0; i < numBands; ++i) {
+        vizMirrored[i] = m_vizSmoothed[i];
+        vizMirrored[totalSlots - 1 - i] = m_vizSmoothed[i];
+    }
+
+    float slotAngle = TAU / totalSlots;
+
+    // Helper: HSV hue to RGB
+    auto hueToRGB = [](float hue, float& rr, float& gg, float& bb) {
+        float h6 = hue * 6.0f;
+        int hi = static_cast<int>(h6) % 6;
+        float f = h6 - static_cast<float>(hi);
+        switch (hi) {
+            case 0: rr=1; gg=f; bb=0; break;
+            case 1: rr=1-f; gg=1; bb=0; break;
+            case 2: rr=0; gg=1; bb=f; break;
+            case 3: rr=0; gg=1-f; bb=1; break;
+            case 4: rr=f; gg=0; bb=1; break;
+            default: rr=1; gg=0; bb=1-f; break;
+        }
+    };
 
     if (m_visualizerStyle == 0) {
         // ── Style 0: Bars ────────────────────────────────────────────────
-        // Radial bars emanating outward from the ring, with rounded-end dots
-        for (int i = 0; i < numBands; ++i) {
-            float centerAngle = i * bandAngle - PI * 0.5f; // start from top
+        for (int i = 0; i < totalSlots; ++i) {
+            float centerAngle = i * slotAngle - PI * 0.5f;
 
-            float val = std::clamp(m_vizSmoothed[i], 0.0f, 1.0f);
+            float val = std::clamp(vizMirrored[i], 0.0f, 1.0f);
             if (val < 0.01f) continue;
 
             float barH = val * maxH;
-            float barW = bandAngle * rOuter * 0.6f; // width at the ring surface
+            float barW = slotAngle * rOuter * 0.6f;
 
-            // Color: hue mapped to position around circle
-            float hue = std::fmod(static_cast<float>(i) / numBands + m_globalTime * 0.1f, 1.0f);
-            float h6 = hue * 6.0f;
-            int hi = static_cast<int>(h6) % 6;
-            float f = h6 - static_cast<float>(hi);
             float rr, gg, bb;
-            switch (hi) {
-                case 0: rr=1; gg=f; bb=0; break;
-                case 1: rr=1-f; gg=1; bb=0; break;
-                case 2: rr=0; gg=1; bb=f; break;
-                case 3: rr=0; gg=1-f; bb=1; break;
-                case 4: rr=f; gg=0; bb=1; break;
-                default: rr=1; gg=0; bb=1-f; break;
-            }
+            float hue = std::fmod(static_cast<float>(i) / totalSlots + m_globalTime * 0.1f, 1.0f);
+            hueToRGB(hue, rr, gg, bb);
+
             sf::Uint8 alpha = static_cast<sf::Uint8>(255 * opacity * (0.5f + 0.5f * val));
             sf::Color col(static_cast<sf::Uint8>(rr * 255),
                           static_cast<sf::Uint8>(gg * 255),
                           static_cast<sf::Uint8>(bb * 255), alpha);
 
-            // Draw bar as a quad (trapezoid along radial direction)
             float halfW = barW * 0.5f;
             float cosA = std::cos(centerAngle);
             float sinA = std::sin(centerAngle);
@@ -1724,7 +1735,6 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
             bar.setFillColor(col);
             target.draw(bar);
 
-            // Bright tip dot
             float dotR = barW * 0.3f;
             sf::CircleShape tip(dotR, 8);
             tip.setOrigin(dotR, dotR);
@@ -1734,33 +1744,21 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
         }
     } else if (m_visualizerStyle == 1) {
         // ── Style 1: Dots ────────────────────────────────────────────────
-        // Concentric layers of dots radiating outward, size = amplitude
-        for (int i = 0; i < numBands; ++i) {
-            float centerAngle = i * bandAngle - PI * 0.5f; // start from top
+        for (int i = 0; i < totalSlots; ++i) {
+            float centerAngle = i * slotAngle - PI * 0.5f;
 
-            float val = std::clamp(m_vizSmoothed[i], 0.0f, 1.0f);
+            float val = std::clamp(vizMirrored[i], 0.0f, 1.0f);
             if (val < 0.02f) continue;
 
-            float hue = std::fmod(static_cast<float>(i) / numBands + m_globalTime * 0.1f, 1.0f);
-            float h6 = hue * 6.0f;
-            int hi = static_cast<int>(h6) % 6;
-            float f = h6 - static_cast<float>(hi);
             float rr, gg, bb;
-            switch (hi) {
-                case 0: rr=1; gg=f; bb=0; break;
-                case 1: rr=1-f; gg=1; bb=0; break;
-                case 2: rr=0; gg=1; bb=f; break;
-                case 3: rr=0; gg=1-f; bb=1; break;
-                case 4: rr=f; gg=0; bb=1; break;
-                default: rr=1; gg=0; bb=1-f; break;
-            }
+            float hue = std::fmod(static_cast<float>(i) / totalSlots + m_globalTime * 0.1f, 1.0f);
+            hueToRGB(hue, rr, gg, bb);
 
-            // 3 concentric dot layers
             for (int layer = 0; layer < 3; ++layer) {
                 float layerVal = val * (1.0f - layer * 0.25f);
                 if (layerVal < 0.02f) continue;
                 float dist = rOuter + (layer + 1) * maxH * 0.3f * layerVal;
-                float dotSize = std::max(1.5f, bandAngle * rOuter * 0.3f * layerVal);
+                float dotSize = std::max(1.5f, slotAngle * rOuter * 0.3f * layerVal);
                 sf::Uint8 alpha = static_cast<sf::Uint8>(255 * opacity * layerVal * (1.0f - layer * 0.3f));
                 sf::CircleShape dot(dotSize, 10);
                 dot.setOrigin(dotSize, dotSize);
@@ -1774,7 +1772,6 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
         }
     } else if (m_visualizerStyle == 2) {
         // ── Style 2: Pulse ───────────────────────────────────────────────
-        // Continuous ring that pulses outward based on average amplitude
         float avgVal = 0.0f;
         for (int i = 0; i < numBands; ++i)
             avgVal += m_vizSmoothed[i];
@@ -1782,37 +1779,24 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
         avgVal = std::clamp(avgVal, 0.0f, 1.0f);
 
         if (avgVal > 0.01f) {
-            float pulseR = rOuter + avgVal * maxH;
             float pulseThickness = std::max(2.0f, 4.0f * avgVal);
-            float pRO = pulseR + pulseThickness * 0.5f;
-            float pRI = pulseR - pulseThickness * 0.5f;
 
             sf::VertexArray pulseRing(sf::TriangleStrip, (RING_RESOLUTION + 1) * 2);
             int vi = 0;
             float angleStep = TAU / RING_RESOLUTION;
             for (int i = 0; i <= RING_RESOLUTION; ++i) {
-                float a = i * angleStep - PI * 0.5f; // start from top
+                float a = i * angleStep - PI * 0.5f;
 
-                // Per-band variation for organic look
-                int bandIdx = static_cast<int>(static_cast<float>(i) / RING_RESOLUTION * numBands) % numBands;
-                float localVal = m_vizSmoothed[bandIdx];
+                int slotIdx = static_cast<int>(static_cast<float>(i) / RING_RESOLUTION * totalSlots) % totalSlots;
+                float localVal = vizMirrored[slotIdx];
                 float localR = rOuter + localVal * maxH;
                 float lpRO = localR + pulseThickness * 0.5f;
                 float lpRI = localR - pulseThickness * 0.5f;
 
-                float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
-                float h6 = hue * 6.0f;
-                int hi = static_cast<int>(h6) % 6;
-                float f = h6 - static_cast<float>(hi);
                 float rr, gg, bb;
-                switch (hi) {
-                    case 0: rr=1; gg=f; bb=0; break;
-                    case 1: rr=1-f; gg=1; bb=0; break;
-                    case 2: rr=0; gg=1; bb=f; break;
-                    case 3: rr=0; gg=1-f; bb=1; break;
-                    case 4: rr=f; gg=0; bb=1; break;
-                    default: rr=1; gg=0; bb=1-f; break;
-                }
+                float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
+                hueToRGB(hue, rr, gg, bb);
+
                 sf::Uint8 alpha = static_cast<sf::Uint8>(200 * opacity * localVal);
                 sf::Color col(static_cast<sf::Uint8>(rr * 255),
                               static_cast<sf::Uint8>(gg * 255),
@@ -1829,46 +1813,34 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
         }
     } else if (m_visualizerStyle == 3) {
         // ── Style 3: Wave ────────────────────────────────────────────────
-        // Smooth filled waveform that ripples outward from the ring
         sf::VertexArray wave(sf::TriangleStrip, (RING_RESOLUTION + 1) * 2);
         int vi = 0;
         float angleStep = TAU / RING_RESOLUTION;
         for (int i = 0; i <= RING_RESOLUTION; ++i) {
-            float a = i * angleStep - PI * 0.5f; // start from top
+            float a = i * angleStep - PI * 0.5f;
 
-            // Interpolate the nearest bands for smooth waveform
-            float bandPos = static_cast<float>(i) / RING_RESOLUTION * numBands;
-            int b0 = static_cast<int>(bandPos) % numBands;
-            int b1 = (b0 + 1) % numBands;
-            float frac = bandPos - static_cast<float>(static_cast<int>(bandPos));
-            float val = m_vizSmoothed[b0] * (1.0f - frac) + m_vizSmoothed[b1] * frac;
+            // Interpolate mirrored bands for smooth waveform
+            float slotPos = static_cast<float>(i) / RING_RESOLUTION * totalSlots;
+            int s0 = static_cast<int>(slotPos) % totalSlots;
+            int s1 = (s0 + 1) % totalSlots;
+            float frac = slotPos - static_cast<float>(static_cast<int>(slotPos));
+            float val = vizMirrored[s0] * (1.0f - frac) + vizMirrored[s1] * frac;
             val = std::clamp(val, 0.0f, 1.0f);
 
             float waveR = rOuter + val * maxH;
 
-            float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
-            float h6 = hue * 6.0f;
-            int hi = static_cast<int>(h6) % 6;
-            float f = h6 - static_cast<float>(hi);
             float rr, gg, bb;
-            switch (hi) {
-                case 0: rr=1; gg=f; bb=0; break;
-                case 1: rr=1-f; gg=1; bb=0; break;
-                case 2: rr=0; gg=1; bb=f; break;
-                case 3: rr=0; gg=1-f; bb=1; break;
-                case 4: rr=f; gg=0; bb=1; break;
-                default: rr=1; gg=0; bb=1-f; break;
-            }
+            float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
+            hueToRGB(hue, rr, gg, bb);
+
             sf::Uint8 alpha = static_cast<sf::Uint8>(220 * opacity * (0.3f + 0.7f * val));
             sf::Color col(static_cast<sf::Uint8>(rr * 255),
                           static_cast<sf::Uint8>(gg * 255),
                           static_cast<sf::Uint8>(bb * 255), alpha);
 
-            // Outer edge (wave)
             wave[vi].position = { L.arenaCX + waveR * std::cos(a), L.arenaCY + waveR * std::sin(a) };
             wave[vi].color = col;
             vi++;
-            // Inner edge (ring surface)
             wave[vi].position = { L.arenaCX + rOuter * std::cos(a), L.arenaCY + rOuter * std::sin(a) };
             wave[vi].color = sf::Color(col.r, col.g, col.b, static_cast<sf::Uint8>(alpha * 0.2f));
             vi++;
