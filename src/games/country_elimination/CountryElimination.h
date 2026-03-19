@@ -371,6 +371,13 @@ private:
     float  m_visualizerGain     = 2.0f;   // amplitude gain multiplier
     std::vector<float> m_vizSmoothed;     // smoothed band values
 
+    // Country leaderboard panel settings
+    int    m_leaderboardMaxEntries  = 10;  // max entries shown in panel
+    int    m_leaderboardFontSize    = 24;  // base font size for entries
+    float  m_leaderboardFlagSize    = 1.0f; // flag radius multiplier
+    bool   m_leaderboardShowCodes   = true; // show country code labels
+    float  m_leaderboardTextScale   = 1.0f; // text scale multiplier
+
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {
         std::string playerId;

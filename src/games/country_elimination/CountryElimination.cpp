@@ -868,7 +868,7 @@ void CountryElimination::checkEliminations() {
             if (static_cast<int>(m_eliminationFeed.size()) > m_elimFeedMax) m_eliminationFeed.pop_back();
 
             if (!p.isBot()) {
-                sendChatFeedback("💀 " + p.displayName + " [" + p.label + "] eliminated!");
+                sendChatFeedback("💀 " + p.displayName + " eliminated!");
                 try {
                     is::core::Application::instance().playerDatabase().recordResult(
                         p.userId, p.displayName, "country_elimination", m_scoreParticipation, false);
@@ -904,7 +904,7 @@ void CountryElimination::endRound() {
         recordCountryWin(w.label);
 
         if (!w.isBot()) {
-            sendChatFeedback("🏆 " + w.displayName + " [" + w.label + "] wins Round " +
+            sendChatFeedback("🏆 " + w.displayName + " wins Round " +
                               std::to_string(m_roundNumber) + "!");
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
@@ -1679,18 +1679,20 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
 
     float slotAngle = TAU / totalSlots;
 
-    // Helper: HSV hue to RGB
-    auto hueToRGB = [](float hue, float& rr, float& gg, float& bb) {
-        float h6 = hue * 6.0f;
-        int hi = static_cast<int>(h6) % 6;
-        float f = h6 - static_cast<float>(hi);
-        switch (hi) {
-            case 0: rr=1; gg=f; bb=0; break;
-            case 1: rr=1-f; gg=1; bb=0; break;
-            case 2: rr=0; gg=1; bb=f; break;
-            case 3: rr=0; gg=1-f; bb=1; break;
-            case 4: rr=f; gg=0; bb=1; break;
-            default: rr=1; gg=0; bb=1-f; break;
+    // Helper: purple → blue → cyan gradient based on position (t 0..1)
+    auto vizColor = [](float t, float& rr, float& gg, float& bb) {
+        // purple (0.55, 0.15, 1.0) → blue (0.2, 0.4, 1.0) → cyan (0.0, 0.85, 1.0)
+        t = std::clamp(t, 0.0f, 1.0f);
+        if (t < 0.5f) {
+            float f = t * 2.0f; // 0..1
+            rr = 0.55f + (0.2f - 0.55f) * f;
+            gg = 0.15f + (0.4f - 0.15f) * f;
+            bb = 1.0f;
+        } else {
+            float f = (t - 0.5f) * 2.0f; // 0..1
+            rr = 0.2f + (0.0f - 0.2f) * f;
+            gg = 0.4f + (0.85f - 0.4f) * f;
+            bb = 1.0f;
         }
     };
 
@@ -1706,8 +1708,8 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
             float barW = slotAngle * rOuter * 0.6f;
 
             float rr, gg, bb;
-            float hue = std::fmod(static_cast<float>(i) / totalSlots + m_globalTime * 0.1f, 1.0f);
-            hueToRGB(hue, rr, gg, bb);
+            float t = std::fmod(static_cast<float>(i) / totalSlots + m_globalTime * 0.05f, 1.0f);
+            vizColor(t, rr, gg, bb);
 
             sf::Uint8 alpha = static_cast<sf::Uint8>(255 * opacity * (0.5f + 0.5f * val));
             sf::Color col(static_cast<sf::Uint8>(rr * 255),
@@ -1751,8 +1753,8 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
             if (val < 0.02f) continue;
 
             float rr, gg, bb;
-            float hue = std::fmod(static_cast<float>(i) / totalSlots + m_globalTime * 0.1f, 1.0f);
-            hueToRGB(hue, rr, gg, bb);
+            float t = std::fmod(static_cast<float>(i) / totalSlots + m_globalTime * 0.05f, 1.0f);
+            vizColor(t, rr, gg, bb);
 
             for (int layer = 0; layer < 3; ++layer) {
                 float layerVal = val * (1.0f - layer * 0.25f);
@@ -1794,8 +1796,8 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
                 float lpRI = localR - pulseThickness * 0.5f;
 
                 float rr, gg, bb;
-                float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
-                hueToRGB(hue, rr, gg, bb);
+                float t = std::fmod(static_cast<float>(i) / static_cast<float>(RING_RESOLUTION) + m_globalTime * 0.05f, 1.0f);
+                vizColor(t, rr, gg, bb);
 
                 sf::Uint8 alpha = static_cast<sf::Uint8>(200 * opacity * localVal);
                 sf::Color col(static_cast<sf::Uint8>(rr * 255),
@@ -1830,8 +1832,8 @@ void CountryElimination::renderVisualizer(sf::RenderTarget& target, const Screen
             float waveR = rOuter + val * maxH;
 
             float rr, gg, bb;
-            float hue = std::fmod(static_cast<float>(i) / RING_RESOLUTION + m_globalTime * 0.1f, 1.0f);
-            hueToRGB(hue, rr, gg, bb);
+            float t = std::fmod(static_cast<float>(i) / static_cast<float>(RING_RESOLUTION) + m_globalTime * 0.05f, 1.0f);
+            vizColor(t, rr, gg, bb);
 
             sf::Uint8 alpha = static_cast<sf::Uint8>(220 * opacity * (0.3f + 0.7f * val));
             sf::Color col(static_cast<sf::Uint8>(rr * 255),
@@ -2299,10 +2301,11 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
     float panelW = std::min(320.0f, L.safeW * 0.5f);
     float panelX = L.safeRight - panelW - 10.0f;
     float panelY = L.H * 0.015f;
-    int maxShow = std::min(static_cast<int>(m_countryWins.size()), 10);
+    int maxShow = std::min(static_cast<int>(m_countryWins.size()), m_leaderboardMaxEntries);
 
-    float lineH = fs(24) + 10.0f;
-    float headerH = fs(26) + fs(20) + 20.0f;
+    int baseFontSz = static_cast<int>(m_leaderboardFontSize * m_leaderboardTextScale);
+    float lineH = fs(baseFontSz) + 10.0f;
+    float headerH = fs(baseFontSz + 2) + fs(baseFontSz - 4) + 20.0f;
     float panelH = headerH + maxShow * lineH + 12.0f;
 
     // Semi-transparent background
@@ -2318,7 +2321,7 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
         sf::Text header;
         header.setFont(m_font);
         header.setString("COUNTRIES");
-        header.setCharacterSize(fs(26));
+        header.setCharacterSize(fs(baseFontSz + 2));
         header.setFillColor(sf::Color(255, 215, 0, 220));
         header.setOutlineColor(sf::Color(0, 0, 0, 200));
         header.setOutlineThickness(1.0f);
@@ -2330,11 +2333,11 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
         sf::Text sub;
         sub.setFont(m_font);
         sub.setString("First to " + std::to_string(m_championThreshold) + " wins");
-        sub.setCharacterSize(fs(20));
+        sub.setCharacterSize(fs(baseFontSz - 4));
         sub.setFillColor(sf::Color(200, 200, 200, 160));
         auto sb = sub.getLocalBounds();
         sub.setOrigin(sb.left + sb.width / 2.0f, 0.0f);
-        sub.setPosition(panelX + panelW / 2.0f, panelY + fs(26) + 10.0f);
+        sub.setPosition(panelX + panelW / 2.0f, panelY + fs(baseFontSz + 2) + 10.0f);
         target.draw(sub);
     }
 
@@ -2347,13 +2350,13 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
         sf::Text rank;
         rank.setFont(m_font);
         rank.setString(std::to_string(i + 1) + ".");
-        rank.setCharacterSize(fs(24));
+        rank.setCharacterSize(fs(baseFontSz));
         rank.setFillColor(i == 0 ? sf::Color(255, 215, 0, 220) : sf::Color(200, 200, 200, 200));
         rank.setPosition(panelX + 8.0f, y);
         target.draw(rank);
 
         // Flag circle
-        float flagR = fs(24) * 0.45f;
+        float flagR = fs(baseFontSz) * 0.45f * m_leaderboardFlagSize;
         sf::CircleShape flag(flagR);
         flag.setOrigin(flagR, flagR);
         flag.setPosition(panelX + 50.0f, y + lineH / 2.0f);
@@ -2373,20 +2376,22 @@ void CountryElimination::renderRoundWinners(sf::RenderTarget& target, const Scre
         flag.setOutlineThickness(1.0f);
         target.draw(flag);
 
-        // Country label
-        sf::Text name;
-        name.setFont(m_font);
-        name.setString(cw.label);
-        name.setCharacterSize(fs(22));
-        name.setFillColor(sf::Color(255, 255, 255, 210));
-        name.setPosition(panelX + 50.0f + flagR + 8.0f, y + 2.0f);
-        target.draw(name);
+        // Country label (conditionally shown)
+        if (m_leaderboardShowCodes) {
+            sf::Text name;
+            name.setFont(m_font);
+            name.setString(cw.label);
+            name.setCharacterSize(fs(baseFontSz - 2));
+            name.setFillColor(sf::Color(255, 255, 255, 210));
+            name.setPosition(panelX + 50.0f + flagR + 8.0f, y + 2.0f);
+            target.draw(name);
+        }
 
         // Wins count
         sf::Text wins;
         wins.setFont(m_font);
         wins.setString(std::to_string(cw.wins) + "W");
-        wins.setCharacterSize(fs(24));
+        wins.setCharacterSize(fs(baseFontSz));
         wins.setFillColor(sf::Color(255, 215, 0, 220));
         auto wb = wins.getLocalBounds();
         wins.setOrigin(wb.left + wb.width, 0.0f);
@@ -2671,7 +2676,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
 
         // Card: Country Leaderboard
         {
-            int maxShow = std::min(static_cast<int>(m_countryWins.size()), 10);
+            int maxShow = std::min(static_cast<int>(m_countryWins.size()), m_leaderboardMaxEntries);
             float headerH = fs(28) + 12.0f;
             float cardH = headerH + 6.0f + std::max(1, maxShow) * lineH + pad;
             drawCard(px, py, pw, cardH);
@@ -2702,7 +2707,7 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     target.draw(rank);
 
                     // Flag circle
-                    float flagR = fs(22) * 0.5f;
+                    float flagR = fs(22) * 0.5f * m_leaderboardFlagSize;
                     sf::CircleShape flag(flagR);
                     flag.setOrigin(flagR, flagR);
                     flag.setPosition(px + 40.0f, ey + lineH / 2.0f);
@@ -2722,14 +2727,16 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
                     flag.setOutlineThickness(1.0f);
                     target.draw(flag);
 
-                    // Country label
-                    sf::Text name;
-                    name.setFont(m_font);
-                    name.setString(cw.label);
-                    name.setCharacterSize(fs(20));
-                    name.setFillColor(sf::Color(230, 230, 240, 210));
-                    name.setPosition(px + 40.0f + flagR + 6.0f, ey + 1.0f);
-                    target.draw(name);
+                    // Country label (conditionally shown)
+                    if (m_leaderboardShowCodes) {
+                        sf::Text name;
+                        name.setFont(m_font);
+                        name.setString(cw.label);
+                        name.setCharacterSize(fs(20));
+                        name.setFillColor(sf::Color(230, 230, 240, 210));
+                        name.setPosition(px + 40.0f + flagR + 6.0f, ey + 1.0f);
+                        target.draw(name);
+                    }
 
                     // Wins
                     sf::Text wins;
@@ -3278,6 +3285,18 @@ void CountryElimination::configure(const nlohmann::json& settings) {
     if (settings.contains("visualizer_gain") && settings["visualizer_gain"].is_number())
         m_visualizerGain = std::clamp(settings["visualizer_gain"].get<float>(), 0.1f, 10.0f);
 
+    // Country leaderboard panel
+    if (settings.contains("leaderboard_max_entries") && settings["leaderboard_max_entries"].is_number_integer())
+        m_leaderboardMaxEntries = std::clamp(settings["leaderboard_max_entries"].get<int>(), 1, 30);
+    if (settings.contains("leaderboard_font_size") && settings["leaderboard_font_size"].is_number_integer())
+        m_leaderboardFontSize = std::clamp(settings["leaderboard_font_size"].get<int>(), 10, 48);
+    if (settings.contains("leaderboard_flag_size") && settings["leaderboard_flag_size"].is_number())
+        m_leaderboardFlagSize = std::clamp(settings["leaderboard_flag_size"].get<float>(), 0.3f, 3.0f);
+    if (settings.contains("leaderboard_show_codes") && settings["leaderboard_show_codes"].is_boolean())
+        m_leaderboardShowCodes = settings["leaderboard_show_codes"].get<bool>();
+    if (settings.contains("leaderboard_text_scale") && settings["leaderboard_text_scale"].is_number())
+        m_leaderboardTextScale = std::clamp(settings["leaderboard_text_scale"].get<float>(), 0.3f, 3.0f);
+
     spdlog::info("[CountryElimination] configure: infinite_linger={}, persist_rounds={}, max_elim_visible={}",
                  m_elimInfiniteLinger, m_elimPersistRounds, m_maxEliminatedVisible);
 
@@ -3347,6 +3366,11 @@ nlohmann::json CountryElimination::getSettings() const {
         {"visualizer_bands", m_visualizerBands},
         {"visualizer_smoothing", m_visualizerSmoothing},
         {"visualizer_gain", m_visualizerGain},
+        {"leaderboard_max_entries", m_leaderboardMaxEntries},
+        {"leaderboard_font_size", m_leaderboardFontSize},
+        {"leaderboard_flag_size", m_leaderboardFlagSize},
+        {"leaderboard_show_codes", m_leaderboardShowCodes},
+        {"leaderboard_text_scale", m_leaderboardTextScale},
         {"text_elements", textElementsJson()},
     };
 }
