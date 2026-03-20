@@ -13,6 +13,7 @@ InteractiveStreams ist ein C++-Programm, das vollautomatisch interaktive Spiele 
 - [Erstes Spiel: Chaos Arena](#-erstes-spiel-chaos-arena)
 - [Zweites Spiel: Color Conquest](#-zweites-spiel-color-conquest)
 - [Drittes Spiel: Gravity Brawl](#-drittes-spiel-gravity-brawl)
+- [Viertes Spiel: Country Elimination](#-viertes-spiel-country-elimination)
 - [Technologie-Stack](#-technologie-stack)
 - [Projektstruktur](#-projektstruktur)
 - [Build-Anleitung](#-build-anleitung)
@@ -255,6 +256,93 @@ Per-Game Settings: `sfx_enabled` (bool), `sfx_volume` (float 0–100) – konfig
 
 ---
 
+## 🌍 Viertes Spiel: Country Elimination
+
+**Country Elimination** ist ein Marble-Race-Duell in einer rotierenden Arena. Jeder Zuschauer repräsentiert sein Land als Ball, der in einer kreisförmigen Begrenzung abprallt. Die Arena dreht sich zunehmend schneller und besitzt eine Lücke – wer hindurchfällt, ist eliminiert. Der letzte überlebende Ball gewinnt die Runde. Das erste Land, das eine konfigurierbare Anzahl an Siegen erreicht, wird zum Champion.
+
+### Features
+
+- **Länder-Flags als Bälle** – Jeder Spieler wählt ein Land; sein Ball zeigt die Landesflagge (Sprite-Sheet mit 246 Ländern)
+- **Fuzzy Matching** – `join Germany`, `join DE`, `join Deutschland`, `join 🇩🇪` werden alle erkannt – 200+ Länder mit Aliases
+- **Rotierende Arena** – Kreisförmige Wand aus 64 Segmenten, dreht sich und öffnet ihre Lücke zunehmend während der Runde
+- **Champion-System** – Erstes Land mit `champion_threshold` Runden-Siegen gewinnt den Titel; persistente Runden-Statistik
+- **Persistente Länder-Leaderboards** – Siegesstatistik pro Land in SQLite (`country_wins`); Anzeige als Session, 24h oder All-Time
+- **Bot Fill System** – Lobby wird automatisch mit vorkonfigurierten Ländernamen-Bots aufgefüllt, sodass das Spiel nie leer ist
+- **Profilbilder** – Zuschauer-Avatare werden im Hintergrund heruntergeladen und unter dem Ball angezeigt
+- **Audio-Visualizer** – Animierter Spektrum-Ring in Lila-/Cyan-Farbverlauf umgibt die Arena
+- **Geography-Quiz** – Periodische Geographie-Quizfragen werden als Overlay angezeigt und im Chat gepostet; Antworten per `1`–`4` oder `a`–`d`
+- **Schilde** – Stream-Events verleihen Schutzschilde, die einmalig vor der Eliminierung retten
+- **Konfigurierbar** – 40+ Einstellungen für Arena-Physik, Rotation, Lücken-Expansion, Ballgröße, Flag-Style, Quiz, Visualizer, Leaderboard u.v.m.
+
+### Spielablauf
+
+1. **Lobby** – Zuschauer treten mit `join <land>` bei; Bots füllen auf die konfigurierte Mindestspielerzahl auf
+2. **Countdown** – Kurze Countdown-Phase mit geschlossener Arena-Lücke
+3. **Battle** – Bälle prallen ab, Arena-Lücke öffnet sich und Arena dreht sich schneller; Audio-Visualizer aktiv; Quiz-Fragen erscheinen periodisch
+4. **RoundEnd** – Sieger-Ball wird prominent angezeigt; Ländersieg in SQLite gespeichert
+5. Nach Erreichen von `champion_threshold` Siegen → Champion-Anzeige, danach Neustart
+
+### Champion-System
+
+Das erste Land, das `champion_threshold` Runden (Standard: 4) gewinnt, wird als Champion ausgerufen. In der Sieger-Anzeige erscheint der Ball vergrößert mit Konfetti-Effekt. Danach beginnt das Spiel von vorne.
+
+### Chat-Befehle
+
+| Befehl | Beschreibung |
+|--------|-------------|
+| `join <land>` | Ball mit Landesflagge spawnen |
+| `play <land>` | Alias für `join` |
+
+**Beispiele:** `join Germany`, `join DE`, `join Deutschland`, `join 🇩🇪`, `join United States`, `join US`, `join 美国`
+
+Unterstützte Formate: ISO-2-Codes, vollständige Ländernamen (Englisch), fremdsprachige Varianten, Flaggen-Emojis, eigene Labels (bis 16 Zeichen).
+
+> Während eines aktiven Quiz: Mit `1`, `2`, `3`, `4` (oder `a`, `b`, `c`, `d`) antworten.
+
+### Leaderboard-Modi
+
+| Modus | Schlüssel | Beschreibung |
+|-------|-----------|-------------|
+| **Session** | `0` | Siege der aktuellen Programminstanz (In-Memory, kein Neustart) |
+| **24h** | `1` | Siege der letzten 24 Stunden (SQLite, persistent) |
+| **All-Time** | `2` | Alle Siege seit Start der Aufzeichnung (SQLite, persistent) |
+
+Einstellbar über `GET/PUT /api/games/country_elimination/settings` → `leaderboard_mode`.
+
+### Stream-Event-Reaktionen
+
+| Event | Effekt |
+|-------|--------|
+| YouTube-Abo / Twitch-Sub | Schild (15s) + 300 Punkte |
+| Super Chat / Bits (> 100) | Größerer Ball (1,5×) + Schild (20s) + 500 Punkte |
+| Channel Points | Schild (10s) + 100 Punkte |
+
+Alle Events lösen automatisch `join` aus, falls der Nutzer noch nicht im Spiel ist.
+
+### Konfigurierbare Einstellungen (Auswahl)
+
+| Setting | Standard | Beschreibung |
+|---------|----------|-------------|
+| `arena_radius` | 7.5 | Radius der Arena in Metern |
+| `arena_speed` | 0.3 | Anfangs-Rotationsgeschwindigkeit (rad/s) |
+| `gap_initial` | 0.26 | Anfangsgröße der Lücke (Halbwinkel rad) |
+| `gap_expansion_rate` | 0.02 | Lücken-Expansion pro Sekunde (rad) |
+| `ball_radius` | 0.45 | Radius der Spieler-Bälle (Meter) |
+| `initial_speed` | 5.0 | Startgeschwindigkeit der Bälle |
+| `champion_threshold` | 4 | Siege für Champion-Titel |
+| `bot_fill` | 8 | Ziel-Spieleranzahl mit Bots (0 = deaktiviert) |
+| `quiz_enabled` | true | Geography-Quiz aktivieren |
+| `quiz_interval` | 60.0 | Pause zwischen Quiz-Fragen (s) |
+| `visualizer_enabled` | true | Audio-Visualizer anzeigen |
+| `leaderboard_enabled` | true | Länder-Leaderboard anzeigen |
+| `leaderboard_mode` | 0 | 0 = Session, 1 = 24h, 2 = All-Time |
+| `flag_shape_rect` | false | Flaggen als Rechteck statt Kreis |
+| `rainbow_ring` | true | Arena-Ring in animierten Regenbogenfarben |
+
+Per-Game Settings: konfigurierbar über `GET/PUT /api/games/country_elimination/settings`.
+
+---
+
 ## 🛠 Technologie-Stack
 
 | Komponente | Technologie | Version |
@@ -336,6 +424,10 @@ InteractiveStreams/
 │   │   ├── gravity_brawl/      # Gravity Brawl Spiel
 │   │   │   ├── GravityBrawl.h/cpp   # Spiellogik mit Gravity Shifts & Bot Fill
 │   │   │   └── AvatarCache.h/cpp    # Hintergrund-Avatar-Download & Caching
+│   │   ├── country_elimination/ # Country Elimination Spiel
+│   │   │   ├── CountryElimination.h/cpp # Spiellogik, rotierende Arena, Flaggen, Quiz
+│   │   │   ├── CountryAliases.h     # 200+ Länder-Codes, Namen & Aliase (Fuzzy Matching)
+│   │   │   └── AvatarCache.h/cpp    # Hintergrund-Avatar-Download & Caching (geteilt)
 │   │   └── color_conquest/     # Color Conquest Spiel
 │   │       ├── ColorConquest.h/cpp  # Haupt-Spiellogik
 │   │       ├── Grid.h/cpp           # Spielfeld-Grid (24×40)
@@ -710,6 +802,18 @@ bun run build        # Erzeugt statischen Export in web/out/
 | `join [farbe]` | `play` | Dem Spiel beitreten (Farbe optional: red, blue, green, yellow, #RRGGBB) |
 | `s` | `smash` | Dash/Ram-Angriff (0.8s Cooldown, 5× in 3s = Supernova) |
 
+### Country Elimination
+
+| Befehl | Aliases | Beschreibung |
+|--------|---------|-------------|
+| `join <land>` | `play <land>` | Ball mit Landesflagge spawnen |
+
+**Beispiele:** `join Germany`, `join DE`, `join Deutschland`, `join 🇩🇪`, `join United States`, `join US`
+
+Akzeptiert ISO-2-Codes, vollständige Ländernamen (Englisch & Landessprache), Flaggen-Emojis und eigene Labels (bis 16 Zeichen) für 200+ Länder.
+
+> Während eines aktiven Quiz: Mit `1`, `2`, `3`, `4` (bzw. `a`, `b`, `c`, `d`) antworten.
+
 ---
 
 ## 🖥️ Lokales Testen
@@ -1022,8 +1126,18 @@ public:
 - [x] AudioMixer für PCM-Audio-Output in Streams
 - [x] Avatar-Caching mit Hintergrund-Download (Gravity Brawl)
 
+### Phase 3.7 – Country Elimination ✅
+- [x] Country Elimination als viertes Spiel (Marble Race in rotierender Arena mit Flaggen-Rendering)
+- [x] Fuzzy-Matching für Ländernamen in 200+ Sprachen und Formaten (`CountryAliases.h`)
+- [x] Persistente Länder-Siegstatistik (`country_wins` SQLite-Tabelle)
+- [x] Leaderboard-Modi: Session, 24h, All-Time – konfigurierbar über Scoreboard-Seite im Dashboard
+- [x] Bot Fill System mit 40 vordefinierten Ländernamen als Bots
+- [x] Audio-Visualizer (Spektrum-Ring, Lila/Cyan-Farbverlauf) um die Arena
+- [x] Geography-Quiz mit Chat-Antworten (1–4 / a–d) und konfigurierbaren Punkten
+- [x] Avatar-Caching im Hintergrund (geteilt mit Gravity Brawl)
+- [x] Text-Content-Overrides für alle Spiele (title, join_hint, sub_info)
+
 ### Phase 4 – Content
-- [ ] Weiteres Spiel: Marble Race
 - [ ] Weiteres Spiel: Quiz Battle
 - [ ] Weiteres Spiel: Tower Defense
 - [ ] Skin-/Cosmetic-System

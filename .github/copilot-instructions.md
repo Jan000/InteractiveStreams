@@ -404,7 +404,7 @@ Bei `eventType`-Nachrichten wird `triggerLivestreamReward()` aufgerufen:
 ## Country Elimination – Interna
 
 ### Übersicht
-Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <country>`, Bälle prallen in einer kreisförmigen Begrenzung ab. Die Arena dreht sich und hat eine Lücke – wer herausfällt, ist eliminiert. Letzter Ball gewinnt. Bot-System füllt automatisch die Arena, sodass das Spiel nie stillsteht. Namespace: `is::games::country_elimination`. Dateien: `CountryElimination.h/cpp`.
+Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <country>`, Bälle prallen in einer kreisförmigen Begrenzung ab. Die Arena dreht sich und hat eine Lücke – wer herausfällt, ist eliminiert. Letzter Ball gewinnt. Bot-System füllt automatisch die Arena, sodass das Spiel nie stillsteht. Periodische Geographie-Quiz-Fragen werden als Overlay angezeigt und im Chat gepostet; Zuschauer antworten mit `1`–`4` oder `a`–`d`. Ein animierter Audio-Visualizer (Spektrum-Ring, Lila/Cyan-Farbverlauf) umgibt die Arena. Namespace: `is::games::country_elimination`. Dateien: `CountryElimination.h/cpp`, `CountryAliases.h`.
 
 ### Spielphasen
 `GamePhase::Lobby` → `Countdown` → `Battle` → `RoundEnd` → zurück zu `Lobby`
@@ -445,6 +445,19 @@ Marble-Race/Elimination in einer rotierenden Arena. Zuschauer joinen mit `join <
 - `isBot()` via `"__bot_"` userId-Prefix Konvention
 - Settings: `bot_fill` (default 8), `bot_respawn` (default true), `bot_respawn_delay` (default 3.0s)
 - Bots werden gefiltert in: Leaderboard, PlayerDatabase, Chat-Feedback
+
+### Geography Quiz
+- Periodische Geographie-Quiz-Fragen während der Playing-Phase
+- Fragen erscheinen als Overlay + werden gleichzeitig im Chat gepostet
+- Zuschauer antworten mit `1`/`2`/`3`/`4` oder `a`/`b`/`c`/`d`
+- Richtige Antworten geben `quiz_points` Punkte (Standard: 25)
+- Settings: `quiz_enabled` (default true), `quiz_interval` (Standard 60s), `quiz_duration` (Standard 20s), `quiz_points` (Standard 25)
+
+### Audio Visualizer
+- Animierter Spektrum-Ring in Lila/Cyan-Farbverlauf umgibt die Arena
+- Wird via `renderVisualizer()` in der render()-Methode gezeichnet
+- Läuft unabhängig vom Spielzustand (auch in Lobby/Countdown/RoundEnd sichtbar)
+- Setting: `visualizer_enabled` (default true)
 
 ### Chat-Befehl-Parsing
 Befehle in `CountryElimination::onChatMessage()` (alle Befehle funktionieren mit oder ohne `!`-Prefix):
@@ -504,6 +517,19 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - `label_text_scale`: Skalierung des Label-Texts auf dem Ball (default 1.0)
 - `avatar_scale`: Skalierung des Profilbilds unter dem Ball (default 1.0)
 - `avatar_outline_thickness`: Dicke des Rahmens um das Profilbild unter dem Ball (default 1.0)
+- `quiz_enabled`: Geographie-Quiz während Battle-Phase aktivieren (default true)
+- `quiz_interval`: Pause zwischen Quiz-Fragen in Sekunden (default 60.0)
+- `quiz_duration`: Zeit zum Beantworten einer Quiz-Frage in Sekunden (default 20.0)
+- `quiz_points`: Punkte für richtige Quiz-Antwort (default 25)
+- `visualizer_enabled`: Audio-Visualizer (Spektrum-Ring) um die Arena anzeigen (default true)
+- `leaderboard_enabled`: Länder-Leaderboard-Panel anzeigen (default true)
+- `leaderboard_mode`: Leaderboard-Modus: 0 = Session (In-Memory), 1 = 24h (SQLite), 2 = All-Time (SQLite) (default 0)
+- `leaderboard_max_entries`: Maximale Einträge im Länder-Leaderboard (default 5, max 30)
+- `leaderboard_font_size`: Schriftgröße im Leaderboard in Punkten (default 18, Bereich 10–48)
+- `leaderboard_flag_size`: Flaggen-Skalierung im Leaderboard (default 1.0, Bereich 0.3–3.0)
+- `leaderboard_show_codes`: ISO-2-Ländercodes im Leaderboard anzeigen (default true)
+- `leaderboard_show_names`: Vollständige Ländernamen im Leaderboard anzeigen (default true)
+- `leaderboard_text_scale`: Text-Skalierung im Leaderboard (default 1.0, Bereich 0.3–3.0)
 
 ---
 
@@ -540,17 +566,21 @@ SQLite-basierte persistente Spieler-Datenbank für Scoreboard-Funktionalität.
 ### Tabellen
 - `players` – user_id (PK), display_name, total_points, total_wins, games_played, first_seen, last_seen
 - `game_results` – id (autoincrement), user_id (FK), game_name, points, is_win, timestamp
+- `country_wins` – id (autoincrement), country_code (TEXT), country_name (TEXT), wins (INT), timestamp
 
 ### Scoring-Hooks
 Spiele rufen `Application::instance().playerDatabase().recordResult()` auf:
 - **Chaos Arena**: +100 Punkte + Win bei Rundengewinn, +25 Punkte bei Kill, +1 Punkt für Teilnahme
 - **Gravity Brawl**: Gleiche Scoring-Regeln wie Chaos Arena
 - **Color Conquest**: +50 Punkte + Win für Gewinner-Team, +5 Punkte für Teilnahme
+- **Country Elimination**: `recordCountryWin(code, name)` – Ländersieg in `country_wins` Tabelle + reguläre Player-Punkte (+100 + Win für Sieger, +1 für Teilnahme)
 
 ### API
 - `GET /api/scoreboard/recent?limit=10&hours=24` – Top-Spieler der letzten N Stunden
 - `GET /api/scoreboard/alltime?limit=5` – All-Time-Leaderboard
 - `GET /api/scoreboard/player/:id` – Einzelne Spieler-Statistiken
+- `GET /api/games/country_elimination/scoreboard/alltime?limit=5` – Top-Länder aller Zeiten
+- `GET /api/games/country_elimination/scoreboard/recent?hours=24&limit=5` – Top-Länder der letzten 24h
 
 ---
 
