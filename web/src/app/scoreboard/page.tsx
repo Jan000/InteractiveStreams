@@ -23,6 +23,13 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { NumericInput } from "@/components/ui/numeric-input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Trophy,
   Medal,
   Clock,
@@ -39,6 +46,7 @@ import {
   Pencil,
   ChevronDown,
   ChevronRight,
+  Flag,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -96,6 +104,66 @@ export default function ScoreboardPage() {
   const [recent, setRecent] = useState<ScoreEntry[]>([]);
   const [allTime, setAllTime] = useState<ScoreEntry[]>([]);
 
+  // Country leaderboard settings (from country_elimination game settings)
+  interface CountryLBSettings {
+    leaderboard_enabled: boolean;
+    leaderboard_max_entries: number;
+    leaderboard_font_size: number;
+    leaderboard_flag_size: number;
+    leaderboard_show_codes: boolean;
+    leaderboard_show_names: boolean;
+    leaderboard_text_scale: number;
+    leaderboard_mode: number;
+  }
+  const defaultCountryLB: CountryLBSettings = {
+    leaderboard_enabled: true,
+    leaderboard_max_entries: 5,
+    leaderboard_font_size: 22,
+    leaderboard_flag_size: 1.0,
+    leaderboard_show_codes: false,
+    leaderboard_show_names: true,
+    leaderboard_text_scale: 1.0,
+    leaderboard_mode: 0,
+  };
+  const [countryLB, setCountryLB] = useState<CountryLBSettings>(defaultCountryLB);
+  const [countryLBDirty, setCountryLBDirty] = useState(false);
+  const [countryLBSaving, setCountryLBSaving] = useState(false);
+
+  const fetchCountryLB = useCallback(async () => {
+    try {
+      const all = await api.getGameSettings();
+      const ce = all.country_elimination ?? {};
+      setCountryLB({
+        leaderboard_enabled: (ce.leaderboard_enabled as boolean) ?? defaultCountryLB.leaderboard_enabled,
+        leaderboard_max_entries: (ce.leaderboard_max_entries as number) ?? defaultCountryLB.leaderboard_max_entries,
+        leaderboard_font_size: (ce.leaderboard_font_size as number) ?? defaultCountryLB.leaderboard_font_size,
+        leaderboard_flag_size: (ce.leaderboard_flag_size as number) ?? defaultCountryLB.leaderboard_flag_size,
+        leaderboard_show_codes: (ce.leaderboard_show_codes as boolean) ?? defaultCountryLB.leaderboard_show_codes,
+        leaderboard_show_names: (ce.leaderboard_show_names as boolean) ?? defaultCountryLB.leaderboard_show_names,
+        leaderboard_text_scale: (ce.leaderboard_text_scale as number) ?? defaultCountryLB.leaderboard_text_scale,
+        leaderboard_mode: (ce.leaderboard_mode as number) ?? defaultCountryLB.leaderboard_mode,
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleSaveCountryLB = async () => {
+    setCountryLBSaving(true);
+    try {
+      await api.updateGameSettings({ country_elimination: countryLB as unknown as Record<string, unknown> });
+      toast.success("Country leaderboard settings saved");
+      setCountryLBDirty(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setCountryLBSaving(false);
+    }
+  };
+
+  const updateCountryLB = <K extends keyof CountryLBSettings>(key: K, value: CountryLBSettings[K]) => {
+    setCountryLB(prev => ({ ...prev, [key]: value }));
+    setCountryLBDirty(true);
+  };
+
   // ── Data fetching ───────────────────────────────────────────────────
   const fetchConfig = useCallback(async () => {
     try {
@@ -131,7 +199,8 @@ export default function ScoreboardPage() {
   useEffect(() => {
     fetchConfig();
     fetchPlayers();
-  }, [fetchConfig, fetchPlayers]);
+    fetchCountryLB();
+  }, [fetchConfig, fetchPlayers, fetchCountryLB]);
 
   useEffect(() => {
     fetchLeaderboards();
@@ -565,6 +634,139 @@ export default function ScoreboardPage() {
             label="Current Round"
             icon={<Star className="size-4 text-emerald-400" />}
           />
+        </CardContent>
+      </Card>
+
+      {/* Country Leaderboard (Country Elimination) */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Flag className="size-4 text-muted-foreground" />
+              <div>
+                <CardTitle className="text-sm font-medium">
+                  Country Leaderboard
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  In-game country win leaderboard for Country Elimination
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={countryLB.leaderboard_enabled ? "default" : "secondary"}
+                className="text-[10px]"
+              >
+                {countryLB.leaderboard_enabled ? "On" : "Off"}
+              </Badge>
+              <Button
+                onClick={handleSaveCountryLB}
+                disabled={!countryLBDirty || countryLBSaving}
+                size="sm"
+                variant="outline"
+              >
+                <Save className="size-3.5 mr-1" />
+                {countryLBSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Enable toggle + Mode */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Enabled</Label>
+              <Switch
+                size="sm"
+                checked={countryLB.leaderboard_enabled}
+                onCheckedChange={(v) => updateCountryLB("leaderboard_enabled", v)}
+              />
+            </div>
+            <div className="space-y-1 flex-1">
+              <Label className="text-xs text-muted-foreground">Mode</Label>
+              <Select
+                value={String(countryLB.leaderboard_mode)}
+                onValueChange={(v) => updateCountryLB("leaderboard_mode", Number(v))}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Session (current round)</SelectItem>
+                  <SelectItem value="1">Last 24 Hours</SelectItem>
+                  <SelectItem value="2">All Time</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Display settings */}
+          <div className="grid grid-cols-4 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Max Entries</Label>
+              <NumericInput
+                className="h-8 text-sm"
+                integer
+                min={1}
+                max={20}
+                value={countryLB.leaderboard_max_entries}
+                onChange={(v) => updateCountryLB("leaderboard_max_entries", v)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Font Size</Label>
+              <NumericInput
+                className="h-8 text-sm"
+                integer
+                min={8}
+                max={48}
+                value={countryLB.leaderboard_font_size}
+                onChange={(v) => updateCountryLB("leaderboard_font_size", v)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Flag Size</Label>
+              <NumericInput
+                className="h-8 text-sm"
+                min={0.2}
+                max={3.0}
+                step={0.1}
+                value={countryLB.leaderboard_flag_size}
+                onChange={(v) => updateCountryLB("leaderboard_flag_size", v)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Text Scale</Label>
+              <NumericInput
+                className="h-8 text-sm"
+                min={0.5}
+                max={3.0}
+                step={0.1}
+                value={countryLB.leaderboard_text_scale}
+                onChange={(v) => updateCountryLB("leaderboard_text_scale", v)}
+              />
+            </div>
+          </div>
+
+          {/* Label toggles */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Show Full Names</Label>
+              <Switch
+                size="sm"
+                checked={countryLB.leaderboard_show_names}
+                onCheckedChange={(v) => updateCountryLB("leaderboard_show_names", v)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Show Country Codes</Label>
+              <Switch
+                size="sm"
+                checked={countryLB.leaderboard_show_codes}
+                onCheckedChange={(v) => updateCountryLB("leaderboard_show_codes", v)}
+              />
+            </div>
+          </div>
         </CardContent>
       </Card>
 

@@ -3,6 +3,7 @@
 #include "games/IGame.h"
 #include "games/country_elimination/QuizQuestions.h"
 #include "core/AvatarCache.h"
+#include "core/PlayerDatabase.h"
 #include "rendering/PostProcessing.h"
 #include "rendering/Background.h"
 
@@ -372,11 +373,19 @@ private:
     std::vector<float> m_vizSmoothed;     // smoothed band values
 
     // Country leaderboard panel settings
-    int    m_leaderboardMaxEntries  = 10;  // max entries shown in panel
-    int    m_leaderboardFontSize    = 24;  // base font size for entries
-    float  m_leaderboardFlagSize    = 1.0f; // flag radius multiplier
-    bool   m_leaderboardShowCodes   = true; // show country code labels
-    float  m_leaderboardTextScale   = 1.0f; // text scale multiplier
+    bool   m_leaderboardEnabled     = true;  // show country leaderboard at all
+    int    m_leaderboardMaxEntries  = 10;    // max entries shown in panel
+    int    m_leaderboardFontSize    = 24;    // base font size for entries
+    float  m_leaderboardFlagSize    = 1.0f;  // flag radius multiplier
+    bool   m_leaderboardShowCodes   = false; // show country code labels (e.g. "DE")
+    bool   m_leaderboardShowNames   = true;  // show full country names (e.g. "Germany")
+    float  m_leaderboardTextScale   = 1.0f;  // text scale multiplier
+    int    m_leaderboardMode        = 0;     // 0=Session, 1=24h, 2=All-Time
+
+    // Cached persistent country leaderboards
+    std::vector<is::core::CountryWinEntry> m_cachedCountriesRecent;
+    std::vector<is::core::CountryWinEntry> m_cachedCountriesAllTime;
+    double m_countryLeaderboardCacheTimer = 0.0;
 
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {

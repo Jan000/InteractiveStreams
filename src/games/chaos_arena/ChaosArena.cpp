@@ -1152,7 +1152,7 @@ void ChaosArena::renderUI(sf::RenderTarget& target) {
             if (r.visible) {
                 sf::Text titleText;
                 titleText.setFont(m_font);
-                titleText.setString("CHAOS ARENA");
+                titleText.setString(r.content.empty() ? "CHAOS ARENA" : r.content);
                 titleText.setStyle(sf::Text::Bold);
                 titleText.setFillColor(sf::Color(100, 200, 255));
                 applyTextLayout(titleText, r);

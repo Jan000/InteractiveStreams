@@ -73,6 +73,15 @@ void PlayerDatabase::createTables() {
         CREATE INDEX IF NOT EXISTS idx_results_timestamp ON game_results(timestamp);
         CREATE INDEX IF NOT EXISTS idx_results_user ON game_results(user_id);
         CREATE INDEX IF NOT EXISTS idx_players_points ON players(total_points DESC);
+
+        CREATE TABLE IF NOT EXISTS country_wins (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            country_code TEXT NOT NULL,
+            game_name    TEXT NOT NULL,
+            timestamp    REAL DEFAULT (strftime('%s','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_country_wins_ts ON country_wins(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_country_wins_code ON country_wins(country_code);
     )";
 
     char* errmsg = nullptr;
@@ -410,6 +419,78 @@ bool PlayerDatabase::deletePlayer(const std::string& userId) {
     int changes = sqlite3_changes(m_db);
     sqlite3_finalize(stmt);
     return changes > 0;
+}
+
+void PlayerDatabase::recordCountryWin(const std::string& countryCode, const std::string& gameName) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return;
+
+    double now = std::chrono::duration<double>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    const char* sql = "INSERT INTO country_wins (country_code, game_name, timestamp) VALUES (?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, countryCode.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, gameName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_double(stmt, 3, now);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+std::vector<CountryWinEntry> PlayerDatabase::getTopCountriesAllTime(int limit) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<CountryWinEntry> results;
+    if (!m_db) return results;
+
+    const char* sql = R"(
+        SELECT country_code, COUNT(*) as win_count
+        FROM country_wins
+        GROUP BY country_code
+        ORDER BY win_count DESC
+        LIMIT ?;
+    )";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, limit);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        CountryWinEntry e;
+        e.countryCode = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.wins = sqlite3_column_int(stmt, 1);
+        results.push_back(std::move(e));
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+std::vector<CountryWinEntry> PlayerDatabase::getTopCountriesRecent(int limit, int hours) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<CountryWinEntry> results;
+    if (!m_db) return results;
+
+    double cutoff = std::chrono::duration<double>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - (hours * 3600.0);
+
+    const char* sql = R"(
+        SELECT country_code, COUNT(*) as win_count
+        FROM country_wins
+        WHERE timestamp >= ?
+        GROUP BY country_code
+        ORDER BY win_count DESC
+        LIMIT ?;
+    )";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_double(stmt, 1, cutoff);
+    sqlite3_bind_int(stmt, 2, limit);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        CountryWinEntry e;
+        e.countryCode = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        e.wins = sqlite3_column_int(stmt, 1);
+        results.push_back(std::move(e));
+    }
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 } // namespace is::core

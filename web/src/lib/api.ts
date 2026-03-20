@@ -109,6 +109,7 @@ export interface TextElementData {
   align: "left" | "center" | "right";
   visible: boolean;
   color: string;
+  content: string;
 }
 
 export interface ScoreEntry {

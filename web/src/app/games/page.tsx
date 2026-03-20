@@ -157,12 +157,6 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "visualizer_bands", label: "Visualizer Bands", description: "Number of frequency bands displayed around the ring", type: "int", min: 8, max: 128, step: 4, defaultValue: 64 },
     { key: "visualizer_smoothing", label: "Visualizer Smoothing", description: "Smoothing factor for band values (0=instant, 0.95=very smooth)", type: "float", min: 0, max: 0.95, step: 0.05, defaultValue: 0.3 },
     { key: "visualizer_gain", label: "Visualizer Gain", description: "Amplitude gain multiplier for the spectrum (higher = louder bars)", type: "float", min: 0.1, max: 10, step: 0.1, defaultValue: 2.0 },
-    // --- Country Leaderboard ---
-    { key: "leaderboard_max_entries", label: "Leaderboard Entries", description: "Maximum number of entries shown in the country leaderboard panel", type: "int", min: 1, max: 30, step: 1, defaultValue: 10 },
-    { key: "leaderboard_font_size", label: "Leaderboard Font Size", description: "Base font size for leaderboard entries", type: "int", min: 10, max: 48, step: 1, defaultValue: 24 },
-    { key: "leaderboard_flag_size", label: "Leaderboard Flag Size", description: "Flag radius multiplier in the leaderboard (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
-    { key: "leaderboard_show_codes", label: "Show Country Codes", description: "Display country code labels (e.g. US, DE) next to flags in the leaderboard", type: "bool", defaultValue: true },
-    { key: "leaderboard_text_scale", label: "Leaderboard Text Scale", description: "Text scale multiplier for all leaderboard text (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
     // --- Quiz ---
     { key: "quiz_enabled", label: "Enable Quiz", description: "Show periodic geography quiz questions during the game", type: "bool", defaultValue: true },
     { key: "quiz_interval", label: "Quiz Interval (s)", description: "Seconds between quiz questions (cooldown after each question)", type: "float", min: 5, max: 300, step: 1, defaultValue: 30 },
@@ -367,7 +361,7 @@ export default function GamesPage() {
                       Text Layout
                     </h3>
                     <p className="text-xs text-muted-foreground mb-4">
-                      Configure position (%), font size, alignment, color, and visibility for each text element.
+                      Configure position (%), font size, alignment, color, visibility, and text content for each text element.
                     </p>
                     <div className="space-y-2">
                       {/* Header row */}
@@ -474,6 +468,16 @@ export default function GamesPage() {
                               size="sm"
                               checked={el.visible}
                               onCheckedChange={(v) => updateTextElement(game.id, el.id, "visible", v)}
+                            />
+                          </div>
+
+                          {/* Content override */}
+                          <div className="col-span-2 sm:col-span-full">
+                            <Input
+                              value={el.content || ""}
+                              onChange={(e) => updateTextElement(game.id, el.id, "content", e.target.value)}
+                              placeholder="Custom text (leave empty for default)"
+                              className="h-7 text-xs"
                             />
                           </div>
                         </div>

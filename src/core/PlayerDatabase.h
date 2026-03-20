@@ -20,6 +20,12 @@ struct ScoreEntry {
     double timestamp = 0.0;  // epoch seconds
 };
 
+/// A single country win entry for leaderboards.
+struct CountryWinEntry {
+    std::string countryCode;
+    int wins = 0;
+};
+
 /// Persistent player database backed by SQLite.
 /// Stores player scores, wins, and game history.
 /// Thread-safe: all public methods lock an internal mutex.
@@ -82,6 +88,17 @@ public:
 
     /// Delete a player record entirely.
     bool deletePlayer(const std::string& userId);
+
+    // ── Country wins ─────────────────────────────────────────────────────
+
+    /// Record a country round-win.
+    void recordCountryWin(const std::string& countryCode, const std::string& gameName);
+
+    /// Top N countries by wins (all time).
+    std::vector<CountryWinEntry> getTopCountriesAllTime(int limit = 10) const;
+
+    /// Top N countries by wins in the last `hours` hours.
+    std::vector<CountryWinEntry> getTopCountriesRecent(int limit = 10, int hours = 24) const;
 
     // ── JSON serialisation ───────────────────────────────────────────────
 

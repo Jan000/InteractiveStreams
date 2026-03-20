@@ -37,6 +37,7 @@ struct TextElement {
     TextAlign   align    = TextAlign::Center;
     bool        visible  = true;
     std::string color;          ///< RGBA hex color (e.g. "#FF0000FF"), empty = game default
+    std::string content;        ///< Text content override (empty = game decides dynamically)
 
     // Serialization helpers
     nlohmann::json toJson() const {
@@ -46,7 +47,8 @@ struct TextElement {
             {"font_size", fontSize},
             {"align", align == TextAlign::Left ? "left" : align == TextAlign::Right ? "right" : "center"},
             {"visible", visible},
-            {"color", color}
+            {"color", color},
+            {"content", content}
         };
     }
 
@@ -59,6 +61,7 @@ struct TextElement {
         te.fontSize = j.value("font_size", 24);
         te.visible  = j.value("visible", true);
         te.color    = j.value("color", "");
+        te.content  = j.value("content", "");
         std::string a = j.value("align", "center");
         te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
         return te;
@@ -160,6 +163,7 @@ public:
                         te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
                     }
                     if (j.contains("color")) te.color = j["color"].get<std::string>();
+                    if (j.contains("content")) te.content = j["content"].get<std::string>();
                     break;
                 }
             }
@@ -194,7 +198,8 @@ protected:
         unsigned  fontSize;
         TextAlign align;
         bool      visible;
-        std::string color;  ///< RGBA hex (empty = use game default)
+        std::string color;    ///< RGBA hex (empty = use game default)
+        std::string content;  ///< Text content override (empty = game default)
     };
 
     /// Parse a hex color string ("#RRGGBBAA" or "#RRGGBB") into sf::Color.
@@ -222,11 +227,11 @@ protected:
 
     ResolvedText resolve(const std::string& id, float targetW, float targetH) const {
         const TextElement* e = te(id);
-        if (!e) return {0, 0, 16, TextAlign::Center, true, ""};
+        if (!e) return {0, 0, 16, TextAlign::Center, true, "", ""};
         float px = e->x * targetW / 100.f;
         float py = e->y * targetH / 100.f;
         unsigned fs = static_cast<unsigned>(std::max(1.f, e->fontSize * m_fontScale));
-        return {px, py, fs, e->align, e->visible, e->color};
+        return {px, py, fs, e->align, e->visible, e->color, e->content};
     }
 
     /// Position an sf::Text using a ResolvedText.

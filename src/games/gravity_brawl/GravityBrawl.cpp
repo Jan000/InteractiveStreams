@@ -3004,7 +3004,7 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
         if (r.visible) {
             sf::Text titleText;
             titleText.setFont(m_font);
-            titleText.setString("GRAVITY BRAWL");
+            titleText.setString(r.content.empty() ? "GRAVITY BRAWL" : r.content);
             titleText.setFillColor(sf::Color(200, 180, 255, 200));
             titleText.setOutlineColor(sf::Color(0, 0, 0, 200));
             titleText.setOutlineThickness(1.0f);
@@ -3049,7 +3049,7 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
         if (r.visible) {
             sf::Text joinHint;
             joinHint.setFont(m_font);
-            joinHint.setString("Type join to play | s to smash");
+            joinHint.setString(r.content.empty() ? "Type join to play | s to smash" : r.content);
             joinHint.setFillColor(sf::Color(150, 150, 180, 160));
             joinHint.setOutlineColor(sf::Color(0, 0, 0, 120));
             joinHint.setOutlineThickness(1.0f);
@@ -3064,7 +3064,7 @@ void GravityBrawl::renderUI(sf::RenderTarget& target) {
         if (r.visible) {
             sf::Text subInfo;
             subInfo.setFont(m_font);
-            subInfo.setString("SUB = Shield + Tier Up + 300pts | BITS/SC > 100 = God Mode 30s | CP = Supernova");
+            subInfo.setString(r.content.empty() ? "SUB = Shield + Tier Up + 300pts | BITS/SC > 100 = God Mode 30s | CP = Supernova" : r.content);
             sf::Color subInfoColor(170, 170, 204, 153);
             parseHexColor(r.color, subInfoColor);
             subInfo.setFillColor(subInfoColor);

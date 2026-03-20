@@ -725,7 +725,7 @@ void ColorConquest::renderRoundInfo(sf::RenderTarget& target) {
         if (r.visible) {
             sf::Text title;
             title.setFont(m_font);
-            title.setString("COLOR CONQUEST");
+            title.setString(r.content.empty() ? "COLOR CONQUEST" : r.content);
             title.setFillColor(sf::Color(200, 200, 220));
             title.setStyle(sf::Text::Bold);
             applyTextLayout(title, r);
