@@ -209,7 +209,6 @@ private:
     b2Body* createPlayerBody(float x, float y, float radius, bool useRectShape = false);
     void recordRoundWin(const Player& winner);
     void recordCountryWin(const std::string& label);
-    void refreshPlayerLeaderboardCache();
     void enforceConstantVelocity();
 
     // Flags
@@ -235,7 +234,6 @@ private:
     void renderTimer(sf::RenderTarget& target, const ScreenLayout& L);
     void renderUI(sf::RenderTarget& target, const ScreenLayout& L);
     void renderCountdown(sf::RenderTarget& target, const ScreenLayout& L);
-    void renderRoundWinners(sf::RenderTarget& target, const ScreenLayout& L);
     void renderWinnerOverlay(sf::RenderTarget& target, const ScreenLayout& L);
     void renderEliminationFeed(sf::RenderTarget& target, const ScreenLayout& L);
     void renderSidePanels(sf::RenderTarget& target, const ScreenLayout& L);
@@ -259,16 +257,6 @@ private:
     std::string                             m_winnerId;
     std::vector<RoundWinEntry>              m_roundWinners;
     std::vector<CountryWinEntry>            m_countryWins;
-
-    // Player leaderboard cache (from PlayerDatabase)
-    struct CachedPlayerEntry {
-        std::string displayName;
-        std::string avatarUrl;
-        int points = 0;
-        int wins   = 0;
-    };
-    std::vector<CachedPlayerEntry> m_cachedPlayerLeaderboard;
-    double m_leaderboardCacheTimer = 0.0;
 
     b2World*  m_world      = nullptr;
     b2Body*   m_arenaBody  = nullptr;
@@ -372,21 +360,6 @@ private:
     float  m_visualizerSmoothing = 0.3f;  // smoothing factor (0=no smoothing, 1=max)
     float  m_visualizerGain     = 2.0f;   // amplitude gain multiplier
     std::vector<float> m_vizSmoothed;     // smoothed band values
-
-    // Country leaderboard panel settings
-    bool   m_leaderboardEnabled     = true;  // show country leaderboard at all
-    int    m_leaderboardMaxEntries  = 10;    // max entries shown in panel
-    int    m_leaderboardFontSize    = 24;    // base font size for entries
-    float  m_leaderboardFlagSize    = 1.0f;  // flag radius multiplier
-    bool   m_leaderboardShowCodes   = false; // show country code labels (e.g. "DE")
-    bool   m_leaderboardShowNames   = true;  // show full country names (e.g. "Germany")
-    float  m_leaderboardTextScale   = 1.0f;  // text scale multiplier
-    int    m_leaderboardMode        = 0;     // 0=Session, 1=24h, 2=All-Time
-
-    // Cached persistent country leaderboards
-    std::vector<is::core::CountryWinEntry> m_cachedCountriesRecent;
-    std::vector<is::core::CountryWinEntry> m_cachedCountriesAllTime;
-    double m_countryLeaderboardCacheTimer = 0.0;
 
     // Eliminated player fade tracking (FIFO)
     struct EliminatedBall {
