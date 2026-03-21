@@ -456,7 +456,7 @@ void CountryElimination::destroyArenaBody() {
     }
 }
 
-b2Body* CountryElimination::createPlayerBody(float x, float y, float radius) {
+b2Body* CountryElimination::createPlayerBody(float x, float y, float radius, bool useRectShape) {
     b2BodyDef bd;
     bd.type = b2_dynamicBody;
     bd.position.Set(x, y);
@@ -475,7 +475,7 @@ b2Body* CountryElimination::createPlayerBody(float x, float y, float radius) {
 
     b2CircleShape circle;
     b2PolygonShape box;
-    if (m_flagShapeRect) {
+    if (useRectShape) {
         box.SetAsBox(radius, radius / FLAG_ASPECT);
         fix.shape = &box;
     } else {
@@ -621,7 +621,8 @@ void CountryElimination::cmdJoin(const std::string& userId, const std::string& d
     p.radiusM = m_ballRadius;
     p.alive = true;
     p.eliminated = false;
-    p.body = createPlayerBody(sx, sy, m_ballRadius);
+    bool rectBody = m_flagShapeRect && !flagless;
+    p.body = createPlayerBody(sx, sy, m_ballRadius, rectBody);
     p.prevPos = p.body->GetPosition();
     p.currPos = p.prevPos;
     m_players[mapKey] = std::move(p);
@@ -1911,12 +1912,14 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             ? m_avatarCache.getTexture(p.avatarUrl) : nullptr;
         bool avatarOnBall = p.flagless && avatarTex;
 
+        // Flagless avatar players always use circle shape (even in rect mode)
+        bool useRect = m_flagShapeRect && !avatarOnBall;
         float halfW = rpx;
-        float halfH = m_flagShapeRect ? (rpx / FLAG_ASPECT) : rpx;
+        float halfH = useRect ? (rpx / FLAG_ASPECT) : rpx;
 
         // Shadow
         {
-            if (m_flagShapeRect) {
+            if (useRect) {
                 sf::RectangleShape shadow(sf::Vector2f(halfW * 2 + 4.0f, halfH * 2 + 4.0f));
                 shadow.setOrigin(halfW + 2.0f, halfH + 2.0f);
                 shadow.setPosition(sp.x + 2.0f, sp.y + 2.0f);
@@ -1936,7 +1939,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
             float outlineThk = m_flagOutline ? m_flagOutlineThickness : 0.0f;
             sf::Color outlineCol(255, 255, 255, static_cast<sf::Uint8>(baseAlpha * 0.7f));
 
-            if (m_flagShapeRect) {
+            if (useRect) {
                 sf::RectangleShape ball(sf::Vector2f(halfW * 2, halfH * 2));
                 ball.setOrigin(halfW, halfH);
                 ball.setPosition(sp);
@@ -1944,15 +1947,6 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
                 if (hasFlag) {
                     ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
                     ball.setTexture(&flagIt->second);
-                } else if (avatarOnBall) {
-                    ball.setFillColor(sf::Color(255, 255, 255, baseAlpha));
-                    ball.setTexture(avatarTex);
-                    // Center-square crop to avoid distortion on rectangular textures
-                    auto ts = avatarTex->getSize();
-                    int side = static_cast<int>(std::min(ts.x, ts.y));
-                    int ox = (static_cast<int>(ts.x) - side) / 2;
-                    int oy = (static_cast<int>(ts.y) - side) / 2;
-                    ball.setTextureRect(sf::IntRect(ox, oy, side, side));
                 } else {
                     sf::Color fill = p.color;
                     fill.a = baseAlpha;
@@ -2009,7 +2003,7 @@ void CountryElimination::renderPlayers(sf::RenderTarget& target, const ScreenLay
         if (p.hasShield && p.alive) {
             float pulse = 0.5f + 0.5f * std::sin(m_globalTime * 5.0f);
             sf::Uint8 sAlpha = static_cast<sf::Uint8>(120 + 100 * pulse);
-            if (m_flagShapeRect) {
+            if (useRect) {
                 sf::RectangleShape shield(sf::Vector2f(halfW * 2 + 10.0f, halfH * 2 + 10.0f));
                 shield.setOrigin(halfW + 5.0f, halfH + 5.0f);
                 shield.setPosition(sp);
@@ -3124,6 +3118,10 @@ void CountryElimination::configure(const nlohmann::json& settings) {
         m_labelTextScale = std::clamp(settings["label_text_scale"].get<float>(), 0.3f, 3.0f);
     if (settings.contains("avatar_outline_thickness") && settings["avatar_outline_thickness"].is_number())
         m_avatarOutlineThickness = std::clamp(settings["avatar_outline_thickness"].get<float>(), 0.0f, 5.0f);
+    if (settings.contains("avatar_resolution") && settings["avatar_resolution"].is_number_integer()) {
+        m_avatarResolution = std::clamp(settings["avatar_resolution"].get<int>(), 32, 256);
+        m_avatarCache.setResolution(static_cast<unsigned>(m_avatarResolution));
+    }
     if (settings.contains("text_elements") && settings["text_elements"].is_array())
         applyTextOverrides(settings["text_elements"]);
 
@@ -3249,6 +3247,7 @@ nlohmann::json CountryElimination::getSettings() const {
         {"max_entries_per_player", m_maxEntriesPerPlayer},
         {"label_text_scale", m_labelTextScale},
         {"avatar_outline_thickness", m_avatarOutlineThickness},
+        {"avatar_resolution", m_avatarResolution},
         {"quiz_enabled", m_quizEnabled},
         {"quiz_interval", m_quizInterval},
         {"quiz_duration", m_quizDuration},

@@ -206,7 +206,7 @@ private:
     void destroyArenaBody();
     void recreateArena();
     void createBoundaryWalls();
-    b2Body* createPlayerBody(float x, float y, float radius);
+    b2Body* createPlayerBody(float x, float y, float radius, bool useRectShape = false);
     void recordRoundWin(const Player& winner);
     void recordCountryWin(const std::string& label);
     void refreshPlayerLeaderboardCache();
@@ -406,6 +406,7 @@ private:
     float  m_labelTextScale         = 1.0f;
     float  m_avatarScale            = 1.0f;
     float  m_avatarOutlineThickness = 1.0f;
+    int    m_avatarResolution       = 64;
 
     // ── Quiz State ───────────────────────────────────────────────────────
 

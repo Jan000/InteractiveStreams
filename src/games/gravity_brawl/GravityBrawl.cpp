@@ -496,6 +496,10 @@ void GravityBrawl::configure(const nlohmann::json& settings) {
     if (settings.contains("text_elements") && settings["text_elements"].is_array()) {
         applyTextOverrides(settings["text_elements"]);
     }
+    if (settings.contains("avatar_resolution") && settings["avatar_resolution"].is_number_integer()) {
+        m_avatarCache.setResolution(static_cast<unsigned>(
+            std::clamp(settings["avatar_resolution"].get<int>(), 32, 256)));
+    }
     // If the game is already running, ensure bot count matches the new target
     if (m_world) {
         spawnBots();
@@ -565,6 +569,7 @@ nlohmann::json GravityBrawl::getSettings() const {
         {"sub_count", m_subCount},
         {"sub_goal_target", m_subGoalTarget},
         {"text_elements", textElementsJson()},
+        {"avatar_resolution", static_cast<int>(m_avatarCache.resolution())},
     };
 }
 

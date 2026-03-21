@@ -18,7 +18,7 @@ namespace is::core {
 
 // CPU-oriented avatar cache:
 // - Download and pre-bake avatars in a background worker
-// - Convert to 64x64 and circular alpha mask before entering render path
+// - Convert to configurable resolution and circular alpha mask before entering render path
 // - Create sf::Texture only on the main thread via processPendingUploads()
 class AvatarCache {
 public:
@@ -27,6 +27,11 @@ public:
 
     AvatarCache(const AvatarCache&) = delete;
     AvatarCache& operator=(const AvatarCache&) = delete;
+
+    // Set the target resolution for downloaded avatars.
+    // Clears the cache so all avatars are re-downloaded at the new size.
+    void setResolution(unsigned resolution);
+    unsigned resolution() const { return m_resolution; }
 
     void request(const std::string& url);
 
@@ -61,9 +66,10 @@ private:
                          std::string& host,
                          int& port,
                          std::string& path);
-    static sf::Image downscaleTo64(const sf::Image& src);
-    static void bakeCircularAlphaMask64(sf::Image& image);
+    static sf::Image downscale(const sf::Image& src, unsigned targetSize);
+    static void bakeCircularAlphaMask(sf::Image& image, unsigned size);
 
+    unsigned m_resolution = 64;
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::queue<std::string> m_downloadQueue;

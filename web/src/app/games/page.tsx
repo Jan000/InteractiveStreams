@@ -77,6 +77,7 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "enable_post_processing", label: "Post-Processing", description: "Enable GPU post-processing effects (bloom, vignette, etc.)", type: "bool", defaultValue: true },
     { key: "enable_planet_glow", label: "Planet Glow", description: "Render a glow halo around planets", type: "bool", defaultValue: true },
     { key: "max_particles", label: "Max Particles", description: "Maximum number of particle effects at once", type: "int", min: 0, step: 50, defaultValue: 500 },
+    { key: "avatar_resolution", label: "Avatar Resolution", description: "Texture resolution for downloaded avatars in pixels (higher = sharper but more memory)", type: "int", min: 32, max: 256, step: 32, defaultValue: 64 },
     // --- Audio ---
     { key: "sfx_enabled", label: "SFX Enabled", description: "Play sound effects for game events", type: "bool", defaultValue: true },
     { key: "sfx_volume", label: "SFX Volume", description: "Volume of sound effects (0–100)", type: "float", min: 0, max: 100, step: 1, defaultValue: 80 },
@@ -146,6 +147,7 @@ const GAME_FIELDS: Record<string, Array<{
     { key: "name_text_scale", label: "Name Text Scale", description: "Scale multiplier for player name text below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
     { key: "label_text_scale", label: "Label Text Scale", description: "Scale multiplier for country label text on balls without flags (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
     { key: "avatar_scale", label: "Avatar Scale", description: "Scale multiplier for profile picture circles below balls (1.0 = default)", type: "float", min: 0.3, max: 3.0, step: 0.1, defaultValue: 1.0 },
+    { key: "avatar_resolution", label: "Avatar Resolution", description: "Texture resolution for downloaded avatars in pixels (higher = sharper but more memory)", type: "int", min: 32, max: 256, step: 32, defaultValue: 64 },
     { key: "rainbow_ring", label: "Rainbow Ring", description: "Animate the arena ring with rainbow colors", type: "bool", defaultValue: true },
     { key: "allow_reentry", label: "Allow Re-entry", description: "Players that bounce back into the arena are revived and continue playing", type: "bool", defaultValue: true },
     { key: "show_bot_names", label: "Show Bot Names", description: "Display name labels below bot players", type: "bool", defaultValue: true },

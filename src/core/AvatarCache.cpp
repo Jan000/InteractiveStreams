@@ -121,6 +121,20 @@ AvatarCache::~AvatarCache() {
     }
 }
 
+void AvatarCache::setResolution(unsigned resolution) {
+    if (resolution < 16) resolution = 16;
+    if (resolution > 512) resolution = 512;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (resolution == m_resolution) return;
+    m_resolution = resolution;
+    m_textures.clear();
+    m_failedUrls.clear();
+    m_inFlight.clear();
+    // Drain queues
+    std::queue<std::string>().swap(m_downloadQueue);
+    std::queue<PreparedAvatar>().swap(m_readyImages);
+}
+
 void AvatarCache::request(const std::string& url) {
     if (url.empty()) return;
 
@@ -284,8 +298,8 @@ std::optional<AvatarCache::PreparedAvatar> AvatarCache::downloadAndPrepare(const
         return std::nullopt;
     }
 
-    sf::Image scaled = downscaleTo64(source);
-    bakeCircularAlphaMask64(scaled);
+    sf::Image scaled = downscale(source, m_resolution);
+    bakeCircularAlphaMask(scaled, m_resolution);
 
     return PreparedAvatar{url, std::move(scaled)};
 }
@@ -323,19 +337,19 @@ bool AvatarCache::parseUrl(const std::string& url,
     return (scheme == "http" || scheme == "https");
 }
 
-sf::Image AvatarCache::downscaleTo64(const sf::Image& src) {
+sf::Image AvatarCache::downscale(const sf::Image& src, unsigned targetSize) {
     sf::Image out;
-    out.create(64, 64, sf::Color(0, 0, 0, 0));
+    out.create(targetSize, targetSize, sf::Color(0, 0, 0, 0));
 
     const auto srcSize = src.getSize();
     if (srcSize.x == 0 || srcSize.y == 0) {
         return out;
     }
 
-    for (unsigned y = 0; y < 64; ++y) {
-        for (unsigned x = 0; x < 64; ++x) {
-            unsigned sx = std::min(srcSize.x - 1, static_cast<unsigned>((x * srcSize.x) / 64));
-            unsigned sy = std::min(srcSize.y - 1, static_cast<unsigned>((y * srcSize.y) / 64));
+    for (unsigned y = 0; y < targetSize; ++y) {
+        for (unsigned x = 0; x < targetSize; ++x) {
+            unsigned sx = std::min(srcSize.x - 1, static_cast<unsigned>((x * srcSize.x) / targetSize));
+            unsigned sy = std::min(srcSize.y - 1, static_cast<unsigned>((y * srcSize.y) / targetSize));
             out.setPixel(x, y, src.getPixel(sx, sy));
         }
     }
@@ -343,13 +357,13 @@ sf::Image AvatarCache::downscaleTo64(const sf::Image& src) {
     return out;
 }
 
-void AvatarCache::bakeCircularAlphaMask64(sf::Image& image) {
-    constexpr float center = 31.5f;
-    constexpr float radius = 32.0f;
-    constexpr float radiusSq = radius * radius;
+void AvatarCache::bakeCircularAlphaMask(sf::Image& image, unsigned size) {
+    const float center = (static_cast<float>(size) - 1.0f) / 2.0f;
+    const float radius = static_cast<float>(size) / 2.0f;
+    const float radiusSq = radius * radius;
 
-    for (unsigned y = 0; y < 64; ++y) {
-        for (unsigned x = 0; x < 64; ++x) {
+    for (unsigned y = 0; y < size; ++y) {
+        for (unsigned x = 0; x < size; ++x) {
             const float dx = static_cast<float>(x) - center;
             const float dy = static_cast<float>(y) - center;
             const float distSq = dx * dx + dy * dy;
