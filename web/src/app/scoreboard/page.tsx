@@ -47,11 +47,20 @@ import {
   ChevronDown,
   ChevronRight,
   Flag,
+  Plus,
+  Copy,
+  GripVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // ── Default panel config (must match C++ defaults) ──────────────────────
-const defaultPanel = (title: string, dur = 10): ScoreboardPanelConfig => ({
+const defaultPanel = (
+  title: string,
+  contentType = "players",
+  timeRange = "alltime",
+  group = 0,
+  dur = 10,
+): ScoreboardPanelConfig => ({
   enabled: true,
   title,
   duration_secs: dur,
@@ -69,16 +78,45 @@ const defaultPanel = (title: string, dur = 10): ScoreboardPanelConfig => ({
   gold_color: "#FFD700",
   silver_color: "#C8C8C8",
   bronze_color: "#CD7F32",
+  content_type: contentType,
+  time_range: timeRange,
+  game_filter: "",
+  group,
+  include_bots: false,
+  show_flags: contentType === "countries",
+  flag_shape: "circle",
+  flag_size: 1.0,
+  show_names: true,
+  show_codes: false,
+  value_label: contentType === "countries" ? "wins" : "pts",
 });
 
 const defaultConfig: ScoreboardConfig = {
-  alltime: defaultPanel("ALL TIME"),
-  recent: defaultPanel("LAST 24H"),
-  round: defaultPanel("CURRENT ROUND", 8),
+  panels: [
+    defaultPanel("ALL TIME", "players", "alltime", 0),
+    defaultPanel("LAST 24H", "players", "recent", 0),
+    defaultPanel("CURRENT ROUND", "players", "round", 0, 8),
+  ],
   recent_hours: 24,
   fade_secs: 1.0,
   chat_interval: 120,
   hidden_players: [],
+};
+
+// Panel icon by content type + time range
+const panelIcon = (p: ScoreboardPanelConfig) => {
+  if (p.content_type === "countries") return <Flag className="size-4 text-green-400" />;
+  if (p.time_range === "alltime") return <Trophy className="size-4 text-yellow-400" />;
+  if (p.time_range === "recent") return <Clock className="size-4 text-blue-400" />;
+  return <Star className="size-4 text-emerald-400" />;
+};
+
+const panelLabel = (p: ScoreboardPanelConfig) => {
+  const type = p.content_type === "countries" ? "Countries" : "Players";
+  const range =
+    p.time_range === "alltime" ? "All-Time" :
+    p.time_range === "recent" ? "Recent" : "Round";
+  return `${type} — ${range}`;
 };
 
 // ── Component ───────────────────────────────────────────────────────────
@@ -88,11 +126,9 @@ export default function ScoreboardPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Collapsible panel sections
-  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({
-    alltime: true,
-    recent: false,
-    round: false,
+  // Collapsible panel sections — keyed by panel index
+  const [expandedPanels, setExpandedPanels] = useState<Record<number, boolean>>({
+    0: true,
   });
 
   // Player management state
@@ -104,70 +140,14 @@ export default function ScoreboardPage() {
   const [recent, setRecent] = useState<ScoreEntry[]>([]);
   const [allTime, setAllTime] = useState<ScoreEntry[]>([]);
 
-  // Country leaderboard settings (from country_elimination game settings)
-  interface CountryLBSettings {
-    leaderboard_enabled: boolean;
-    leaderboard_max_entries: number;
-    leaderboard_font_size: number;
-    leaderboard_flag_size: number;
-    leaderboard_show_codes: boolean;
-    leaderboard_show_names: boolean;
-    leaderboard_text_scale: number;
-    leaderboard_mode: number;
-  }
-  const defaultCountryLB: CountryLBSettings = {
-    leaderboard_enabled: true,
-    leaderboard_max_entries: 5,
-    leaderboard_font_size: 22,
-    leaderboard_flag_size: 1.0,
-    leaderboard_show_codes: false,
-    leaderboard_show_names: true,
-    leaderboard_text_scale: 1.0,
-    leaderboard_mode: 0,
-  };
-  const [countryLB, setCountryLB] = useState<CountryLBSettings>(defaultCountryLB);
-  const [countryLBDirty, setCountryLBDirty] = useState(false);
-  const [countryLBSaving, setCountryLBSaving] = useState(false);
-
-  const fetchCountryLB = useCallback(async () => {
-    try {
-      const all = await api.getGameSettings();
-      const ce = all.country_elimination ?? {};
-      setCountryLB({
-        leaderboard_enabled: (ce.leaderboard_enabled as boolean) ?? defaultCountryLB.leaderboard_enabled,
-        leaderboard_max_entries: (ce.leaderboard_max_entries as number) ?? defaultCountryLB.leaderboard_max_entries,
-        leaderboard_font_size: (ce.leaderboard_font_size as number) ?? defaultCountryLB.leaderboard_font_size,
-        leaderboard_flag_size: (ce.leaderboard_flag_size as number) ?? defaultCountryLB.leaderboard_flag_size,
-        leaderboard_show_codes: (ce.leaderboard_show_codes as boolean) ?? defaultCountryLB.leaderboard_show_codes,
-        leaderboard_show_names: (ce.leaderboard_show_names as boolean) ?? defaultCountryLB.leaderboard_show_names,
-        leaderboard_text_scale: (ce.leaderboard_text_scale as number) ?? defaultCountryLB.leaderboard_text_scale,
-        leaderboard_mode: (ce.leaderboard_mode as number) ?? defaultCountryLB.leaderboard_mode,
-      });
-    } catch { /* ignore */ }
-  }, []);
-
-  const handleSaveCountryLB = async () => {
-    setCountryLBSaving(true);
-    try {
-      await api.updateGameSettings({ country_elimination: countryLB as unknown as Record<string, unknown> });
-      toast.success("Country leaderboard settings saved");
-      setCountryLBDirty(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setCountryLBSaving(false);
-    }
-  };
-
-  const updateCountryLB = <K extends keyof CountryLBSettings>(key: K, value: CountryLBSettings[K]) => {
-    setCountryLB(prev => ({ ...prev, [key]: value }));
-    setCountryLBDirty(true);
-  };
-
   // ── Data fetching ───────────────────────────────────────────────────
   const fetchConfig = useCallback(async () => {
     try {
       const c = await api.getScoreboardConfig();
+      // Ensure panels array exists (backward compat)
+      if (!c.panels || !Array.isArray(c.panels)) {
+        c.panels = defaultConfig.panels;
+      }
       setConfig(c);
     } catch {
       /* backend not running */
@@ -183,24 +163,25 @@ export default function ScoreboardPage() {
     }
   }, []);
 
+  const topN = config.panels.length > 0 ? config.panels[0].top_n : 5;
+
   const fetchLeaderboards = useCallback(async () => {
     try {
       const [r, a] = await Promise.all([
-        api.getScoreboardRecent(config.alltime.top_n, config.recent_hours),
-        api.getScoreboardAllTime(config.alltime.top_n),
+        api.getScoreboardRecent(topN, config.recent_hours),
+        api.getScoreboardAllTime(topN),
       ]);
       setRecent(r.leaderboard ?? []);
       setAllTime(a.leaderboard ?? []);
     } catch {
       /* ignore */
     }
-  }, [config.alltime.top_n, config.recent_hours]);
+  }, [topN, config.recent_hours]);
 
   useEffect(() => {
     fetchConfig();
     fetchPlayers();
-    fetchCountryLB();
-  }, [fetchConfig, fetchPlayers, fetchCountryLB]);
+  }, [fetchConfig, fetchPlayers]);
 
   useEffect(() => {
     fetchLeaderboards();
@@ -210,19 +191,52 @@ export default function ScoreboardPage() {
 
   // ── Config mutation helpers ─────────────────────────────────────────
   const updatePanel = (
-    panel: "alltime" | "recent" | "round",
+    index: number,
     field: keyof ScoreboardPanelConfig,
-    value: unknown
+    value: unknown,
   ) => {
-    setConfig((prev) => ({
-      ...prev,
-      [panel]: { ...prev[panel], [field]: value },
-    }));
+    setConfig((prev) => {
+      const panels = [...prev.panels];
+      panels[index] = { ...panels[index], [field]: value };
+      return { ...prev, panels };
+    });
     setDirty(true);
   };
 
   const updateGlobal = (field: string, value: unknown) => {
     setConfig((prev) => ({ ...prev, [field]: value }));
+    setDirty(true);
+  };
+
+  const addPanel = (contentType = "players", timeRange = "alltime") => {
+    const groups = config.panels.map((p) => p.group);
+    const maxGroup = groups.length > 0 ? Math.max(...groups) : -1;
+    const p = defaultPanel(
+      contentType === "countries" ? "COUNTRIES" : "PLAYERS",
+      contentType,
+      timeRange,
+      maxGroup + 1,
+    );
+    setConfig((prev) => ({ ...prev, panels: [...prev.panels, p] }));
+    setExpandedPanels((prev) => ({ ...prev, [config.panels.length]: true }));
+    setDirty(true);
+  };
+
+  const duplicatePanel = (index: number) => {
+    const p = { ...config.panels[index], title: config.panels[index].title + " (copy)" };
+    setConfig((prev) => {
+      const panels = [...prev.panels];
+      panels.splice(index + 1, 0, p);
+      return { ...prev, panels };
+    });
+    setDirty(true);
+  };
+
+  const removePanel = (index: number) => {
+    setConfig((prev) => ({
+      ...prev,
+      panels: prev.panels.filter((_, i) => i !== index),
+    }));
     setDirty(true);
   };
 
@@ -275,20 +289,20 @@ export default function ScoreboardPage() {
     }
   };
 
-  const togglePanel = (panel: string) =>
-    setExpandedPanels((prev) => ({ ...prev, [panel]: !prev[panel] }));
+  const togglePanel = (index: number) =>
+    setExpandedPanels((prev) => ({ ...prev, [index]: !prev[index] }));
 
   // ── Color input helper ──────────────────────────────────────────────
   const ColorField = ({
-    panel,
+    index,
     field,
     label,
   }: {
-    panel: "alltime" | "recent" | "round";
+    index: number;
     field: keyof ScoreboardPanelConfig;
     label: string;
   }) => {
-    const value = config[panel][field] as string;
+    const value = (config.panels[index]?.[field] as string) ?? "#000000";
     return (
       <div className="space-y-1">
         <Label className="text-[10px] text-muted-foreground">{label}</Label>
@@ -296,13 +310,13 @@ export default function ScoreboardPage() {
           <input
             type="color"
             value={value}
-            onChange={(e) => updatePanel(panel, field, e.target.value)}
+            onChange={(e) => updatePanel(index, field, e.target.value)}
             className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent p-0.5"
           />
           <Input
             className="h-7 text-[10px] font-mono flex-1"
             value={value}
-            onChange={(e) => updatePanel(panel, field, e.target.value)}
+            onChange={(e) => updatePanel(index, field, e.target.value)}
           />
         </div>
       </div>
@@ -310,17 +324,11 @@ export default function ScoreboardPage() {
   };
 
   // ── Panel settings sub-component ────────────────────────────────────
-  const PanelSection = ({
-    panel,
-    label,
-    icon,
-  }: {
-    panel: "alltime" | "recent" | "round";
-    label: string;
-    icon: React.ReactNode;
-  }) => {
-    const p = config[panel];
-    const isExpanded = expandedPanels[panel];
+  const PanelSection = ({ index }: { index: number }) => {
+    const p = config.panels[index];
+    if (!p) return null;
+    const isExpanded = expandedPanels[index] ?? false;
+    const isCountry = p.content_type === "countries";
 
     return (
       <div className="rounded-lg border">
@@ -328,17 +336,41 @@ export default function ScoreboardPage() {
         <button
           type="button"
           className="flex w-full items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
-          onClick={() => togglePanel(panel)}
+          onClick={() => togglePanel(index)}
         >
-          {icon}
-          <span className="text-sm font-medium flex-1 text-left">{label}</span>
+          <GripVertical className="size-3.5 text-muted-foreground/40" />
+          {panelIcon(p)}
+          <span className="text-sm font-medium flex-1 text-left">
+            {p.title || panelLabel(p)}
+          </span>
           <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px]">
+              G{p.group}
+            </Badge>
             <Badge
               variant={p.enabled ? "default" : "secondary"}
               className="text-[10px]"
             >
               {p.enabled ? (p.top_n > 0 ? `Top ${p.top_n}` : "Disabled") : "Off"}
             </Badge>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6"
+              onClick={(e) => { e.stopPropagation(); duplicatePanel(index); }}
+              title="Duplicate panel"
+            >
+              <Copy className="size-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 text-destructive hover:text-destructive"
+              onClick={(e) => { e.stopPropagation(); removePanel(index); }}
+              title="Remove panel"
+            >
+              <Trash2 className="size-3" />
+            </Button>
             {isExpanded ? (
               <ChevronDown className="size-4 text-muted-foreground" />
             ) : (
@@ -350,27 +382,179 @@ export default function ScoreboardPage() {
         {/* Collapsible panel body */}
         {isExpanded && (
           <div className="border-t px-4 pb-4 pt-3 space-y-4">
-            {/* Enable + Title */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 flex-1">
-                <div className="space-y-1 flex-1">
-                  <Label className="text-xs text-muted-foreground">Title</Label>
-                  <Input
-                    className="h-8 text-sm"
-                    value={p.title}
-                    onChange={(e) => updatePanel(panel, "title", e.target.value)}
-                  />
-                </div>
+            {/* Enable + Title + Content Type + Time Range */}
+            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Title</Label>
+                <Input
+                  className="h-8 text-sm"
+                  value={p.title}
+                  onChange={(e) => updatePanel(index, "title", e.target.value)}
+                />
               </div>
-              <div className="flex items-center gap-2 pt-5">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Content Type</Label>
+                <Select
+                  value={p.content_type}
+                  onValueChange={(v) => {
+                    updatePanel(index, "content_type", v);
+                    if (v === "countries") {
+                      updatePanel(index, "show_flags", true);
+                      updatePanel(index, "value_label", "wins");
+                    } else {
+                      updatePanel(index, "value_label", "pts");
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="players">Players</SelectItem>
+                    <SelectItem value="countries">Countries</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Time Range</Label>
+                <Select
+                  value={p.time_range}
+                  onValueChange={(v) => updatePanel(index, "time_range", v)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="round">Current Round</SelectItem>
+                    <SelectItem value="recent">Recent</SelectItem>
+                    <SelectItem value="alltime">All-Time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 pb-0.5">
                 <Label className="text-xs text-muted-foreground">Enabled</Label>
                 <Switch
                   size="sm"
                   checked={p.enabled}
-                  onCheckedChange={(v) => updatePanel(panel, "enabled", v)}
+                  onCheckedChange={(v) => updatePanel(index, "enabled", v)}
                 />
               </div>
             </div>
+
+            {/* Group + Game Filter + Value Label */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Group
+                </Label>
+                <NumericInput
+                  className="h-8 text-sm"
+                  integer
+                  min={0}
+                  max={10}
+                  value={p.group}
+                  onChange={(v) => updatePanel(index, "group", v)}
+                />
+                <p className="text-[9px] text-muted-foreground">
+                  Same group = cycle, different = simultaneous
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Game Filter
+                </Label>
+                <Select
+                  value={p.game_filter || "__all__"}
+                  onValueChange={(v) => updatePanel(index, "game_filter", v === "__all__" ? "" : v)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Games</SelectItem>
+                    <SelectItem value="chaos_arena">Chaos Arena</SelectItem>
+                    <SelectItem value="color_conquest">Color Conquest</SelectItem>
+                    <SelectItem value="gravity_brawl">Gravity Brawl</SelectItem>
+                    <SelectItem value="country_elimination">Country Elimination</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Value Label
+                </Label>
+                <Input
+                  className="h-8 text-sm"
+                  value={p.value_label}
+                  onChange={(e) => updatePanel(index, "value_label", e.target.value)}
+                  placeholder="pts"
+                />
+              </div>
+            </div>
+
+            {/* Country-specific + display toggles */}
+            {isCountry && (
+              <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Show Flags</Label>
+                  <Switch
+                    size="sm"
+                    checked={p.show_flags}
+                    onCheckedChange={(v) => updatePanel(index, "show_flags", v)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Show Names</Label>
+                  <Switch
+                    size="sm"
+                    checked={p.show_names}
+                    onCheckedChange={(v) => updatePanel(index, "show_names", v)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Show Codes</Label>
+                  <Switch
+                    size="sm"
+                    checked={p.show_codes}
+                    onCheckedChange={(v) => updatePanel(index, "show_codes", v)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Include Bots</Label>
+                  <Switch
+                    size="sm"
+                    checked={p.include_bots}
+                    onCheckedChange={(v) => updatePanel(index, "include_bots", v)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Flag Shape</Label>
+                  <Select
+                    value={p.flag_shape}
+                    onValueChange={(v) => updatePanel(index, "flag_shape", v)}
+                  >
+                    <SelectTrigger className="h-8 text-sm w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="circle">Circle</SelectItem>
+                      <SelectItem value="rect">Rectangle</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 w-20">
+                  <Label className="text-xs text-muted-foreground">Flag Size</Label>
+                  <NumericInput
+                    className="h-8 text-sm"
+                    min={0.3}
+                    max={3.0}
+                    step={0.1}
+                    value={p.flag_size}
+                    onChange={(v) => updatePanel(index, "flag_size", v)}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Display settings */}
             <div className="grid grid-cols-4 gap-3">
@@ -383,7 +567,7 @@ export default function ScoreboardPage() {
                   min={0}
                   max={120}
                   value={p.duration_secs}
-                  onChange={(v) => updatePanel(panel, "duration_secs", v)}
+                  onChange={(v) => updatePanel(index, "duration_secs", v)}
                 />
               </div>
               <div className="space-y-1">
@@ -396,7 +580,7 @@ export default function ScoreboardPage() {
                   min={0}
                   max={20}
                   value={p.top_n}
-                  onChange={(v) => updatePanel(panel, "top_n", v)}
+                  onChange={(v) => updatePanel(index, "top_n", v)}
                 />
                 <p className="text-[9px] text-muted-foreground">0 = hide panel</p>
               </div>
@@ -408,7 +592,7 @@ export default function ScoreboardPage() {
                   min={8}
                   max={48}
                   value={p.font_size}
-                  onChange={(v) => updatePanel(panel, "font_size", v)}
+                  onChange={(v) => updatePanel(index, "font_size", v)}
                 />
               </div>
               <div className="space-y-1">
@@ -419,7 +603,7 @@ export default function ScoreboardPage() {
                   max={1}
                   step={0.05}
                   value={p.opacity}
-                  onChange={(v) => updatePanel(panel, "opacity", v)}
+                  onChange={(v) => updatePanel(index, "opacity", v)}
                 />
               </div>
             </div>
@@ -435,7 +619,7 @@ export default function ScoreboardPage() {
                   min={0}
                   max={100}
                   value={p.pos_x_pct}
-                  onChange={(v) => updatePanel(panel, "pos_x_pct", v)}
+                  onChange={(v) => updatePanel(index, "pos_x_pct", v)}
                 />
               </div>
               <div className="space-y-1">
@@ -447,7 +631,7 @@ export default function ScoreboardPage() {
                   min={0}
                   max={100}
                   value={p.pos_y_pct}
-                  onChange={(v) => updatePanel(panel, "pos_y_pct", v)}
+                  onChange={(v) => updatePanel(index, "pos_y_pct", v)}
                 />
               </div>
               <div className="space-y-1">
@@ -459,7 +643,7 @@ export default function ScoreboardPage() {
                   min={10}
                   max={80}
                   value={p.box_width_pct}
-                  onChange={(v) => updatePanel(panel, "box_width_pct", v)}
+                  onChange={(v) => updatePanel(index, "box_width_pct", v)}
                 />
               </div>
             </div>
@@ -471,11 +655,11 @@ export default function ScoreboardPage() {
                 <Label className="text-xs font-medium">Panel Colors</Label>
               </div>
               <div className="grid grid-cols-5 gap-3">
-                <ColorField panel={panel} field="bg_color" label="Background" />
-                <ColorField panel={panel} field="border_color" label="Border" />
-                <ColorField panel={panel} field="title_color" label="Title" />
-                <ColorField panel={panel} field="name_color" label="Name" />
-                <ColorField panel={panel} field="points_color" label="Points" />
+                <ColorField index={index} field="bg_color" label="Background" />
+                <ColorField index={index} field="border_color" label="Border" />
+                <ColorField index={index} field="title_color" label="Title" />
+                <ColorField index={index} field="name_color" label="Name" />
+                <ColorField index={index} field="points_color" label="Points" />
               </div>
             </div>
 
@@ -486,9 +670,9 @@ export default function ScoreboardPage() {
                 <Label className="text-xs font-medium">Rank Colors (Top 3)</Label>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <ColorField panel={panel} field="gold_color" label="1st — Gold" />
-                <ColorField panel={panel} field="silver_color" label="2nd — Silver" />
-                <ColorField panel={panel} field="bronze_color" label="3rd — Bronze" />
+                <ColorField index={index} field="gold_color" label="1st — Gold" />
+                <ColorField index={index} field="silver_color" label="2nd — Silver" />
+                <ColorField index={index} field="bronze_color" label="3rd — Bronze" />
               </div>
             </div>
           </div>
@@ -509,10 +693,11 @@ export default function ScoreboardPage() {
     );
   };
 
-  // Count active panels
-  const activePanels = [config.alltime, config.recent, config.round].filter(
-    (p) => p.enabled && p.top_n > 0
+  // Count active panels & groups
+  const activePanels = config.panels.filter(
+    (p) => p.enabled && p.top_n > 0,
   ).length;
+  const groupSet = new Set(config.panels.map((p) => p.group));
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
@@ -524,11 +709,14 @@ export default function ScoreboardPage() {
           <div>
             <h1 className="text-2xl font-bold">Scoreboard</h1>
             <p className="text-sm text-muted-foreground">
-              Overlay configuration, animations &amp; player management
+              Unified overlay panels, player management &amp; live preview
             </p>
           </div>
           <Badge variant="secondary" className="ml-2">
-            {activePanels}/3 panels active
+            {activePanels}/{config.panels.length} panels active
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {groupSet.size} group{groupSet.size !== 1 ? "s" : ""}
           </Badge>
         </div>
         <Button onClick={handleSave} disabled={!dirty || saving} size="sm">
@@ -597,176 +785,60 @@ export default function ScoreboardPage() {
                 onChange={(v) => updateGlobal("recent_hours", v)}
               />
               <p className="text-[9px] text-muted-foreground">
-                Time window for &ldquo;Recent&rdquo; panel.
+                Time window for &ldquo;Recent&rdquo; panels.
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Panel Configurations — all three stacked */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <LayoutDashboard className="size-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">
-              Panel Configuration
-            </CardTitle>
-          </div>
-          <CardDescription className="text-xs">
-            Each panel can be individually enabled, styled, and positioned.
-            Set entries to 0 to hide a panel.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <PanelSection
-            panel="alltime"
-            label="All-Time Leaderboard"
-            icon={<Trophy className="size-4 text-yellow-400" />}
-          />
-          <PanelSection
-            panel="recent"
-            label="Recent Leaderboard"
-            icon={<Clock className="size-4 text-blue-400" />}
-          />
-          <PanelSection
-            panel="round"
-            label="Current Round"
-            icon={<Star className="size-4 text-emerald-400" />}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Country Leaderboard (Country Elimination) */}
+      {/* Panel Configurations — dynamic list */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Flag className="size-4 text-muted-foreground" />
+              <LayoutDashboard className="size-4 text-muted-foreground" />
               <div>
                 <CardTitle className="text-sm font-medium">
-                  Country Leaderboard
+                  Panel Configuration
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  In-game country win leaderboard for Country Elimination
+                  Panels in the same group cycle; different groups display simultaneously.
                 </CardDescription>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge
-                variant={countryLB.leaderboard_enabled ? "default" : "secondary"}
-                className="text-[10px]"
-              >
-                {countryLB.leaderboard_enabled ? "On" : "Off"}
-              </Badge>
               <Button
-                onClick={handleSaveCountryLB}
-                disabled={!countryLBDirty || countryLBSaving}
                 size="sm"
                 variant="outline"
+                onClick={() => addPanel("players", "alltime")}
               >
-                <Save className="size-3.5 mr-1" />
-                {countryLBSaving ? "Saving…" : "Save"}
+                <Plus className="size-3.5 mr-1" />
+                Player Panel
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => addPanel("countries", "alltime")}
+              >
+                <Flag className="size-3.5 mr-1" />
+                Country Panel
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Enable toggle + Mode */}
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Enabled</Label>
-              <Switch
-                size="sm"
-                checked={countryLB.leaderboard_enabled}
-                onCheckedChange={(v) => updateCountryLB("leaderboard_enabled", v)}
-              />
+        <CardContent className="space-y-3">
+          {config.panels.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+              <LayoutDashboard className="size-8" />
+              <p className="text-sm">No panels configured</p>
+              <p className="text-xs">Add a Player or Country panel to get started</p>
             </div>
-            <div className="space-y-1 flex-1">
-              <Label className="text-xs text-muted-foreground">Mode</Label>
-              <Select
-                value={String(countryLB.leaderboard_mode)}
-                onValueChange={(v) => updateCountryLB("leaderboard_mode", Number(v))}
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Session (current round)</SelectItem>
-                  <SelectItem value="1">Last 24 Hours</SelectItem>
-                  <SelectItem value="2">All Time</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Display settings */}
-          <div className="grid grid-cols-4 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Max Entries</Label>
-              <NumericInput
-                className="h-8 text-sm"
-                integer
-                min={1}
-                max={20}
-                value={countryLB.leaderboard_max_entries}
-                onChange={(v) => updateCountryLB("leaderboard_max_entries", v)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Font Size</Label>
-              <NumericInput
-                className="h-8 text-sm"
-                integer
-                min={8}
-                max={48}
-                value={countryLB.leaderboard_font_size}
-                onChange={(v) => updateCountryLB("leaderboard_font_size", v)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Flag Size</Label>
-              <NumericInput
-                className="h-8 text-sm"
-                min={0.2}
-                max={3.0}
-                step={0.1}
-                value={countryLB.leaderboard_flag_size}
-                onChange={(v) => updateCountryLB("leaderboard_flag_size", v)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Text Scale</Label>
-              <NumericInput
-                className="h-8 text-sm"
-                min={0.5}
-                max={3.0}
-                step={0.1}
-                value={countryLB.leaderboard_text_scale}
-                onChange={(v) => updateCountryLB("leaderboard_text_scale", v)}
-              />
-            </div>
-          </div>
-
-          {/* Label toggles */}
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Show Full Names</Label>
-              <Switch
-                size="sm"
-                checked={countryLB.leaderboard_show_names}
-                onCheckedChange={(v) => updateCountryLB("leaderboard_show_names", v)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Show Country Codes</Label>
-              <Switch
-                size="sm"
-                checked={countryLB.leaderboard_show_codes}
-                onCheckedChange={(v) => updateCountryLB("leaderboard_show_codes", v)}
-              />
-            </div>
-          </div>
+          ) : (
+            config.panels.map((_, i) => (
+              <PanelSection key={i} index={i} />
+            ))
+          )}
         </CardContent>
       </Card>
 
@@ -919,7 +991,7 @@ export default function ScoreboardPage() {
             <div className="flex items-center gap-2">
               <Clock className="size-4 text-blue-400" />
               <CardTitle className="text-sm">
-                {config.recent.title} (Last {config.recent_hours}h)
+                Recent (Last {config.recent_hours}h)
               </CardTitle>
             </div>
             <CardDescription className="text-xs">
@@ -965,7 +1037,7 @@ export default function ScoreboardPage() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <Trophy className="size-4 text-yellow-400" />
-              <CardTitle className="text-sm">{config.alltime.title}</CardTitle>
+              <CardTitle className="text-sm">All-Time</CardTitle>
             </div>
             <CardDescription className="text-xs">
               Live preview — auto-refreshes every 5s

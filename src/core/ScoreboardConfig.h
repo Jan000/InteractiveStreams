@@ -26,6 +26,19 @@ struct ScoreboardPanelConfig {
     std::string silverColor  = "#C8C8C8";
     std::string bronzeColor  = "#CD7F32";
 
+    // ── Content type / data source ──────────────────────────────────────
+    std::string contentType  = "players";   ///< "players" or "countries"
+    std::string timeRange    = "alltime";   ///< "round", "recent", "alltime"
+    std::string gameFilter;                 ///< empty = all games, else specific game_id
+    int         group        = 0;           ///< Panels in same group cycle; different groups render simultaneously
+    bool        includeBots  = false;       ///< Include bots in country panels
+    bool        showFlags    = true;        ///< Show flag icons (country panels)
+    std::string flagShape    = "circle";    ///< "circle" or "rect"
+    float       flagSize     = 1.0f;        ///< Flag size multiplier
+    bool        showNames    = true;        ///< Show display names
+    bool        showCodes    = false;       ///< Show country ISO codes (country panels)
+    std::string valueLabel   = "pts";       ///< Label suffix for values (e.g. "pts", "wins")
+
     nlohmann::json toJson() const {
         return {
             {"enabled",       enabled},
@@ -44,12 +57,23 @@ struct ScoreboardPanelConfig {
             {"points_color",  pointsColor},
             {"gold_color",    goldColor},
             {"silver_color",  silverColor},
-            {"bronze_color",  bronzeColor}
+            {"bronze_color",  bronzeColor},
+            {"content_type",  contentType},
+            {"time_range",    timeRange},
+            {"game_filter",   gameFilter},
+            {"group",         group},
+            {"include_bots",  includeBots},
+            {"show_flags",    showFlags},
+            {"flag_shape",    flagShape},
+            {"flag_size",     flagSize},
+            {"show_names",    showNames},
+            {"show_codes",    showCodes},
+            {"value_label",   valueLabel}
         };
     }
 
     static ScoreboardPanelConfig fromJson(const nlohmann::json& j,
-                                           const ScoreboardPanelConfig& def);
+                                           const ScoreboardPanelConfig& def = {});
 };
 
 inline ScoreboardPanelConfig ScoreboardPanelConfig::fromJson(
@@ -63,42 +87,57 @@ inline ScoreboardPanelConfig ScoreboardPanelConfig::fromJson(
     c.boxWidthPct  = j.value("box_width_pct", def.boxWidthPct);
     c.posXPct      = j.value("pos_x_pct",     def.posXPct);
     c.posYPct      = j.value("pos_y_pct",     def.posYPct);
-    c.opacity       = j.value("opacity",       def.opacity);
+    c.opacity      = j.value("opacity",        def.opacity);
     c.bgColor      = j.value("bg_color",      def.bgColor);
     c.borderColor  = j.value("border_color",  def.borderColor);
     c.titleColor   = j.value("title_color",   def.titleColor);
-    c.nameColor    = j.value("name_color",     def.nameColor);
+    c.nameColor    = j.value("name_color",    def.nameColor);
     c.pointsColor  = j.value("points_color",  def.pointsColor);
     c.goldColor    = j.value("gold_color",    def.goldColor);
     c.silverColor  = j.value("silver_color",  def.silverColor);
     c.bronzeColor  = j.value("bronze_color",  def.bronzeColor);
+    c.contentType  = j.value("content_type",  def.contentType);
+    c.timeRange    = j.value("time_range",    def.timeRange);
+    c.gameFilter   = j.value("game_filter",   def.gameFilter);
+    c.group        = j.value("group",         def.group);
+    c.includeBots  = j.value("include_bots",  def.includeBots);
+    c.showFlags    = j.value("show_flags",    def.showFlags);
+    c.flagShape    = j.value("flag_shape",    def.flagShape);
+    c.flagSize     = j.value("flag_size",     def.flagSize);
+    c.showNames    = j.value("show_names",    def.showNames);
+    c.showCodes    = j.value("show_codes",    def.showCodes);
+    c.valueLabel   = j.value("value_label",   def.valueLabel);
     return c;
 }
 
 /// Global scoreboard configuration shared by all streams.
 struct GlobalScoreboardConfig {
-    ScoreboardPanelConfig alltime;
-    ScoreboardPanelConfig recent;
-    ScoreboardPanelConfig round;
+    std::vector<ScoreboardPanelConfig> panels;
     int    recentHours  = 24;
     double fadeSecs     = 1.0;
     int    chatInterval = 120;   ///< Seconds between chat posts (0 = disabled)
     std::vector<std::string> hiddenPlayers;  ///< user_ids to exclude
 
     GlobalScoreboardConfig() {
-        alltime.title        = "ALL TIME";
-        alltime.durationSecs = 10.0;
-        recent.title         = "LAST 24H";
-        recent.durationSecs  = 10.0;
-        round.title          = "CURRENT ROUND";
-        round.durationSecs   = 8.0;
+        // Default: 3 player panels in group 0, matching old behavior
+        ScoreboardPanelConfig p1;
+        p1.title = "ALL TIME"; p1.timeRange = "alltime"; p1.group = 0;
+        p1.valueLabel = "pts";
+        ScoreboardPanelConfig p2;
+        p2.title = "LAST 24H"; p2.timeRange = "recent"; p2.group = 0;
+        p2.valueLabel = "pts";
+        ScoreboardPanelConfig p3;
+        p3.title = "CURRENT ROUND"; p3.timeRange = "round"; p3.group = 0;
+        p3.durationSecs = 8.0; p3.valueLabel = "pts";
+        panels = {p1, p2, p3};
     }
 
     nlohmann::json toJson() const {
         nlohmann::json j;
-        j["alltime"]        = alltime.toJson();
-        j["recent"]         = recent.toJson();
-        j["round"]          = round.toJson();
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& p : panels)
+            arr.push_back(p.toJson());
+        j["panels"]         = arr;
         j["recent_hours"]   = recentHours;
         j["fade_secs"]      = fadeSecs;
         j["chat_interval"]  = chatInterval;
@@ -108,20 +147,40 @@ struct GlobalScoreboardConfig {
 
     static GlobalScoreboardConfig fromJson(const nlohmann::json& j) {
         GlobalScoreboardConfig c;
-        ScoreboardPanelConfig defAlltime;
-        defAlltime.title = "ALL TIME";
-        ScoreboardPanelConfig defRecent;
-        defRecent.title = "LAST 24H";
-        ScoreboardPanelConfig defRound;
-        defRound.title = "CURRENT ROUND";
-        defRound.durationSecs = 8.0;
 
-        if (j.contains("alltime") && j["alltime"].is_object())
-            c.alltime = ScoreboardPanelConfig::fromJson(j["alltime"], defAlltime);
-        if (j.contains("recent") && j["recent"].is_object())
-            c.recent = ScoreboardPanelConfig::fromJson(j["recent"], defRecent);
-        if (j.contains("round") && j["round"].is_object())
-            c.round = ScoreboardPanelConfig::fromJson(j["round"], defRound);
+        // ── New format: panels array ────────────────────────────────────
+        if (j.contains("panels") && j["panels"].is_array()) {
+            c.panels.clear();
+            for (const auto& pj : j["panels"])
+                c.panels.push_back(ScoreboardPanelConfig::fromJson(pj));
+        }
+        // ── Legacy format: alltime/recent/round objects ─────────────────
+        else if (j.contains("alltime") || j.contains("recent") || j.contains("round")) {
+            c.panels.clear();
+            ScoreboardPanelConfig defAlltime;
+            defAlltime.title = "ALL TIME"; defAlltime.timeRange = "alltime";
+            ScoreboardPanelConfig defRecent;
+            defRecent.title = "LAST 24H"; defRecent.timeRange = "recent";
+            ScoreboardPanelConfig defRound;
+            defRound.title = "CURRENT ROUND"; defRound.timeRange = "round";
+            defRound.durationSecs = 8.0;
+
+            if (j.contains("alltime") && j["alltime"].is_object()) {
+                auto p = ScoreboardPanelConfig::fromJson(j["alltime"], defAlltime);
+                p.timeRange = "alltime"; p.contentType = "players"; p.group = 0;
+                c.panels.push_back(p);
+            }
+            if (j.contains("recent") && j["recent"].is_object()) {
+                auto p = ScoreboardPanelConfig::fromJson(j["recent"], defRecent);
+                p.timeRange = "recent"; p.contentType = "players"; p.group = 0;
+                c.panels.push_back(p);
+            }
+            if (j.contains("round") && j["round"].is_object()) {
+                auto p = ScoreboardPanelConfig::fromJson(j["round"], defRound);
+                p.timeRange = "round"; p.contentType = "players"; p.group = 0;
+                c.panels.push_back(p);
+            }
+        }
 
         c.recentHours  = j.value("recent_hours",  24);
         c.fadeSecs     = j.value("fade_secs",     1.0);

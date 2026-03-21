@@ -9,6 +9,7 @@
 #include <SFML/Graphics.hpp>
 #include <string>
 #include <vector>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -289,25 +290,34 @@ private:
     double m_transitionTimer      = 0.0;
     double m_transitionDelay      = 3.0; // seconds before next game
 
-    // Global scoreboard overlay (cached from PlayerDatabase)
-    std::vector<ScoreEntry> m_scoreboardCache;
-    std::vector<ScoreEntry> m_scoreboardRecentCache;
-    std::vector<std::pair<std::string, int>> m_scoreboardRoundCache;
+    // Global scoreboard overlay caches
+    std::vector<ScoreEntry> m_playerAlltimeCache;
+    std::vector<ScoreEntry> m_playerRecentCache;
+    std::vector<std::pair<std::string, int>> m_playerRoundCache;
+    std::vector<CountryWinEntry> m_countryAlltimeCache;
+    std::vector<CountryWinEntry> m_countryRecentCache;
+    std::vector<std::pair<std::string, int>> m_countryRoundCache;
     double m_scoreboardRefreshTimer = 0.0;
     static constexpr double SCOREBOARD_REFRESH_INTERVAL = 5.0; // seconds
 
     // Cached global scoreboard config (copied from Application every refresh)
     GlobalScoreboardConfig m_sbConfig;
 
-    // Scoreboard panel cycling (animated fade)
-    // Panel indices: built dynamically from enabled panels (duration > 0)
-    double m_scoreboardCycleTimer = 0.0;
-    int    m_scoreboardPanelIndex = 0;       ///< current panel (0,1,2 mapped to enabled panels)
-    enum class ScoreboardPanel { AllTime, Recent, Round };
-    std::vector<ScoreboardPanel> m_scoreboardPanels; ///< ordered enabled panels
+    // Scoreboard panel group cycling
+    struct PanelGroup {
+        std::vector<size_t> panelIndices; ///< indices into m_sbConfig.panels
+        int    currentIndex = 0;
+        double cycleTimer   = 0.0;
+    };
+    std::map<int, PanelGroup> m_panelGroups;
 
     // Periodic scoreboard chat posting
     double m_scoreboardChatTimer  = 0.0;
+
+    // Flag textures for country panels (loaded on-demand)
+    std::unordered_map<std::string, sf::Texture> m_flagTextures;
+    bool m_flagTexturesLoaded = false;
+    void loadFlagTextures();
 
     // Periodic info message state
     double m_infoMessageTimer = 0.0;

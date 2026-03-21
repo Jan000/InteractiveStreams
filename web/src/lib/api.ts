@@ -140,12 +140,22 @@ export interface ScoreboardPanelConfig {
   gold_color: string;
   silver_color: string;
   bronze_color: string;
+  // Content & grouping
+  content_type: string;   // "players" | "countries"
+  time_range: string;     // "round" | "recent" | "alltime"
+  game_filter: string;    // "" = all games, else game_id
+  group: number;          // Same group cycles; different groups render simultaneously
+  include_bots: boolean;
+  show_flags: boolean;
+  flag_shape: string;     // "circle" | "rect"
+  flag_size: number;      // multiplier
+  show_names: boolean;
+  show_codes: boolean;
+  value_label: string;    // e.g. "pts", "wins"
 }
 
 export interface ScoreboardConfig {
-  alltime: ScoreboardPanelConfig;
-  recent: ScoreboardPanelConfig;
-  round: ScoreboardPanelConfig;
+  panels: ScoreboardPanelConfig[];
   recent_hours: number;
   fade_secs: number;
   chat_interval: number;

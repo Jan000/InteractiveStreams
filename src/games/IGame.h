@@ -142,6 +142,10 @@ public:
     /// Default: empty (no in-game leaderboard).
     virtual std::vector<std::pair<std::string, int>> getLeaderboard() const { return {}; }
 
+    /// Get current in-game country leaderboard (country_code, wins).
+    /// Default: empty (no country leaderboard).
+    virtual std::vector<std::pair<std::string, int>> getCountryLeaderboard() const { return {}; }
+
     // ── Text-element layout API ──────────────────────────────────────────────
 
     /// Return the list of text elements this game supports (with current values).

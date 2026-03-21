@@ -169,6 +169,7 @@ public:
     nlohmann::json getState() const override;
     nlohmann::json getCommands() const override;
     std::vector<std::pair<std::string, int>> getLeaderboard() const override;
+    std::vector<std::pair<std::string, int>> getCountryLeaderboard() const override;
 
     void configure(const nlohmann::json& settings) override;
     nlohmann::json getSettings() const override;

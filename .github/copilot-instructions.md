@@ -251,7 +251,7 @@ struct StreamConfig {
   - Random: Wählt zufälliges nächstes Spiel
 - **Vote-Overlay**: `renderVoteOverlay()` zeichnet halbtransparentes Overlay mit Spiel-Karten und Vote-Zählern
 - **Game Filter**: `enabledGames` filtert verfügbare Spiele im Vote/Random-Modus (leer = alle Spiele); serialisiert als `enabled_games` in JSON
-- **Scoreboard Overlay**: `renderGlobalScoreboard()` zeigt Scoreboard-Panels (Recent/All-Time) mit Alpha-Crossfade. `sendScoreboardToChat()` postet formatierte Top-5 an Chat-Kanäle.
+- **Scoreboard Overlay**: Unified panel-group system. `GlobalScoreboardConfig` hat `vector<ScoreboardPanelConfig> panels`. Jedes Panel hat `contentType` ("players"/"countries"), `timeRange` ("round"/"recent"/"alltime"), `group` (int — selbe Gruppe cycled, verschiedene Gruppen rendern gleichzeitig), `gameFilter`, `includeBots`, `showFlags`, `flagShape`, `flagSize`, `showNames`, `showCodes`, `valueLabel`. `PanelGroup`-Struct pro Gruppe mit eigenem Cycle-Timer. `loadFlagTextures()` lädt Flaggen wie CountryElimination. `renderGlobalScoreboardTo()` rendert eine Panel pro Gruppe gleichzeitig. `sendScoreboardToChat()` postet formatierte Leaderboards an Chat-Kanäle.
 - **Streaming**: `startStreaming()` / `stopStreaming()` erstellt/zerstört `StreamEncoder(EncoderSettings)`
 - **Serialisierung**: `configFromJson()` / `toJson()`
 
@@ -522,14 +522,7 @@ Bei `eventType`-Nachrichten in `handleStreamEvent()`:
 - `quiz_duration`: Zeit zum Beantworten einer Quiz-Frage in Sekunden (default 20.0)
 - `quiz_points`: Punkte für richtige Quiz-Antwort (default 25)
 - `visualizer_enabled`: Audio-Visualizer (Spektrum-Ring) um die Arena anzeigen (default true)
-- `leaderboard_enabled`: Länder-Leaderboard-Panel anzeigen (default true)
-- `leaderboard_mode`: Leaderboard-Modus: 0 = Session (In-Memory), 1 = 24h (SQLite), 2 = All-Time (SQLite) (default 0)
-- `leaderboard_max_entries`: Maximale Einträge im Länder-Leaderboard (default 5, max 30)
-- `leaderboard_font_size`: Schriftgröße im Leaderboard in Punkten (default 18, Bereich 10–48)
-- `leaderboard_flag_size`: Flaggen-Skalierung im Leaderboard (default 1.0, Bereich 0.3–3.0)
-- `leaderboard_show_codes`: ISO-2-Ländercodes im Leaderboard anzeigen (default true)
-- `leaderboard_show_names`: Vollständige Ländernamen im Leaderboard anzeigen (default true)
-- `leaderboard_text_scale`: Text-Skalierung im Leaderboard (default 1.0, Bereich 0.3–3.0)
+- **Hinweis**: Länder-Leaderboard wurde in das unified Scoreboard-Overlay-System integriert (siehe `ScoreboardConfig.h`, Panels mit `contentType: "countries"`). Die alten `leaderboard_*` Settings bleiben in `configure()`/`getSettings()` vorhanden, werden aber nicht mehr im Spiel gerendert — das Overlay übernimmt die Anzeige.
 
 ---
 

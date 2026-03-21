@@ -2726,204 +2726,11 @@ void CountryElimination::renderSidePanels(sf::RenderTarget& target, const Screen
         return y + hdrH + 6.0f;
     };
 
-    // ── LEFT PANEL: Country + Player Leaderboards ─────────────────────────
+    // ── LEFT PANEL: Eliminations ─────────────────────────────────────────
     if (L.leftPanelW > 60.0f) {
         float px = L.leftPanelX;
         float pw = L.leftPanelW;
         float py = pad;
-
-        // Card: Country Leaderboard
-        if (m_leaderboardEnabled) {
-            // Select data source based on mode
-            struct LBEntry { std::string label; int wins; };
-            std::vector<LBEntry> lbEntries;
-            if (m_leaderboardMode == 1) {
-                for (const auto& cw : m_cachedCountriesRecent)
-                    lbEntries.push_back({cw.countryCode, cw.wins});
-            } else if (m_leaderboardMode == 2) {
-                for (const auto& cw : m_cachedCountriesAllTime)
-                    lbEntries.push_back({cw.countryCode, cw.wins});
-            } else {
-                for (const auto& cw : m_countryWins)
-                    lbEntries.push_back({cw.label, cw.wins});
-            }
-
-            const auto& displayNames = getCountryDisplayNames();
-            int baseFontSz = static_cast<int>(m_leaderboardFontSize * m_leaderboardTextScale);
-            float lbLineH = fs(baseFontSz) + 8.0f;
-            int maxShow = std::min(static_cast<int>(lbEntries.size()), m_leaderboardMaxEntries);
-            float headerH = fs(28) + 12.0f;
-            float cardH = headerH + 6.0f + std::max(1, maxShow) * lbLineH + pad;
-            drawCard(px, py, pw, cardH);
-
-            std::string headerStr = "COUNTRIES";
-            if (m_leaderboardMode == 1) headerStr = "COUNTRIES (24H)";
-            else if (m_leaderboardMode == 2) headerStr = "COUNTRIES (ALL TIME)";
-            float cy = drawHeader(px, py, pw, headerStr, sf::Color(255, 215, 0, 220));
-
-            if (lbEntries.empty()) {
-                sf::Text t;
-                t.setFont(m_font);
-                t.setString("No winners yet");
-                t.setCharacterSize(fs(baseFontSz - 2));
-                t.setFillColor(sf::Color(150, 150, 150, 140));
-                auto lb = t.getLocalBounds();
-                t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
-                t.setPosition(px + pw / 2.0f, cy);
-                target.draw(t);
-            } else {
-                for (int i = 0; i < maxShow; ++i) {
-                    const auto& cw = lbEntries[i];
-                    float ey = cy + i * lbLineH;
-
-                    // Rank number
-                    sf::Text rank;
-                    rank.setFont(m_font);
-                    rank.setString(std::to_string(i + 1) + ".");
-                    rank.setCharacterSize(fs(baseFontSz));
-                    rank.setFillColor(i == 0 ? sf::Color(255, 215, 0, 220) : sf::Color(180, 180, 180, 200));
-                    rank.setPosition(px + 6.0f, ey);
-                    target.draw(rank);
-
-                    // Flag circle
-                    float flagR = fs(baseFontSz) * 0.5f * m_leaderboardFlagSize;
-                    sf::CircleShape flag(flagR);
-                    flag.setOrigin(flagR, flagR);
-                    flag.setPosition(px + 40.0f, ey + lbLineH / 2.0f);
-                    auto fit = m_flagTextures.find(cw.label);
-                    if (fit != m_flagTextures.end()) {
-                        flag.setTexture(&fit->second);
-                        auto ts = fit->second.getSize();
-                        int sq = std::min(ts.x, ts.y);
-                        int ox = (ts.x - sq) / 2;
-                        int oy = (ts.y - sq) / 2;
-                        flag.setTextureRect(sf::IntRect(ox, oy, sq, sq));
-                        flag.setFillColor(sf::Color::White);
-                    } else {
-                        flag.setFillColor(sf::Color(180, 180, 180));
-                    }
-                    flag.setOutlineColor(sf::Color(255, 255, 255, 80));
-                    flag.setOutlineThickness(1.0f);
-                    target.draw(flag);
-
-                    // Country name / code
-                    float labelX = px + 40.0f + flagR + 6.0f;
-                    if (m_leaderboardShowNames) {
-                        auto nit = displayNames.find(cw.label);
-                        std::string nameStr = (nit != displayNames.end()) ? nit->second : cw.label;
-                        sf::Text name;
-                        name.setFont(m_font);
-                        name.setString(nameStr);
-                        name.setCharacterSize(fs(baseFontSz - 2));
-                        name.setFillColor(sf::Color(230, 230, 240, 210));
-                        name.setPosition(labelX, ey + 1.0f);
-                        target.draw(name);
-                    } else if (m_leaderboardShowCodes) {
-                        sf::Text name;
-                        name.setFont(m_font);
-                        name.setString(cw.label);
-                        name.setCharacterSize(fs(baseFontSz - 2));
-                        name.setFillColor(sf::Color(230, 230, 240, 210));
-                        name.setPosition(labelX, ey + 1.0f);
-                        target.draw(name);
-                    }
-
-                    // Wins
-                    sf::Text wins;
-                    wins.setFont(m_font);
-                    wins.setString(std::to_string(cw.wins) + "W");
-                    wins.setCharacterSize(fs(baseFontSz));
-                    wins.setFillColor(sf::Color(255, 215, 0, 200));
-                    auto wb = wins.getLocalBounds();
-                    wins.setOrigin(wb.left + wb.width, 0.0f);
-                    wins.setPosition(px + pw - 8.0f, ey);
-                    target.draw(wins);
-                }
-            }
-            py += cardH + pad;
-        }
-
-        // Card: Player Leaderboard (from PlayerDatabase, real players only)
-        {
-            int maxShow = std::min(static_cast<int>(m_cachedPlayerLeaderboard.size()), 8);
-            float playerLineH = fs(26) + 10.0f;
-            float headerH = fs(28) + 12.0f;
-            float cardH = headerH + 6.0f + std::max(1, maxShow) * playerLineH + pad;
-            drawCard(px, py, pw, cardH);
-            float cy = drawHeader(px, py, pw, "PLAYERS", sf::Color(100, 200, 255, 220));
-
-            if (m_cachedPlayerLeaderboard.empty()) {
-                sf::Text t;
-                t.setFont(m_font);
-                t.setString("No players yet");
-                t.setCharacterSize(fs(20));
-                t.setFillColor(sf::Color(150, 150, 150, 140));
-                auto lb = t.getLocalBounds();
-                t.setOrigin(lb.left + lb.width / 2.0f, 0.0f);
-                t.setPosition(px + pw / 2.0f, cy);
-                target.draw(t);
-            } else {
-                for (int i = 0; i < maxShow; ++i) {
-                    const auto& pe = m_cachedPlayerLeaderboard[i];
-                    float ey = cy + i * playerLineH;
-
-                    sf::Text rank;
-                    rank.setFont(m_font);
-                    rank.setString(std::to_string(i + 1) + ".");
-                    rank.setCharacterSize(fs(22));
-                    rank.setFillColor(i == 0 ? sf::Color(100, 200, 255, 220) : sf::Color(180, 180, 180, 200));
-                    rank.setPosition(px + 6.0f, ey);
-                    target.draw(rank);
-
-                    // Avatar
-                    float avR = fs(22) * 0.55f;
-                    const sf::Texture* avatarTex = nullptr;
-                    if (!pe.avatarUrl.empty())
-                        avatarTex = m_avatarCache.getTexture(pe.avatarUrl);
-                    if (avatarTex) {
-                        sf::CircleShape av(avR);
-                        av.setOrigin(avR, avR);
-                        av.setPosition(px + 40.0f, ey + playerLineH / 2.0f);
-                        av.setTexture(avatarTex);
-                        av.setFillColor(sf::Color::White);
-                        av.setOutlineColor(sf::Color(100, 200, 255, 100));
-                        av.setOutlineThickness(1.0f);
-                        target.draw(av);
-                    } else {
-                        sf::CircleShape dot(avR);
-                        dot.setOrigin(avR, avR);
-                        dot.setPosition(px + 40.0f, ey + playerLineH / 2.0f);
-                        dot.setFillColor(sf::Color(100, 200, 255, 60));
-                        dot.setOutlineColor(sf::Color(100, 200, 255, 80));
-                        dot.setOutlineThickness(1.0f);
-                        target.draw(dot);
-                    }
-
-                    sf::Text name;
-                    name.setFont(m_font);
-                    std::string disp = pe.displayName;
-                    int maxChars = static_cast<int>(pw - 90.0f) / std::max(1, static_cast<int>(fs(20) * 0.6f));
-                    if (static_cast<int>(disp.size()) > maxChars && maxChars > 3)
-                        disp = disp.substr(0, maxChars - 2) + "..";
-                    name.setString(disp);
-                    name.setCharacterSize(fs(20));
-                    name.setFillColor(sf::Color(230, 230, 240, 210));
-                    name.setPosition(px + 40.0f + avR + 6.0f, ey + 1.0f);
-                    target.draw(name);
-
-                    sf::Text pts;
-                    pts.setFont(m_font);
-                    pts.setString(std::to_string(pe.points) + "p");
-                    pts.setCharacterSize(fs(22));
-                    pts.setFillColor(sf::Color(100, 200, 255, 200));
-                    auto pb = pts.getLocalBounds();
-                    pts.setOrigin(pb.left + pb.width, 0.0f);
-                    pts.setPosition(px + pw - 8.0f, ey);
-                    target.draw(pts);
-                }
-            }
-            py += cardH + pad;
-        }
 
         // Card: Recent Eliminations
         {
@@ -3234,6 +3041,15 @@ nlohmann::json CountryElimination::getCommands() const {
 }
 
 std::vector<std::pair<std::string, int>> CountryElimination::getLeaderboard() const {
+    std::vector<std::pair<std::string, int>> result;
+    for (const auto& cw : m_countryWins) {
+        result.emplace_back(cw.label, cw.wins);
+    }
+    return result;
+}
+
+std::vector<std::pair<std::string, int>> CountryElimination::getCountryLeaderboard() const {
+    // Returns country codes + wins (same data as getLeaderboard for this game)
     std::vector<std::pair<std::string, int>> result;
     for (const auto& cw : m_countryWins) {
         result.emplace_back(cw.label, cw.wins);
