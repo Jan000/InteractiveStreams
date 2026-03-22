@@ -35,6 +35,7 @@ struct TextElement {
     float       y       = 5.f;  ///< Y position (% of screen height, 0=top, 100=bottom)
     int         fontSize = 24;  ///< Base font size in pixels (before fontScale)
     TextAlign   align    = TextAlign::Center;
+    std::string alignY   = "top"; ///< Vertical alignment: "top", "center", "bottom"
     bool        visible  = true;
     std::string color;          ///< RGBA hex color (e.g. "#FF0000FF"), empty = game default
     std::string content;        ///< Text content override (empty = game decides dynamically)
@@ -46,6 +47,7 @@ struct TextElement {
             {"x", x}, {"y", y},
             {"font_size", fontSize},
             {"align", align == TextAlign::Left ? "left" : align == TextAlign::Right ? "right" : "center"},
+            {"align_y", alignY},
             {"visible", visible},
             {"color", color},
             {"content", content}
@@ -62,6 +64,7 @@ struct TextElement {
         te.visible  = j.value("visible", true);
         te.color    = j.value("color", "");
         te.content  = j.value("content", "");
+        te.alignY   = j.value("align_y", "top");
         std::string a = j.value("align", "center");
         te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
         return te;
@@ -152,10 +155,24 @@ public:
     const std::vector<TextElement>& textElements() const { return m_textElements; }
 
     /// Apply text-element overrides from JSON (called from configure()).
+    /// If an element with the given id doesn't exist and the JSON has all required
+    /// fields, a new custom text element is created.
+    /// Elements with "_deleted": true are removed.
     void applyTextOverrides(const nlohmann::json& arr) {
         if (!arr.is_array()) return;
+        // First pass: remove deleted elements
         for (const auto& j : arr) {
+            if (j.value("_deleted", false)) {
+                std::string id = j.value("id", "");
+                if (!id.empty()) removeTextElement(id);
+            }
+        }
+        // Second pass: update or create elements
+        for (const auto& j : arr) {
+            if (j.value("_deleted", false)) continue;
             std::string id = j.value("id", "");
+            if (id.empty()) continue;
+            bool found = false;
             for (auto& te : m_textElements) {
                 if (te.id == id) {
                     if (j.contains("x"))         te.x        = j["x"].get<float>();
@@ -166,12 +183,30 @@ public:
                         std::string a = j["align"].get<std::string>();
                         te.align = (a == "left") ? TextAlign::Left : (a == "right") ? TextAlign::Right : TextAlign::Center;
                     }
+                    if (j.contains("align_y")) te.alignY = j["align_y"].get<std::string>();
                     if (j.contains("color")) te.color = j["color"].get<std::string>();
                     if (j.contains("content")) te.content = j["content"].get<std::string>();
+                    if (j.contains("label")) te.label = j["label"].get<std::string>();
+                    found = true;
                     break;
                 }
             }
+            // Add as new custom text element if not found
+            if (!found && j.contains("content")) {
+                m_textElements.push_back(TextElement::fromJson(j));
+            }
         }
+    }
+
+    /// Remove a text element by id. Returns true if found and removed.
+    bool removeTextElement(const std::string& id) {
+        auto it = std::remove_if(m_textElements.begin(), m_textElements.end(),
+            [&](const TextElement& te) { return te.id == id; });
+        if (it != m_textElements.end()) {
+            m_textElements.erase(it, m_textElements.end());
+            return true;
+        }
+        return false;
     }
 
     /// Serialize text elements to JSON array.
@@ -201,6 +236,7 @@ protected:
         float     px, py;
         unsigned  fontSize;
         TextAlign align;
+        std::string alignY;   ///< "top", "center", "bottom"
         bool      visible;
         std::string color;    ///< RGBA hex (empty = use game default)
         std::string content;  ///< Text content override (empty = game default)
@@ -231,28 +267,35 @@ protected:
 
     ResolvedText resolve(const std::string& id, float targetW, float targetH) const {
         const TextElement* e = te(id);
-        if (!e) return {0, 0, 16, TextAlign::Center, true, "", ""};
+        if (!e) return {0, 0, 16, TextAlign::Center, "top", true, "", ""};
         float px = e->x * targetW / 100.f;
         float py = e->y * targetH / 100.f;
         unsigned fs = static_cast<unsigned>(std::max(1.f, e->fontSize * m_fontScale));
-        return {px, py, fs, e->align, e->visible, e->color, e->content};
+        return {px, py, fs, e->align, e->alignY, e->visible, e->color, e->content};
     }
 
     /// Position an sf::Text using a ResolvedText.
     static void applyTextLayout(sf::Text& text, const ResolvedText& r) {
         text.setCharacterSize(r.fontSize);
         auto lb = text.getLocalBounds();
+
+        // Horizontal alignment
+        float originX = 0.f;
         switch (r.align) {
-        case TextAlign::Left:
-            text.setOrigin(0.f, 0.f);
-            break;
-        case TextAlign::Center:
-            text.setOrigin(lb.left + lb.width / 2.f, 0.f);
-            break;
-        case TextAlign::Right:
-            text.setOrigin(lb.left + lb.width, 0.f);
-            break;
+        case TextAlign::Left:   originX = 0.f; break;
+        case TextAlign::Center: originX = lb.left + lb.width / 2.f; break;
+        case TextAlign::Right:  originX = lb.left + lb.width; break;
         }
+
+        // Vertical alignment
+        float originY = 0.f;
+        if (r.alignY == "center") {
+            originY = lb.top + lb.height / 2.f;
+        } else if (r.alignY == "bottom") {
+            originY = lb.top + lb.height;
+        }
+
+        text.setOrigin(originX, originY);
         text.setPosition(r.px, r.py);
 
         // Apply configured color override if set
@@ -267,8 +310,9 @@ protected:
                              float x, float y, int fontSize,
                              TextAlign align = TextAlign::Center,
                              bool visible = true,
-                             const std::string& defaultColor = "") {
-        m_textElements.push_back({id, label, x, y, fontSize, align, visible, defaultColor});
+                             const std::string& defaultColor = "",
+                             const std::string& defaultAlignY = "top") {
+        m_textElements.push_back({id, label, x, y, fontSize, align, defaultAlignY, visible, defaultColor});
     }
 
     /// Fetch audio spectrum.  Returns false when no data (e.g. no audio mixer).

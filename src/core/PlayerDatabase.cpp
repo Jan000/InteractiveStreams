@@ -90,13 +90,18 @@ void PlayerDatabase::createTables() {
         spdlog::error("[PlayerDB] Failed to create tables: {}", errmsg ? errmsg : "unknown");
         sqlite3_free(errmsg);
     }
+
+    // Migration: add avatar_url column if missing
+    const char* addCol = "ALTER TABLE players ADD COLUMN avatar_url TEXT DEFAULT '';";
+    sqlite3_exec(m_db, addCol, nullptr, nullptr, nullptr); // ignore error if already exists
 }
 
 void PlayerDatabase::recordResult(const std::string& userId,
                                    const std::string& displayName,
                                    const std::string& gameName,
                                    int points,
-                                   bool isWin) {
+                                   bool isWin,
+                                   const std::string& avatarUrl) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db) return;
 
@@ -105,10 +110,11 @@ void PlayerDatabase::recordResult(const std::string& userId,
 
     // Upsert player
     const char* upsertPlayer = R"(
-        INSERT INTO players (user_id, display_name, total_points, total_wins, games_played, updated_at)
-        VALUES (?, ?, ?, ?, 1, ?)
+        INSERT INTO players (user_id, display_name, avatar_url, total_points, total_wins, games_played, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             display_name = excluded.display_name,
+            avatar_url   = CASE WHEN excluded.avatar_url != '' THEN excluded.avatar_url ELSE avatar_url END,
             total_points = total_points + excluded.total_points,
             total_wins   = total_wins + excluded.total_wins,
             games_played = games_played + 1,
@@ -119,9 +125,10 @@ void PlayerDatabase::recordResult(const std::string& userId,
     sqlite3_prepare_v2(m_db, upsertPlayer, -1, &stmt, nullptr);
     sqlite3_bind_text(stmt, 1, userId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, displayName.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 3, points);
-    sqlite3_bind_int(stmt, 4, isWin ? 1 : 0);
-    sqlite3_bind_double(stmt, 5, now);
+    sqlite3_bind_text(stmt, 3, avatarUrl.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 4, points);
+    sqlite3_bind_int(stmt, 5, isWin ? 1 : 0);
+    sqlite3_bind_double(stmt, 6, now);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
@@ -154,14 +161,16 @@ std::vector<ScoreEntry> PlayerDatabase::getTopRecent(int limit, int hours) const
         std::chrono::system_clock::now().time_since_epoch()).count() - (hours * 3600.0);
 
     const char* sql = R"(
-        SELECT user_id, display_name,
-               SUM(points) as total_pts,
-               SUM(is_win) as wins,
+        SELECT g.user_id, g.display_name,
+               SUM(g.points) as total_pts,
+               SUM(g.is_win) as wins,
                COUNT(*) as games,
-               MAX(timestamp) as last_played
-        FROM game_results
-        WHERE timestamp >= ?
-        GROUP BY user_id
+               MAX(g.timestamp) as last_played,
+               COALESCE(p.avatar_url, '') as avatar_url
+        FROM game_results g
+        LEFT JOIN players p ON g.user_id = p.user_id
+        WHERE g.timestamp >= ?
+        GROUP BY g.user_id
         ORDER BY total_pts DESC, wins DESC
         LIMIT ?;
     )";
@@ -179,6 +188,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopRecent(int limit, int hours) const
         e.wins = sqlite3_column_int(stmt, 3);
         e.gamesPlayed = sqlite3_column_int(stmt, 4);
         e.timestamp = sqlite3_column_double(stmt, 5);
+        if (auto* t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6))) e.avatarUrl = t;
         results.push_back(std::move(e));
     }
     sqlite3_finalize(stmt);
@@ -192,7 +202,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopAllTime(int limit) const {
     if (!m_db) return results;
 
     const char* sql = R"(
-        SELECT user_id, display_name, total_points, total_wins, games_played, updated_at
+        SELECT user_id, display_name, total_points, total_wins, games_played, updated_at, COALESCE(avatar_url, '') as avatar_url
         FROM players
         ORDER BY total_points DESC, total_wins DESC
         LIMIT ?;
@@ -210,6 +220,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopAllTime(int limit) const {
         e.wins = sqlite3_column_int(stmt, 3);
         e.gamesPlayed = sqlite3_column_int(stmt, 4);
         e.timestamp = sqlite3_column_double(stmt, 5);
+        if (auto* t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6))) e.avatarUrl = t;
         results.push_back(std::move(e));
     }
     sqlite3_finalize(stmt);
@@ -250,6 +261,7 @@ nlohmann::json PlayerDatabase::recentToJson(int limit, int hours) const {
         arr.push_back({
             {"userId", e.userId},
             {"displayName", e.displayName},
+            {"avatarUrl", e.avatarUrl},
             {"points", e.points},
             {"wins", e.wins},
             {"gamesPlayed", e.gamesPlayed},
@@ -266,6 +278,7 @@ nlohmann::json PlayerDatabase::allTimeToJson(int limit) const {
         arr.push_back({
             {"userId", e.userId},
             {"displayName", e.displayName},
+            {"avatarUrl", e.avatarUrl},
             {"points", e.points},
             {"wins", e.wins},
             {"gamesPlayed", e.gamesPlayed},
@@ -290,13 +303,15 @@ std::vector<ScoreEntry> PlayerDatabase::getTopRecentFiltered(
         std::chrono::system_clock::now().time_since_epoch()).count() - (hours * 3600.0);
 
     // Build SQL with placeholders for exclusions
-    std::string sql = "SELECT user_id, display_name, SUM(points) as total_pts, "
-                      "SUM(is_win) as wins, COUNT(*) as games, MAX(timestamp) as last_played "
-                      "FROM game_results WHERE timestamp >= ? AND user_id NOT IN (";
+    std::string sql = "SELECT g.user_id, g.display_name, SUM(g.points) as total_pts, "
+                      "SUM(g.is_win) as wins, COUNT(*) as games, MAX(g.timestamp) as last_played, "
+                      "COALESCE(p.avatar_url, '') as avatar_url "
+                      "FROM game_results g LEFT JOIN players p ON g.user_id = p.user_id "
+                      "WHERE g.timestamp >= ? AND g.user_id NOT IN (";
     for (size_t i = 0; i < excludeIds.size(); ++i) {
         sql += (i > 0) ? ",?" : "?";
     }
-    sql += ") GROUP BY user_id ORDER BY total_pts DESC, wins DESC LIMIT ?;";
+    sql += ") GROUP BY g.user_id ORDER BY total_pts DESC, wins DESC LIMIT ?;";
 
     sqlite3_stmt* stmt = nullptr;
     sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
@@ -314,6 +329,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopRecentFiltered(
         e.wins        = sqlite3_column_int(stmt, 3);
         e.gamesPlayed = sqlite3_column_int(stmt, 4);
         e.timestamp   = sqlite3_column_double(stmt, 5);
+        if (auto* t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6))) e.avatarUrl = t;
         results.push_back(std::move(e));
     }
     sqlite3_finalize(stmt);
@@ -330,7 +346,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopAllTimeFiltered(
     if (!m_db) return results;
 
     std::string sql = "SELECT user_id, display_name, total_points, total_wins, "
-                      "games_played, updated_at FROM players WHERE user_id NOT IN (";
+                      "games_played, updated_at, COALESCE(avatar_url, '') as avatar_url FROM players WHERE user_id NOT IN (";
     for (size_t i = 0; i < excludeIds.size(); ++i) {
         sql += (i > 0) ? ",?" : "?";
     }
@@ -351,6 +367,7 @@ std::vector<ScoreEntry> PlayerDatabase::getTopAllTimeFiltered(
         e.wins        = sqlite3_column_int(stmt, 3);
         e.gamesPlayed = sqlite3_column_int(stmt, 4);
         e.timestamp   = sqlite3_column_double(stmt, 5);
+        if (auto* t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6))) e.avatarUrl = t;
         results.push_back(std::move(e));
     }
     sqlite3_finalize(stmt);

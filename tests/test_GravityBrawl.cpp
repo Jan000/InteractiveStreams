@@ -42,7 +42,7 @@ AudioManager& Application::audioManager() {
     return mgr;
 }
 
-void PlayerDatabase::recordResult(const std::string&, const std::string&, const std::string&, int, bool) {}
+void PlayerDatabase::recordResult(const std::string&, const std::string&, const std::string&, int, bool, const std::string&) {}
 
 nlohmann::json PlayerDatabase::getPlayerStats(const std::string&) const {
     return {

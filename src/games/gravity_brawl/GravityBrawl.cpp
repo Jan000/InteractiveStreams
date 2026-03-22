@@ -919,7 +919,7 @@ void GravityBrawl::cmdJoin(const std::string& userId,
     // Participation score (only on first join, not rejoin)
     try {
         is::core::Application::instance().playerDatabase().recordResult(
-            userId, displayName, "gravity_brawl", 1, false);
+            userId, displayName, "gravity_brawl", 1, false, avatarUrl);
     } catch (...) {}
 
 }
@@ -1044,7 +1044,7 @@ void GravityBrawl::applyAnomalyReward(Planet& p, const Anomaly& anomaly) {
         if (!isBot(p.userId)) {
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
-                    p.userId, p.displayName, "gravity_brawl", 80, false);
+                    p.userId, p.displayName, "gravity_brawl", 80, false, p.avatarUrl);
             } catch (...) {}
         }
         if (p.body) {
@@ -1065,8 +1065,8 @@ void GravityBrawl::applyAnomalyReward(Planet& p, const Anomaly& anomaly) {
     if (!isBot(p.userId)) {
         try {
             is::core::Application::instance().playerDatabase().recordResult(
-                p.userId, p.displayName, "gravity_brawl", 250, false);
-        } catch (...) {}
+                p.userId, p.displayName, "gravity_brawl", 250, false, p.avatarUrl);
+            } catch (...) {}
     }
     if (p.body) {
         addFloatingText("+250", worldToScreen(p.body->GetPosition()), sf::Color(255, 240, 120), 1.5f);
@@ -1499,9 +1499,9 @@ void GravityBrawl::onPlanetCollision(Planet& a, Planet& b, float impulse) {
     try {
         auto& db = is::core::Application::instance().playerDatabase();
         if (!isBot(a.userId))
-            db.recordResult(a.userId, a.displayName, "gravity_brawl", 2, false);
+            db.recordResult(a.userId, a.displayName, "gravity_brawl", 2, false, a.avatarUrl);
         if (!isBot(b.userId))
-            db.recordResult(b.userId, b.displayName, "gravity_brawl", 2, false);
+            db.recordResult(b.userId, b.displayName, "gravity_brawl", 2, false, b.avatarUrl);
     } catch (...) {}
 
     playSfx("gb_hit", 0.6f);
@@ -1556,7 +1556,7 @@ void GravityBrawl::triggerSubGoalReward() {
         if (!isBot(id)) {
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
-                    id, p.displayName, "gravity_brawl", 500, false);
+                    id, p.displayName, "gravity_brawl", 500, false, p.avatarUrl);
             } catch (...) {}
         }
     }
@@ -1867,7 +1867,7 @@ void GravityBrawl::update(double dt) {
             if (!isBot(id)) {
                 try {
                     is::core::Application::instance().playerDatabase().recordResult(
-                        id, p.displayName, "gravity_brawl", 250, false);
+                        id, p.displayName, "gravity_brawl", 250, false, p.avatarUrl);
                 } catch (...) {}
             }
         }
@@ -2088,7 +2088,7 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
                 if (!killerIsBot) {
                     try {
                         is::core::Application::instance().playerDatabase().recordResult(
-                            killerId, killer.displayName, "gravity_brawl", killPoints + bountyBonus, false);
+                            killerId, killer.displayName, "gravity_brawl", killPoints + bountyBonus, false, killer.avatarUrl);
                     } catch (...) {}
                 }
 
@@ -2100,7 +2100,7 @@ void GravityBrawl::eliminatePlanet(Planet& p) {
                 if (!killerIsBot) {
                     try {
                         is::core::Application::instance().playerDatabase().recordResult(
-                            killerId, killer.displayName, "gravity_brawl", killPoints, false);
+                            killerId, killer.displayName, "gravity_brawl", killPoints, false, killer.avatarUrl);
                     } catch (...) {}
                 }
             }
@@ -2207,7 +2207,7 @@ void GravityBrawl::updateCosmicEvent(float dt) {
                     if (!isBot(id)) {
                         try {
                             is::core::Application::instance().playerDatabase().recordResult(
-                                id, p.displayName, "gravity_brawl", survivorBonus, false);
+                                id, p.displayName, "gravity_brawl", survivorBonus, false, p.avatarUrl);
                         } catch (...) {}
                     }
                     sf::Vector2f screenPos = worldToScreen(p.body->GetPosition());
@@ -2233,7 +2233,7 @@ void GravityBrawl::awardSurvivalPoints(double dt) {
                 if (!isBot(id)) {
                     try {
                         is::core::Application::instance().playerDatabase().recordResult(
-                            id, p.displayName, "gravity_brawl", 1, false);
+                            id, p.displayName, "gravity_brawl", 1, false, p.avatarUrl);
                     } catch (...) {}
                 }
             }

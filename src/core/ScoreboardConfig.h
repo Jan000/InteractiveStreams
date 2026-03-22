@@ -40,6 +40,9 @@ struct ScoreboardPanelConfig {
     bool        showNames    = true;        ///< Show display names
     bool        showCodes    = false;       ///< Show country ISO codes (country panels)
     std::string valueLabel   = "pts";       ///< Label suffix for values (e.g. "pts", "wins")
+    bool        showAvatars  = false;       ///< Show player avatars (player panels)
+    std::string avatarShape  = "circle";    ///< "circle" or "rect"
+    float       avatarSize   = 1.0f;        ///< Avatar size multiplier
 
     nlohmann::json toJson() const {
         return {
@@ -72,7 +75,10 @@ struct ScoreboardPanelConfig {
             {"flag_size",     flagSize},
             {"show_names",    showNames},
             {"show_codes",    showCodes},
-            {"value_label",   valueLabel}
+            {"value_label",   valueLabel},
+            {"show_avatars",  showAvatars},
+            {"avatar_shape",  avatarShape},
+            {"avatar_size",   avatarSize}
         };
     }
 
@@ -116,6 +122,9 @@ inline ScoreboardPanelConfig ScoreboardPanelConfig::fromJson(
     c.showNames    = j.value("show_names",    def.showNames);
     c.showCodes    = j.value("show_codes",    def.showCodes);
     c.valueLabel   = j.value("value_label",   def.valueLabel);
+    c.showAvatars  = j.value("show_avatars",  def.showAvatars);
+    c.avatarShape  = j.value("avatar_shape",  def.avatarShape);
+    c.avatarSize   = j.value("avatar_size",   def.avatarSize);
     return c;
 }
 

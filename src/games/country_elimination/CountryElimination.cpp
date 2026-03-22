@@ -872,7 +872,7 @@ void CountryElimination::checkEliminations() {
                 sendChatFeedback("💀 " + p.displayName + " eliminated!");
                 try {
                     is::core::Application::instance().playerDatabase().recordResult(
-                        p.userId, p.displayName, "country_elimination", m_scoreParticipation, false);
+                        p.userId, p.displayName, "country_elimination", m_scoreParticipation, false, p.avatarUrl);
                 } catch (...) {}
             }
         }
@@ -909,7 +909,7 @@ void CountryElimination::endRound() {
                               std::to_string(m_roundNumber) + "!");
             try {
                 is::core::Application::instance().playerDatabase().recordResult(
-                    w.userId, w.displayName, "country_elimination", m_scoreWin, true);
+                    w.userId, w.displayName, "country_elimination", m_scoreWin, true, w.avatarUrl);
             } catch (...) {}
         }
     } else {

@@ -125,6 +125,12 @@ void StreamInstance::update(double dt) {
         m_scoreboardRefreshTimer = 0.0;
         updateScoreboardCache();
 
+        // Request avatar downloads for player scoreboard entries
+        for (const auto& e : m_playerAlltimeCache)
+            if (!e.avatarUrl.empty()) m_scoreboardAvatarCache.request(e.avatarUrl);
+        for (const auto& e : m_playerRecentCache)
+            if (!e.avatarUrl.empty()) m_scoreboardAvatarCache.request(e.avatarUrl);
+
         // Refresh round leaderboard from active game
         if (auto* game = m_gameManager->activeGame()) {
             m_playerRoundCache  = game->getLeaderboard();
@@ -137,6 +143,9 @@ void StreamInstance::update(double dt) {
         // Rebuild panel groups (panels may appear/disappear as caches change)
         rebuildScoreboardPanels();
     }
+
+    // Process pending avatar texture uploads (main thread only)
+    m_scoreboardAvatarCache.processPendingUploads(2);
 
     // Cycle scoreboard panel groups
     for (auto& [groupId, grp] : m_panelGroups) {
@@ -870,8 +879,12 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
         if (pc.contentType == "countries" && pc.showFlags) {
             flagDiameter = baseFontSize * pc.flagSize;
         }
+        float avatarDiameter = 0.0f;
+        if (pc.contentType == "players" && pc.showAvatars) {
+            avatarDiameter = baseFontSize * pc.avatarSize;
+        }
         float textLineH = baseFontSize * 1.6f;
-        float lineH = std::max(textLineH, flagDiameter + 4.0f);
+        float lineH = std::max(textLineH, std::max(flagDiameter, avatarDiameter) + 4.0f);
 
         float baseAlpha = std::clamp(pc.opacity, 0.0f, 1.0f);
 
@@ -907,10 +920,11 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
             return nameCol;
         };
 
-        // Collect entries as pairs (name, value) with optional country code
+        // Collect entries as pairs (name, value) with optional country code / avatar
         struct DisplayEntry {
             std::string name;
             std::string code; // country code for flag lookup (empty for players)
+            std::string avatarUrl; // avatar URL for player panels
             int value = 0;
         };
         std::vector<DisplayEntry> entries;
@@ -923,24 +937,24 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
             };
             if (pc.timeRange == "alltime") {
                 for (const auto& e : m_countryAlltimeCache)
-                    entries.push_back({resolveName(e.countryCode), e.countryCode, e.wins});
+                    entries.push_back({resolveName(e.countryCode), e.countryCode, {}, e.wins});
             } else if (pc.timeRange == "recent") {
                 for (const auto& e : m_countryRecentCache)
-                    entries.push_back({resolveName(e.countryCode), e.countryCode, e.wins});
+                    entries.push_back({resolveName(e.countryCode), e.countryCode, {}, e.wins});
             } else if (pc.timeRange == "round") {
                 for (const auto& [code, wins] : m_countryRoundCache)
-                    entries.push_back({resolveName(code), code, wins});
+                    entries.push_back({resolveName(code), code, {}, wins});
             }
         } else {
             if (pc.timeRange == "alltime") {
                 for (const auto& e : m_playerAlltimeCache)
-                    entries.push_back({e.displayName, {}, e.points});
+                    entries.push_back({e.displayName, {}, e.avatarUrl, e.points});
             } else if (pc.timeRange == "recent") {
                 for (const auto& e : m_playerRecentCache)
-                    entries.push_back({e.displayName, {}, e.points});
+                    entries.push_back({e.displayName, {}, e.avatarUrl, e.points});
             } else if (pc.timeRange == "round") {
                 for (const auto& [name, score] : m_playerRoundCache)
-                    entries.push_back({name, {}, score});
+                    entries.push_back({name, {}, {}, score});
             }
         }
 
@@ -1023,6 +1037,29 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
                     dot.setPosition(contentX, y + (lineH - flagDiameter) / 2.0f);
                     target.draw(dot);
                     contentX += flagDiameter + 6.0f;
+                }
+            }
+
+            // Draw avatar for player panels
+            if (pc.contentType == "players" && pc.showAvatars && !entry.avatarUrl.empty()) {
+                float avatarR = avatarDiameter / 2.0f;
+                const sf::Texture* avatarTex = m_scoreboardAvatarCache.getTexture(entry.avatarUrl);
+                if (avatarTex) {
+                    if (pc.avatarShape == "rect") {
+                        sf::RectangleShape avatarRect(sf::Vector2f(avatarDiameter, avatarDiameter));
+                        avatarRect.setTexture(avatarTex);
+                        avatarRect.setPosition(contentX, y + (lineH - avatarDiameter) / 2.0f);
+                        avatarRect.setFillColor(sf::Color(255, 255, 255, alpha));
+                        target.draw(avatarRect);
+                        contentX += avatarDiameter + 6.0f;
+                    } else {
+                        sf::CircleShape avatarCircle(avatarR);
+                        avatarCircle.setTexture(avatarTex);
+                        avatarCircle.setPosition(contentX, y + (lineH - avatarDiameter) / 2.0f);
+                        avatarCircle.setFillColor(sf::Color(255, 255, 255, alpha));
+                        target.draw(avatarCircle);
+                        contentX += avatarDiameter + 6.0f;
+                    }
                 }
             }
 

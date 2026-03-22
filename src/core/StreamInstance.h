@@ -4,6 +4,7 @@
 #include "core/PlayerDatabase.h"
 #include "core/ScoreboardConfig.h"
 #include "core/ChannelStats.h"
+#include "core/AvatarCache.h"
 #include "platform/ChatMessage.h"
 
 #include <SFML/Graphics.hpp>
@@ -318,6 +319,9 @@ private:
     std::unordered_map<std::string, sf::Texture> m_flagTextures;
     bool m_flagTexturesLoaded = false;
     void loadFlagTextures();
+
+    // Avatar cache for player panels (loaded on-demand)
+    AvatarCache m_scoreboardAvatarCache;
 
     // Periodic info message state
     double m_infoMessageTimer = 0.0;

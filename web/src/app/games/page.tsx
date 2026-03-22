@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Gamepad2, Save, RotateCcw, Type, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { Gamepad2, Save, RotateCcw, Type, AlignLeft, AlignCenter, AlignRight, Plus, Trash2, ArrowUpFromLine, ArrowDownToLine, Minus } from "lucide-react";
 import { api, GameInfo, TextElementData } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -220,6 +221,58 @@ export default function GamesPage() {
     setDirty(true);
   };
 
+  const addTextElement = (gameId: string) => {
+    setTextElements(prev => {
+      const elements = [...(prev[gameId] || [])];
+      const existingIds = new Set(elements.map(e => e.id));
+      let idx = 1;
+      while (existingIds.has(`custom_${idx}`)) idx++;
+      const newEl: TextElementData = {
+        id: `custom_${idx}`,
+        label: `Custom Text ${idx}`,
+        x: 50, y: 50,
+        font_size: 24,
+        align: "center",
+        align_y: "top",
+        visible: true,
+        color: "#FFFFFFFF",
+        content: "",
+      };
+      return { ...prev, [gameId]: [...elements, newEl] };
+    });
+    setDirty(true);
+  };
+
+  const removeTextElement = (gameId: string, elementId: string) => {
+    setTextElements(prev => {
+      const elements = [...(prev[gameId] || [])];
+      const idx = elements.findIndex(e => e.id === elementId);
+      if (idx === -1) return prev;
+      // If it's a game-default element, mark as deleted; if custom, remove entirely
+      const isDefault = (textDefaults[gameId] || []).some(d => d.id === elementId);
+      if (isDefault) {
+        elements[idx] = { ...elements[idx], _deleted: true, visible: false };
+      } else {
+        elements.splice(idx, 1);
+      }
+      return { ...prev, [gameId]: elements };
+    });
+    setDirty(true);
+  };
+
+  const restoreTextElement = (gameId: string, elementId: string) => {
+    const defaultEl = (textDefaults[gameId] || []).find(d => d.id === elementId);
+    if (!defaultEl) return;
+    setTextElements(prev => {
+      const elements = [...(prev[gameId] || [])];
+      const idx = elements.findIndex(e => e.id === elementId);
+      if (idx === -1) return prev;
+      elements[idx] = { ...JSON.parse(JSON.stringify(defaultEl)) };
+      return { ...prev, [gameId]: elements };
+    });
+    setDirty(true);
+  };
+
   const saveAll = async () => {
     try {
       // Merge text elements into settings payload
@@ -354,33 +407,45 @@ export default function GamesPage() {
               )}
 
               {/* Text layout editor */}
-              {elements.length > 0 && (
+              {(elements.length > 0 || true) && (
                 <>
                   {fields && <Separator />}
                   <div>
-                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <Type className="size-4" />
-                      Text Layout
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium flex items-center gap-2">
+                        <Type className="size-4" />
+                        Text Layout
+                      </h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addTextElement(game.id)}
+                      >
+                        <Plus className="mr-1 size-3.5" />
+                        Add Text
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground mb-4">
-                      Configure position (%), font size, alignment, color, visibility, and text content for each text element.
+                      Configure position (%), font size, alignment (horizontal &amp; vertical), color, visibility, and text content.
                     </p>
                     <div className="space-y-2">
                       {/* Header row */}
-                      <div className="hidden sm:grid sm:grid-cols-[1fr_72px_72px_72px_90px_100px_40px] gap-2 px-2 text-xs text-muted-foreground font-medium">
+                      <div className="hidden sm:grid sm:grid-cols-[1fr_64px_64px_56px_82px_82px_100px_36px_36px] gap-2 px-2 text-xs text-muted-foreground font-medium">
                         <span>Element</span>
                         <span>X %</span>
                         <span>Y %</span>
                         <span>Size</span>
-                        <span>Align</span>
+                        <span>Align X</span>
+                        <span>Align Y</span>
                         <span>Color</span>
                         <span className="text-center">Vis</span>
+                        <span></span>
                       </div>
-                      {elements.map((el) => (
+                      {elements.filter(el => !el._deleted).map((el) => (
                         <div
                           key={el.id}
                           className={cn(
-                            "grid grid-cols-2 sm:grid-cols-[1fr_72px_72px_72px_90px_100px_40px] gap-2 items-center rounded-md border p-2 transition-colors",
+                            "grid grid-cols-2 sm:grid-cols-[1fr_64px_64px_56px_82px_82px_100px_36px_36px] gap-2 items-center rounded-md border p-2 transition-colors",
                             !el.visible && "opacity-50 bg-muted/30"
                           )}
                         >
@@ -416,7 +481,7 @@ export default function GamesPage() {
                             className="h-8 text-xs"
                           />
 
-                          {/* Align */}
+                          {/* Align X */}
                           <Select
                             value={el.align}
                             onValueChange={(v) => updateTextElement(game.id, el.id, "align", v)}
@@ -433,6 +498,27 @@ export default function GamesPage() {
                               </SelectItem>
                               <SelectItem value="right">
                                 <AlignRight className="size-3.5 mr-1 inline" /> Right
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+
+                          {/* Align Y */}
+                          <Select
+                            value={el.align_y || "top"}
+                            onValueChange={(v) => updateTextElement(game.id, el.id, "align_y", v)}
+                          >
+                            <SelectTrigger size="sm" className="h-8 text-xs w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="top">
+                                <ArrowUpFromLine className="size-3.5 mr-1 inline" /> Top
+                              </SelectItem>
+                              <SelectItem value="center">
+                                <Minus className="size-3.5 mr-1 inline" /> Center
+                              </SelectItem>
+                              <SelectItem value="bottom">
+                                <ArrowDownToLine className="size-3.5 mr-1 inline" /> Bottom
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -457,8 +543,8 @@ export default function GamesPage() {
                                 <Input
                                   value={el.color || ""}
                                   onChange={(e) => updateTextElement(game.id, el.id, "color", e.target.value)}
-                                  placeholder={defaultColor || "Game default"}
-                                  className="h-8 text-xs w-[80px] font-mono"
+                                  placeholder={defaultColor || "Default"}
+                                  className="h-8 text-xs w-15 font-mono"
                                 />
                               </div>
                             );
@@ -473,17 +559,51 @@ export default function GamesPage() {
                             />
                           </div>
 
-                          {/* Content override */}
+                          {/* Delete button */}
+                          <div className="flex justify-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeTextElement(game.id, el.id)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+
+                          {/* Content override (multi-line) */}
                           <div className="col-span-2 sm:col-span-full">
-                            <Input
+                            <Textarea
                               value={el.content || ""}
                               onChange={(e) => updateTextElement(game.id, el.id, "content", e.target.value)}
-                              placeholder="Custom text (leave empty for default)"
-                              className="h-7 text-xs"
+                              placeholder="Custom text (leave empty for default). Supports multiple lines."
+                              className="min-h-7 text-xs resize-y"
+                              rows={1}
                             />
                           </div>
                         </div>
                       ))}
+
+                      {/* Show deleted default elements with restore option */}
+                      {elements.filter(el => el._deleted).length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-dashed">
+                          <p className="text-xs text-muted-foreground mb-2">Removed elements (click to restore):</p>
+                          <div className="flex flex-wrap gap-1">
+                            {elements.filter(el => el._deleted).map(el => (
+                              <Button
+                                key={el.id}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => restoreTextElement(game.id, el.id)}
+                              >
+                                <RotateCcw className="mr-1 size-3" />
+                                {el.label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>

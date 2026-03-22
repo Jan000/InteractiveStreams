@@ -13,6 +13,7 @@ namespace is::core {
 struct ScoreEntry {
     std::string userId;
     std::string displayName;
+    std::string avatarUrl;
     std::string gameName;
     int points = 0;
     int wins = 0;
@@ -48,11 +49,13 @@ public:
     /// @param gameName  Game ID (e.g. "chaos_arena").
     /// @param points    Points awarded (e.g. 1 for win, 0 for participation).
     /// @param isWin     Whether this counts as a win.
+    /// @param avatarUrl Optional avatar URL for scoreboard display.
     void recordResult(const std::string& userId,
                       const std::string& displayName,
                       const std::string& gameName,
                       int points,
-                      bool isWin);
+                      bool isWin,
+                      const std::string& avatarUrl = "");
 
     // ── Leaderboard queries ──────────────────────────────────────────────
 

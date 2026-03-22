@@ -91,6 +91,9 @@ const defaultPanel = (
   show_names: true,
   show_codes: false,
   value_label: contentType === "countries" ? "wins" : "pts",
+  show_avatars: false,
+  avatar_shape: "circle",
+  avatar_size: 1.0,
 });
 
 const defaultConfig: ScoreboardConfig = {
@@ -549,6 +552,46 @@ export default function ScoreboardPage() {
                     step={0.1}
                     value={p.flag_size}
                     onChange={(v) => updatePanel(index, "flag_size", v)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Player-specific: Avatar settings */}
+            {!isCountry && (
+              <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Show Avatars</Label>
+                  <Switch
+                    size="sm"
+                    checked={p.show_avatars}
+                    onCheckedChange={(v) => updatePanel(index, "show_avatars", v)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Avatar Shape</Label>
+                  <Select
+                    value={p.avatar_shape}
+                    onValueChange={(v) => updatePanel(index, "avatar_shape", v)}
+                  >
+                    <SelectTrigger className="h-8 text-sm w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="circle">Circle</SelectItem>
+                      <SelectItem value="rect">Rectangle</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 w-20">
+                  <Label className="text-xs text-muted-foreground">Avatar Size</Label>
+                  <NumericInput
+                    className="h-8 text-sm"
+                    min={0.3}
+                    max={3.0}
+                    step={0.1}
+                    value={p.avatar_size}
+                    onChange={(v) => updatePanel(index, "avatar_size", v)}
                   />
                 </div>
               </div>

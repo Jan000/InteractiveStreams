@@ -107,9 +107,11 @@ export interface TextElementData {
   y: number;
   font_size: number;
   align: "left" | "center" | "right";
+  align_y: "top" | "center" | "bottom";
   visible: boolean;
   color: string;
   content: string;
+  _deleted?: boolean;  // mark for deletion
 }
 
 export interface ScoreEntry {
@@ -154,6 +156,9 @@ export interface ScoreboardPanelConfig {
   show_names: boolean;
   show_codes: boolean;
   value_label: string;    // e.g. "pts", "wins"
+  show_avatars: boolean;
+  avatar_shape: string;   // "circle" | "rect"
+  avatar_size: number;    // multiplier
 }
 
 export interface ScoreboardConfig {
