@@ -37,9 +37,11 @@ public:
     using IGame::registerTextElement;
     using IGame::resolve;
     using IGame::applyTextLayout;
+    using IGame::renderCustomTextElements;
     using IGame::te;
     using IGame::parseHexColor;
     using IGame::m_textElements;
+    using IGame::m_nativeTextIds;
     using IGame::m_fontScale;
 };
 
@@ -320,6 +322,29 @@ TEST_SUITE("registerTextElement & management") {
         CHECK(j[1]["id"] == "t2");
         CHECK(j[1]["align"] == "left");
         CHECK(j[1]["align_y"] == "bottom");
+    }
+
+    TEST_CASE("registerTextElement populates native ID set") {
+        TestGame game;
+        game.registerTextElement("title", "Title", 0.f, 2.f, 32);
+        game.registerTextElement("phase", "Phase", 0.f, 5.f, 22);
+        CHECK(game.m_nativeTextIds.count("title") == 1);
+        CHECK(game.m_nativeTextIds.count("phase") == 1);
+        CHECK(game.m_nativeTextIds.count("custom") == 0);
+    }
+
+    TEST_CASE("Custom elements via applyTextOverrides are NOT in native ID set") {
+        TestGame game;
+        game.registerTextElement("title", "Title", 0.f, 2.f, 32);
+
+        nlohmann::json overrides = nlohmann::json::array();
+        overrides.push_back({{"id", "custom1"}, {"label", "Custom"}, {"x", 10.0}, {"y", 20.0},
+                             {"font_size", 18}, {"content", "Hello"}});
+        game.applyTextOverrides(overrides);
+
+        CHECK(game.m_nativeTextIds.count("title") == 1);
+        CHECK(game.m_nativeTextIds.count("custom1") == 0);
+        CHECK(game.te("custom1") != nullptr);
     }
 
 } // TEST_SUITE registerTextElement

@@ -6,6 +6,7 @@
 #include <vector>
 #include <utility>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <nlohmann/json.hpp>
 
@@ -324,6 +325,32 @@ protected:
                              const std::string& defaultColor = "",
                              const std::string& defaultAlignY = "top") {
         m_textElements.push_back({id, label, x, y, fontSize, align, defaultAlignY, visible, defaultColor});
+        m_nativeTextIds.insert(id);
+    }
+
+    /// Render custom (user-created) text elements that are not natively handled
+    /// by the game's own render code.  Call at the end of render().
+    void renderCustomTextElements(sf::RenderTarget& target, const sf::Font& font) {
+        auto sz = target.getSize();
+        float w = static_cast<float>(sz.x);
+        float h = static_cast<float>(sz.y);
+        for (const auto& elem : m_textElements) {
+            if (m_nativeTextIds.count(elem.id)) continue;
+            if (!elem.visible) continue;
+            if (elem.content.empty()) continue;
+            auto r = resolve(elem.id, w, h);
+            if (!r.visible) continue;
+            sf::Text t;
+            t.setFont(font);
+            t.setString(r.content);
+            sf::Color col(255, 255, 255, 255);
+            parseHexColor(r.color, col);
+            t.setFillColor(col);
+            t.setOutlineColor(sf::Color(0, 0, 0, 180));
+            t.setOutlineThickness(1.5f);
+            applyTextLayout(t, r);
+            target.draw(t);
+        }
     }
 
     /// Fetch audio spectrum.  Returns false when no data (e.g. no audio mixer).
@@ -336,6 +363,7 @@ protected:
     ChatFeedbackCallback m_chatFeedback;
     SpectrumCallback m_spectrumCallback;
     std::vector<TextElement> m_textElements;
+    std::unordered_set<std::string> m_nativeTextIds;
 };
 
 } // namespace is::games

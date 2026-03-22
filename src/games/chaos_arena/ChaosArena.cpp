@@ -939,6 +939,7 @@ void ChaosArena::render(sf::RenderTarget& target, double alpha) {
     renderPlayers(target, alpha);
     renderParticles(target);
     renderUI(target);
+    renderCustomTextElements(target, m_font);
 
     // Post-processing: vignette, bloom, chromatic aberration, scanlines
     // Effects need sf::RenderTexture – cast from the generic target

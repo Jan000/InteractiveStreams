@@ -512,6 +512,8 @@ void ColorConquest::render(sf::RenderTarget& target, double /*alpha*/) {
             }
         }
     }
+
+    renderCustomTextElements(target, m_font);
 }
 
 void ColorConquest::renderGrid(sf::RenderTarget& target) {

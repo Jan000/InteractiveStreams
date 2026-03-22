@@ -2410,6 +2410,8 @@ void GravityBrawl::render(sf::RenderTarget& target, double alpha) {
     // In-game leaderboard removed; global scoreboard overlay handles it
 
     // GameOver scoreboard
+    renderCustomTextElements(target, m_font);
+
     // Post-processing
     if (m_enablePostProcessing) {
         auto* rt = dynamic_cast<sf::RenderTexture*>(&target);

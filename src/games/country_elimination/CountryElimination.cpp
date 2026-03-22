@@ -1466,6 +1466,8 @@ void CountryElimination::render(sf::RenderTarget& target, double alpha) {
     if (m_phase == GamePhase::RoundEnd)
         renderWinnerOverlay(target, L);
 
+    renderCustomTextElements(target, m_font);
+
     if (auto* rt = dynamic_cast<sf::RenderTexture*>(&target)) {
         m_postProcessing.applyVignette(*rt, 0.45f);
     }
