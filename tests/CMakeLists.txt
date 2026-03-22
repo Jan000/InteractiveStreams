@@ -25,6 +25,7 @@ set(TEST_SOURCES
     test_Grid.cpp
     test_ColorConquest.cpp
     test_GravityBrawl.cpp
+    test_TextLayout.cpp
 )
 
 # ─── Tested source files (no main.cpp) ───────────────────────────────────────
