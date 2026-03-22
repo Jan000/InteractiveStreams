@@ -306,7 +306,11 @@ export function ChannelCard({ channel, onRefresh }: ChannelCardProps) {
       // Local
       setConsoleInput((s.console_input as boolean) ?? true);
     }
-  }, [channel, dirty]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dirty is intentionally excluded:
+    // We read it inside the effect body as a guard, but must NOT trigger on dirty changes.
+    // When handleSave() flips dirty→false, `channel` still holds stale polling data;
+    // re-hydrating from it would overwrite the just-saved values (race condition).
+  }, [channel]);
 
   const markDirty = useCallback(
     <T,>(setter: React.Dispatch<React.SetStateAction<T>>) =>
