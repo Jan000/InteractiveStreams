@@ -862,8 +862,6 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
         float padX   = 12.0f;
         float padY   = 8.0f;
         float panelW = w * (pc.boxWidthPct / 100.0f);
-        float panelX = w * (pc.posXPct / 100.0f);
-        float panelY = h * (pc.posYPct / 100.0f);
         float headerH = headerFontSize * 1.8f;
 
         // Compute line height — account for flag/avatar size to prevent overlap
@@ -945,6 +943,17 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
         int count = std::min(static_cast<int>(entries.size()), pc.topN);
         float panelH = headerH + static_cast<float>(count) * lineH + padY * 2.0f;
 
+        // Compute panel position based on alignment
+        float offsetX = w * (pc.posXPct / 100.0f);
+        float offsetY = h * (pc.posYPct / 100.0f);
+        float panelX, panelY;
+        if (pc.alignX == "right")       panelX = w - panelW - offsetX;
+        else if (pc.alignX == "center") panelX = (w - panelW) / 2.0f + offsetX;
+        else                            panelX = offsetX; // "left"
+        if (pc.alignY == "bottom")      panelY = h - panelH - offsetY;
+        else if (pc.alignY == "center") panelY = (h - panelH) / 2.0f + offsetY;
+        else                            panelY = offsetY; // "top"
+
         // Background
         sf::RectangleShape bg(sf::Vector2f(panelW, panelH));
         bg.setPosition(panelX, panelY);
@@ -1025,6 +1034,15 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
                 displayText += entry.name;
             }
 
+            // Pre-compute value text position (right-aligned in panel)
+            std::string valStr = std::to_string(entry.value) + " " + pc.valueLabel;
+            sf::Text ptsText;
+            ptsText.setFont(m_font);
+            ptsText.setString(valStr);
+            ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
+            auto pb = ptsText.getLocalBounds();
+            float valX = panelX + panelW - pb.width - pb.left - padX;
+
             if (pc.showNames || pc.contentType == "players") {
                 sf::Text nameText;
                 nameText.setFont(m_font);
@@ -1032,18 +1050,27 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
                 nameText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
                 nameText.setFillColor(nameColorForRank(rank));
                 nameText.setPosition(contentX, textY);
+
+                // Truncate name text if it would overlap the value column
+                float maxNameW = valX - contentX - 6.0f;
+                if (maxNameW > 0) {
+                    auto nb = nameText.getLocalBounds();
+                    if (nb.width > maxNameW) {
+                        // Binary-search-style truncation: trim characters + add ellipsis
+                        sf::String s = nameText.getString();
+                        while (s.getSize() > 1) {
+                            s = s.substring(0, s.getSize() - 1);
+                            nameText.setString(s + "...");
+                            if (nameText.getLocalBounds().width <= maxNameW) break;
+                        }
+                    }
+                }
                 target.draw(nameText);
             }
 
-            // Value text
-            std::string valStr = std::to_string(entry.value) + " " + pc.valueLabel;
-            sf::Text ptsText;
-            ptsText.setFont(m_font);
-            ptsText.setString(valStr);
-            ptsText.setCharacterSize(static_cast<unsigned int>(baseFontSize));
+            // Draw value text (right-aligned)
             ptsText.setFillColor(ptsCol);
-            auto pb = ptsText.getLocalBounds();
-            ptsText.setPosition(panelX + panelW - pb.width - padX, textY);
+            ptsText.setPosition(valX, textY);
             target.draw(ptsText);
 
             y += lineH;

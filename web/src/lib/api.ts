@@ -131,6 +131,8 @@ export interface ScoreboardPanelConfig {
   box_width_pct: number;
   pos_x_pct: number;
   pos_y_pct: number;
+  align_x: string;    // "left" | "center" | "right"
+  align_y: string;    // "top" | "center" | "bottom"
   opacity: number;
   bg_color: string;
   border_color: string;

@@ -16,6 +16,8 @@ struct ScoreboardPanelConfig {
     float       boxWidthPct  = 30.0f;  ///< % of screen width
     float       posXPct      = 70.0f;  ///< X position, % from left (left edge of box)
     float       posYPct      = 1.0f;   ///< Y position, % from top
+    std::string alignX       = "left";  ///< "left", "center", "right"
+    std::string alignY       = "top";   ///< "top", "center", "bottom"
     float       opacity      = 0.7f;   ///< Overall panel opacity (0-1)
     std::string bgColor      = "#0A0A14";
     std::string borderColor  = "#5082C8";
@@ -49,6 +51,8 @@ struct ScoreboardPanelConfig {
             {"box_width_pct", boxWidthPct},
             {"pos_x_pct",     posXPct},
             {"pos_y_pct",     posYPct},
+            {"align_x",       alignX},
+            {"align_y",       alignY},
             {"opacity",       opacity},
             {"bg_color",      bgColor},
             {"border_color",  borderColor},
@@ -90,6 +94,8 @@ inline ScoreboardPanelConfig ScoreboardPanelConfig::fromJson(
     c.boxWidthPct  = j.value("box_width_pct", def.boxWidthPct);
     c.posXPct      = j.value("pos_x_pct",     def.posXPct);
     c.posYPct      = j.value("pos_y_pct",     def.posYPct);
+    c.alignX       = j.value("align_x",       def.alignX);
+    c.alignY       = j.value("align_y",       def.alignY);
     c.opacity      = j.value("opacity",        def.opacity);
     c.bgColor      = j.value("bg_color",      def.bgColor);
     c.borderColor  = j.value("border_color",  def.borderColor);

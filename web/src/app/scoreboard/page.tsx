@@ -69,6 +69,8 @@ const defaultPanel = (
   box_width_pct: 30,
   pos_x_pct: 70,
   pos_y_pct: 1,
+  align_x: "left",
+  align_y: "top",
   opacity: 0.7,
   bg_color: "#0A0A14",
   border_color: "#5082C8",
@@ -616,7 +618,7 @@ export default function ScoreboardPage() {
                 </Label>
                 <NumericInput
                   className="h-8 text-sm"
-                  min={0}
+                  min={-100}
                   max={100}
                   value={p.pos_x_pct}
                   onChange={(v) => updatePanel(index, "pos_x_pct", v)}
@@ -628,7 +630,7 @@ export default function ScoreboardPage() {
                 </Label>
                 <NumericInput
                   className="h-8 text-sm"
-                  min={0}
+                  min={-100}
                   max={100}
                   value={p.pos_y_pct}
                   onChange={(v) => updatePanel(index, "pos_y_pct", v)}
@@ -645,6 +647,46 @@ export default function ScoreboardPage() {
                   value={p.box_width_pct}
                   onChange={(v) => updatePanel(index, "box_width_pct", v)}
                 />
+              </div>
+            </div>
+
+            {/* Alignment */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Align X
+                </Label>
+                <Select
+                  value={p.align_x || "left"}
+                  onValueChange={(v) => updatePanel(index, "align_x", v)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="center">Center</SelectItem>
+                    <SelectItem value="right">Right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Align Y
+                </Label>
+                <Select
+                  value={p.align_y || "top"}
+                  onValueChange={(v) => updatePanel(index, "align_y", v)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="top">Top</SelectItem>
+                    <SelectItem value="center">Center</SelectItem>
+                    <SelectItem value="bottom">Bottom</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
