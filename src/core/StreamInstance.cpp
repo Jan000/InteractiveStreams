@@ -5,6 +5,7 @@
 #include "core/ChannelManager.h"
 #include "rendering/Renderer.h"
 #include "games/GameRegistry.h"
+#include "games/country_elimination/CountryAliases.h"
 #include "streaming/StreamEncoder.h"
 #include "platform/twitch/TwitchApi.h"
 #include "platform/youtube/YouTubeApi.h"
@@ -915,15 +916,20 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
         std::vector<DisplayEntry> entries;
 
         if (pc.contentType == "countries") {
+            const auto& countryNames = is::games::country_elimination::getCountryDisplayNames();
+            auto resolveName = [&](const std::string& code) -> std::string {
+                auto it = countryNames.find(code);
+                return (it != countryNames.end()) ? it->second : code;
+            };
             if (pc.timeRange == "alltime") {
                 for (const auto& e : m_countryAlltimeCache)
-                    entries.push_back({e.countryCode, e.countryCode, e.wins});
+                    entries.push_back({resolveName(e.countryCode), e.countryCode, e.wins});
             } else if (pc.timeRange == "recent") {
                 for (const auto& e : m_countryRecentCache)
-                    entries.push_back({e.countryCode, e.countryCode, e.wins});
+                    entries.push_back({resolveName(e.countryCode), e.countryCode, e.wins});
             } else if (pc.timeRange == "round") {
                 for (const auto& [code, wins] : m_countryRoundCache)
-                    entries.push_back({code, code, wins});
+                    entries.push_back({resolveName(code), code, wins});
             }
         } else {
             if (pc.timeRange == "alltime") {

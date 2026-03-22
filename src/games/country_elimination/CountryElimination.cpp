@@ -2414,6 +2414,28 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
         target.draw(t);
     }
 
+    // ── Country name for real players (educational: learn flags) ──
+    float belowNameOffset = 0.0f;
+    if (!w.isBot() && !w.label.empty()) {
+        std::string labelUp = w.label;
+        for (auto& c : labelUp) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        const auto& countryNames = getCountryDisplayNames();
+        auto it = countryNames.find(labelUp);
+        std::string countryDisplay = (it != countryNames.end()) ? it->second : w.label;
+        sf::Text t;
+        t.setFont(m_font);
+        t.setString(countryDisplay);
+        t.setCharacterSize(fs(24));
+        t.setFillColor(sf::Color(180, 210, 255, static_cast<sf::Uint8>(200 * fadeIn)));
+        t.setOutlineColor(sf::Color(0, 0, 0, static_cast<sf::Uint8>(150 * fadeIn)));
+        t.setOutlineThickness(1.5f);
+        auto lb = t.getLocalBounds();
+        t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
+        t.setPosition(cx, nameY + 32.0f);
+        target.draw(t);
+        belowNameOffset = 30.0f;
+    }
+
     // ── Wins count ──
     {
         int wins = 0;
@@ -2429,7 +2451,7 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
         t.setOutlineThickness(1.0f);
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(cx, nameY + 40.0f);
+        t.setPosition(cx, nameY + 40.0f + belowNameOffset);
         target.draw(t);
     }
 
@@ -2443,7 +2465,7 @@ void CountryElimination::renderWinnerOverlay(sf::RenderTarget& target, const Scr
         t.setFillColor(sf::Color(180, 180, 180, static_cast<sf::Uint8>(150 * fadeIn)));
         auto lb = t.getLocalBounds();
         t.setOrigin(lb.left + lb.width / 2.0f, lb.top + lb.height / 2.0f);
-        t.setPosition(cx, nameY + 80.0f);
+        t.setPosition(cx, nameY + 80.0f + belowNameOffset);
         target.draw(t);
     }
 }
