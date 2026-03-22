@@ -7,6 +7,7 @@ import {
   type ScoreboardConfig,
   type ScoreboardPanelConfig,
   type PlayerEntry,
+  type CountryEntry,
 } from "@/lib/api";
 import {
   Card,
@@ -50,6 +51,8 @@ import {
   Plus,
   Copy,
   GripVertical,
+  Search,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -140,6 +143,11 @@ export default function ScoreboardPage() {
   const [players, setPlayers] = useState<PlayerEntry[]>([]);
   const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
   const [editPoints, setEditPoints] = useState(0);
+  const [playerSearch, setPlayerSearch] = useState("");
+
+  // Country management state
+  const [countries, setCountries] = useState<CountryEntry[]>([]);
+  const [countrySearch, setCountrySearch] = useState("");
 
   // Live leaderboard
   const [recent, setRecent] = useState<ScoreEntry[]>([]);
@@ -168,6 +176,15 @@ export default function ScoreboardPage() {
     }
   }, []);
 
+  const fetchCountries = useCallback(async () => {
+    try {
+      const res = await api.getScoreboardCountries();
+      setCountries(res.countries ?? []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const topN = config.panels.length > 0 ? config.panels[0].top_n : 5;
 
   const fetchLeaderboards = useCallback(async () => {
@@ -186,7 +203,8 @@ export default function ScoreboardPage() {
   useEffect(() => {
     fetchConfig();
     fetchPlayers();
-  }, [fetchConfig, fetchPlayers]);
+    fetchCountries();
+  }, [fetchConfig, fetchPlayers, fetchCountries]);
 
   useEffect(() => {
     fetchLeaderboards();
@@ -271,7 +289,7 @@ export default function ScoreboardPage() {
 
   const handleEditPoints = async (userId: string) => {
     try {
-      await api.updatePlayer(userId, { total_points: editPoints });
+      await api.updatePlayer(userId, { points: editPoints });
       toast.success("Points updated");
       setEditingPlayer(null);
       fetchPlayers();
@@ -289,6 +307,38 @@ export default function ScoreboardPage() {
         hidden_players: prev.hidden_players.filter((id) => id !== userId),
       }));
       fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleResetAllPlayers = async () => {
+    if (!confirm("Reset ALL player data? This deletes all players, scores, and game history. This cannot be undone.")) return;
+    try {
+      await api.resetAllPlayers();
+      toast.success("All players reset");
+      fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleDeleteCountry = async (code: string) => {
+    try {
+      await api.deleteCountryWins(code);
+      toast.success(`Wins for ${code} deleted`);
+      fetchCountries();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleResetAllCountries = async () => {
+    if (!confirm("Reset ALL country wins? This cannot be undone.")) return;
+    try {
+      await api.resetAllCountryWins();
+      toast.success("All country wins reset");
+      fetchCountries();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     }
@@ -934,6 +984,16 @@ export default function ScoreboardPage() {
             <Badge variant="secondary" className="text-xs ml-auto">
               {players.length} players
             </Badge>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="ml-2"
+              onClick={handleResetAllPlayers}
+              disabled={players.length === 0}
+            >
+              <RotateCcw className="size-3.5 mr-1" />
+              Reset All
+            </Button>
           </div>
           <CardDescription className="text-xs">
             Hide, edit scores, or delete players. Hidden players are excluded
@@ -947,7 +1007,18 @@ export default function ScoreboardPage() {
               <p className="text-sm">No players yet</p>
             </div>
           ) : (
-            <div className="space-y-1 max-h-[400px] overflow-y-auto">
+            <div className="space-y-2">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                <Input
+                  className="h-8 pl-8 text-sm"
+                  placeholder="Search players…"
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1 max-h-[400px] overflow-y-auto">
               {/* Header */}
               <div className="grid grid-cols-[1fr_100px_80px_80px_100px] gap-2 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 <span>Player</span>
@@ -957,7 +1028,13 @@ export default function ScoreboardPage() {
                 <span className="text-right">Actions</span>
               </div>
               <Separator />
-              {players.map((player) => {
+              {players
+                .filter((p) => {
+                  if (!playerSearch) return true;
+                  const q = playerSearch.toLowerCase();
+                  return p.displayName.toLowerCase().includes(q) || p.userId.toLowerCase().includes(q);
+                })
+                .map((player) => {
                 const isHidden = config.hidden_players.includes(player.userId);
                 const isEditing = editingPlayer === player.userId;
                 return (
@@ -1059,6 +1136,94 @@ export default function ScoreboardPage() {
                   </div>
                 );
               })}
+            </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Country Management */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Flag className="size-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Country Management
+            </CardTitle>
+            <Badge variant="secondary" className="text-xs ml-auto">
+              {countries.length} countries
+            </Badge>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="ml-2"
+              onClick={handleResetAllCountries}
+              disabled={countries.length === 0}
+            >
+              <RotateCcw className="size-3.5 mr-1" />
+              Reset All
+            </Button>
+          </div>
+          <CardDescription className="text-xs">
+            View and manage country wins from Country Elimination.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {countries.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+              <Flag className="size-8" />
+              <p className="text-sm">No country wins yet</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                <Input
+                  className="h-8 pl-8 text-sm"
+                  placeholder="Search countries…"
+                  value={countrySearch}
+                  onChange={(e) => setCountrySearch(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                {/* Header */}
+                <div className="grid grid-cols-[1fr_100px_80px] gap-2 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Country</span>
+                  <span className="text-right">Wins</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                <Separator />
+                {countries
+                  .filter((c) => {
+                    if (!countrySearch) return true;
+                    return c.countryCode.toLowerCase().includes(countrySearch.toLowerCase());
+                  })
+                  .map((country) => (
+                    <div
+                      key={country.countryCode}
+                      className="grid grid-cols-[1fr_100px_80px] gap-2 items-center px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted/70"
+                    >
+                      <span className="text-sm font-medium">
+                        {country.countryCode}
+                      </span>
+                      <span className="text-sm text-right font-mono">
+                        {country.wins}
+                      </span>
+                      <div className="flex items-center gap-1 justify-end">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteCountry(country.countryCode)}
+                          title="Delete country wins"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
         </CardContent>

@@ -419,8 +419,8 @@ nlohmann::json PlayerDatabase::getAllPlayers() const {
         arr.push_back({
             {"userId",      reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))},
             {"displayName", reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))},
-            {"points",      sqlite3_column_int(stmt, 2)},
-            {"wins",        sqlite3_column_int(stmt, 3)},
+            {"totalPoints", sqlite3_column_int(stmt, 2)},
+            {"totalWins",   sqlite3_column_int(stmt, 3)},
             {"gamesPlayed", sqlite3_column_int(stmt, 4)},
             {"lastPlayed",  sqlite3_column_double(stmt, 5)}
         });
@@ -535,6 +535,67 @@ std::vector<CountryWinEntry> PlayerDatabase::getTopCountriesRecent(int limit, in
     }
     sqlite3_finalize(stmt);
     return results;
+}
+
+// ── Reset all players ────────────────────────────────────────────────────────
+
+bool PlayerDatabase::resetAllPlayers() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return false;
+
+    sqlite3_exec(m_db, "DELETE FROM game_results;", nullptr, nullptr, nullptr);
+    sqlite3_exec(m_db, "DELETE FROM players;", nullptr, nullptr, nullptr);
+    spdlog::info("[PlayerDB] All players and game results reset.");
+    return true;
+}
+
+// ── Country management ───────────────────────────────────────────────────────
+
+nlohmann::json PlayerDatabase::getAllCountries() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    nlohmann::json arr = nlohmann::json::array();
+    if (!m_db) return arr;
+
+    const char* sql = R"(
+        SELECT country_code, COUNT(*) as win_count
+        FROM country_wins
+        GROUP BY country_code
+        ORDER BY win_count DESC;
+    )";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        arr.push_back({
+            {"countryCode", reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))},
+            {"wins",        sqlite3_column_int(stmt, 1)}
+        });
+    }
+    sqlite3_finalize(stmt);
+    return arr;
+}
+
+bool PlayerDatabase::deleteCountryWins(const std::string& countryCode) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return false;
+
+    const char* sql = "DELETE FROM country_wins WHERE country_code = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, countryCode.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    int changes = sqlite3_changes(m_db);
+    sqlite3_finalize(stmt);
+    return changes > 0;
+}
+
+bool PlayerDatabase::resetAllCountryWins() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return false;
+
+    sqlite3_exec(m_db, "DELETE FROM country_wins;", nullptr, nullptr, nullptr);
+    spdlog::info("[PlayerDB] All country wins reset.");
+    return true;
 }
 
 } // namespace is::core

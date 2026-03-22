@@ -180,6 +180,11 @@ export interface PlayerEntry {
   hidden: boolean;
 }
 
+export interface CountryEntry {
+  countryCode: string;
+  wins: number;
+}
+
 export interface PerfSample {
   time: number;
   fps: number;
@@ -404,10 +409,20 @@ export const api = {
     put<{ success: boolean }>("/api/scoreboard/config", data),
   getScoreboardPlayers: () =>
     get<{ players: PlayerEntry[] }>("/api/scoreboard/players"),
-  updatePlayer: (userId: string, data: { total_points: number }) =>
+  updatePlayer: (userId: string, data: { points: number }) =>
     put<{ success: boolean }>(`/api/scoreboard/players/${encodeURIComponent(userId)}`, data),
   deletePlayer: (userId: string) =>
     del<{ success: boolean }>(`/api/scoreboard/players/${encodeURIComponent(userId)}`),
+  resetAllPlayers: () =>
+    del<{ success: boolean }>("/api/scoreboard/players"),
+
+  // Country management
+  getScoreboardCountries: () =>
+    get<{ countries: CountryEntry[] }>("/api/scoreboard/countries"),
+  deleteCountryWins: (code: string) =>
+    del<{ success: boolean }>(`/api/scoreboard/countries/${encodeURIComponent(code)}`),
+  resetAllCountryWins: () =>
+    del<{ success: boolean }>("/api/scoreboard/countries"),
 
   // Twitch OAuth
   getTwitchAuthUrl: (channelId: string) =>

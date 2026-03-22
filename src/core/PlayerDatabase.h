@@ -98,6 +98,9 @@ public:
     /// Delete a player record entirely.
     bool deletePlayer(const std::string& userId);
 
+    /// Delete ALL players and game results (full reset).
+    bool resetAllPlayers();
+
     // ── Country wins ─────────────────────────────────────────────────────
 
     /// Record a country round-win.
@@ -108,6 +111,15 @@ public:
 
     /// Top N countries by wins in the last `hours` hours.
     std::vector<CountryWinEntry> getTopCountriesRecent(int limit = 10, int hours = 24) const;
+
+    /// Get all countries with win counts (for admin management).
+    nlohmann::json getAllCountries() const;
+
+    /// Delete all wins for a specific country code.
+    bool deleteCountryWins(const std::string& countryCode);
+
+    /// Delete ALL country wins (full reset).
+    bool resetAllCountryWins();
 
     // ── JSON serialisation ───────────────────────────────────────────────
 

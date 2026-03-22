@@ -1380,6 +1380,12 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         }
     });
 
+    // Reset all players
+    server.Delete("/api/scoreboard/players", [&app](const httplib::Request&, httplib::Response& res) {
+        app.playerDatabase().resetAllPlayers();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
     server.Delete(R"(/api/scoreboard/players/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
         auto userId = pathParam(req);
         if (app.playerDatabase().deletePlayer(userId)) {
@@ -1387,6 +1393,31 @@ void ApiRoutes::setup(httplib::Server& server, core::Application& app) {
         } else {
             res.status = 404;
             res.set_content(R"({"error":"Player not found"})", "application/json");
+        }
+    });
+
+    // ── Country management ────────────────────────────────────────────────
+
+    // Get all countries with win counts
+    server.Get("/api/scoreboard/countries", [&app](const httplib::Request&, httplib::Response& res) {
+        auto countries = app.playerDatabase().getAllCountries();
+        res.set_content(nlohmann::json({{"countries", countries}}).dump(2), "application/json");
+    });
+
+    // Reset all country wins
+    server.Delete("/api/scoreboard/countries", [&app](const httplib::Request&, httplib::Response& res) {
+        app.playerDatabase().resetAllCountryWins();
+        res.set_content(R"({"success":true})", "application/json");
+    });
+
+    // Delete wins for a specific country
+    server.Delete(R"(/api/scoreboard/countries/([^/]+))", [&app](const httplib::Request& req, httplib::Response& res) {
+        auto code = pathParam(req);
+        if (app.playerDatabase().deleteCountryWins(code)) {
+            res.set_content(R"({"success":true})", "application/json");
+        } else {
+            res.status = 404;
+            res.set_content(R"({"error":"Country not found"})", "application/json");
         }
     });
 
