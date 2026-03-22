@@ -1035,7 +1035,7 @@ void StreamInstance::renderGlobalScoreboardTo(sf::RenderTexture& target) {
             }
 
             // Pre-compute value text position (right-aligned in panel)
-            std::string valStr = std::to_string(entry.value) + " " + pc.valueLabel;
+            std::string valStr = std::to_string(entry.value) + (pc.valueLabel.empty() ? "" : " " + pc.valueLabel);
             sf::Text ptsText;
             ptsText.setFont(m_font);
             ptsText.setString(valStr);
@@ -1119,7 +1119,7 @@ void StreamInstance::sendScoreboardToChat() {
                 for (const auto& e : *data) {
                     if (rank > 1) chatMsg += " | ";
                     chatMsg += "#" + std::to_string(rank) + " " + e.countryCode
-                             + " (" + std::to_string(e.wins) + " " + pc.valueLabel + ")";
+                             + " (" + std::to_string(e.wins) + (pc.valueLabel.empty() ? "" : " " + pc.valueLabel) + ")";
                     if (++rank > 5) break;
                 }
                 msg = chatMsg;
@@ -1127,7 +1127,7 @@ void StreamInstance::sendScoreboardToChat() {
                 for (const auto& [code, wins] : m_countryRoundCache) {
                     if (rank > 1) chatMsg += " | ";
                     chatMsg += "#" + std::to_string(rank) + " " + code
-                             + " (" + std::to_string(wins) + " " + pc.valueLabel + ")";
+                             + " (" + std::to_string(wins) + (pc.valueLabel.empty() ? "" : " " + pc.valueLabel) + ")";
                     if (++rank > 5) break;
                 }
                 msg = chatMsg;
@@ -1137,7 +1137,7 @@ void StreamInstance::sendScoreboardToChat() {
                 for (const auto& e : m_playerAlltimeCache) {
                     if (rank > 1) chatMsg += " | ";
                     chatMsg += "#" + std::to_string(rank) + " " + e.displayName
-                             + " (" + std::to_string(e.points) + " " + pc.valueLabel + ")";
+                             + " (" + std::to_string(e.points) + (pc.valueLabel.empty() ? "" : " " + pc.valueLabel) + ")";
                     if (++rank > 5) break;
                 }
                 msg = chatMsg;
@@ -1145,7 +1145,7 @@ void StreamInstance::sendScoreboardToChat() {
                 for (const auto& e : m_playerRecentCache) {
                     if (rank > 1) chatMsg += " | ";
                     chatMsg += "#" + std::to_string(rank) + " " + e.displayName
-                             + " (" + std::to_string(e.points) + " " + pc.valueLabel + ")";
+                             + " (" + std::to_string(e.points) + (pc.valueLabel.empty() ? "" : " " + pc.valueLabel) + ")";
                     if (++rank > 5) break;
                 }
                 msg = chatMsg;
@@ -1153,7 +1153,7 @@ void StreamInstance::sendScoreboardToChat() {
                 for (const auto& [name, score] : m_playerRoundCache) {
                     if (rank > 1) chatMsg += " | ";
                     chatMsg += "#" + std::to_string(rank) + " " + name
-                             + " (" + std::to_string(score) + " " + pc.valueLabel + ")";
+                             + " (" + std::to_string(score) + (pc.valueLabel.empty() ? "" : " " + pc.valueLabel) + ")";
                     if (++rank > 5) break;
                 }
                 msg = chatMsg;

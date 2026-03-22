@@ -294,19 +294,15 @@ export default function ScoreboardPage() {
   const togglePanel = (index: number) =>
     setExpandedPanels((prev) => ({ ...prev, [index]: !prev[index] }));
 
-  // ── Color input helper ──────────────────────────────────────────────
-  const ColorField = ({
-    index,
-    field,
-    label,
-  }: {
-    index: number;
-    field: keyof ScoreboardPanelConfig;
-    label: string;
-  }) => {
+  // ── Color input helper (render function, NOT a component) ────────────
+  const renderColorField = (
+    index: number,
+    field: keyof ScoreboardPanelConfig,
+    label: string,
+  ) => {
     const value = (config.panels[index]?.[field] as string) ?? "#000000";
     return (
-      <div className="space-y-1">
+      <div className="space-y-1" key={field as string}>
         <Label className="text-[10px] text-muted-foreground">{label}</Label>
         <div className="flex items-center gap-1.5">
           <input
@@ -325,8 +321,8 @@ export default function ScoreboardPage() {
     );
   };
 
-  // ── Panel settings sub-component ────────────────────────────────────
-  const PanelSection = ({ index }: { index: number }) => {
+  // ── Panel settings (render function, NOT a component) ───────────────
+  const renderPanelSection = (index: number) => {
     const p = config.panels[index];
     if (!p) return null;
     const isExpanded = expandedPanels[index] ?? false;
@@ -697,11 +693,11 @@ export default function ScoreboardPage() {
                 <Label className="text-xs font-medium">Panel Colors</Label>
               </div>
               <div className="grid grid-cols-5 gap-3">
-                <ColorField index={index} field="bg_color" label="Background" />
-                <ColorField index={index} field="border_color" label="Border" />
-                <ColorField index={index} field="title_color" label="Title" />
-                <ColorField index={index} field="name_color" label="Name" />
-                <ColorField index={index} field="points_color" label="Points" />
+                {renderColorField(index, "bg_color", "Background")}
+                {renderColorField(index, "border_color", "Border")}
+                {renderColorField(index, "title_color", "Title")}
+                {renderColorField(index, "name_color", "Name")}
+                {renderColorField(index, "points_color", "Points")}
               </div>
             </div>
 
@@ -712,9 +708,9 @@ export default function ScoreboardPage() {
                 <Label className="text-xs font-medium">Rank Colors (Top 3)</Label>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <ColorField index={index} field="gold_color" label="1st — Gold" />
-                <ColorField index={index} field="silver_color" label="2nd — Silver" />
-                <ColorField index={index} field="bronze_color" label="3rd — Bronze" />
+                {renderColorField(index, "gold_color", "1st — Gold")}
+                {renderColorField(index, "silver_color", "2nd — Silver")}
+                {renderColorField(index, "bronze_color", "3rd — Bronze")}
               </div>
             </div>
           </div>
@@ -878,7 +874,7 @@ export default function ScoreboardPage() {
             </div>
           ) : (
             config.panels.map((_, i) => (
-              <PanelSection key={i} index={i} />
+              <div key={i}>{renderPanelSection(i)}</div>
             ))
           )}
         </CardContent>
