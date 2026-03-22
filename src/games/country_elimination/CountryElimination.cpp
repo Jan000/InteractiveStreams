@@ -162,15 +162,16 @@ void CountryElimination::initialize() {
     spdlog::info("[CountryElimination] Initializing...");
 
     if (m_textElements.empty()) {
-        registerTextElement("title",         "Game Title",       50.0f,  2.0f, 32, TextAlign::Center, true, "#FFFFFFEE");
-        registerTextElement("phase",         "Phase Indicator",  50.0f,  5.0f, 22, TextAlign::Center, true, "#CCCCCCCC");
-        registerTextElement("join_hint",     "Join Hint",        50.0f, 95.0f, 20, TextAlign::Center, true, "#FFFFFFAA");
-        registerTextElement("countdown",     "Countdown Number", 50.0f, 50.0f, 90, TextAlign::Center, false);
-        registerTextElement("winner_text",   "Winner Text",      50.0f, 30.0f, 52, TextAlign::Center, false, "#FFD700FF");
-        registerTextElement("winner_label",  "Winner Country",   50.0f, 37.0f, 36, TextAlign::Center, false, "#FFFFFFEE");
-        registerTextElement("elim_feed",     "Elimination Feed", 50.0f, 75.0f, 16, TextAlign::Center, true,  "#FF6666CC");
-        registerTextElement("player_count",  "Player Count",     50.0f,  7.5f, 20, TextAlign::Center, true, "#FFFFFFBB");
-        registerTextElement("sub_info",      "Sub Reward Info",  50.0f, 97.5f,  9, TextAlign::Center, true, "#AAAACC99");
+        // x/y are offsets from the alignment anchor: left=from left, center=from center, right=from right
+        registerTextElement("title",         "Game Title",        0.0f,  2.0f, 32, TextAlign::Center, true, "#FFFFFFEE");
+        registerTextElement("phase",         "Phase Indicator",   0.0f,  5.0f, 22, TextAlign::Center, true, "#CCCCCCCC");
+        registerTextElement("join_hint",     "Join Hint",         0.0f, 95.0f, 20, TextAlign::Center, true, "#FFFFFFAA");
+        registerTextElement("countdown",     "Countdown Number",  0.0f,  0.0f, 90, TextAlign::Center, false, "", "center");
+        registerTextElement("winner_text",   "Winner Text",       0.0f, 30.0f, 52, TextAlign::Center, false, "#FFD700FF");
+        registerTextElement("winner_label",  "Winner Country",    0.0f, 37.0f, 36, TextAlign::Center, false, "#FFFFFFEE");
+        registerTextElement("elim_feed",     "Elimination Feed",  0.0f, 75.0f, 16, TextAlign::Center, true,  "#FF6666CC");
+        registerTextElement("player_count",  "Player Count",      0.0f,  7.5f, 20, TextAlign::Center, true, "#FFFFFFBB");
+        registerTextElement("sub_info",      "Sub Reward Info",   0.0f, 97.5f,  9, TextAlign::Center, true, "#AAAACC99");
     }
 
     m_world = new b2World(b2Vec2(0.0f, m_gravity));

@@ -98,6 +98,12 @@ void StreamInstance::handleChatMessage(const platform::ChatMessage& msg) {
     // Record per-stream statistics
     m_stats.recordMessage(msg.userId, msg.displayName);
 
+    // Backfill avatar URL for historical players (lightweight upsert, no game result)
+    if (!msg.avatarUrl.empty() && !msg.userId.empty()) {
+        Application::instance().playerDatabase().touchPlayer(
+            msg.userId, msg.displayName, msg.avatarUrl);
+    }
+
     // Intercept vote commands (with or without ! prefix)
     std::string voteText = msg.text;
     if (!voteText.empty() && voteText[0] == '!') voteText = voteText.substr(1);

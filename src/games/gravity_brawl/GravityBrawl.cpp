@@ -154,20 +154,21 @@ void GravityBrawl::initialize() {
     // Register configurable text elements (id, label, x%, y%, fontSize, align, visible)
     if (m_textElements.empty()) {
         //                          id                  label                        x%     y%    fs   align
-        registerTextElement("title",           "Game Title",                  50.f,  0.8f, 22, TextAlign::Center);
-        registerTextElement("info_text",       "Info / Status",               50.f,  2.3f, 13, TextAlign::Center);
-        registerTextElement("join_hint",       "Join Hint (bottom)",          50.f, 97.9f, 11, TextAlign::Center);
-        registerTextElement("event_warning",   "Black Hole Warning Bar",      50.f,  3.6f, 12, TextAlign::Center);
-        registerTextElement("cosmic_warning",  "Cosmic Event Warning",        50.f,  3.9f, 16, TextAlign::Center);
-        registerTextElement("cosmic_timer",    "Cosmic Timer (near BH)",      50.f, 25.0f, 24, TextAlign::Center);
-        registerTextElement("countdown",       "Countdown Number",            50.f, 30.0f, 80, TextAlign::Center);
-        registerTextElement("kill_feed",       "Kill Feed",                   98.6f, 5.2f, 11, TextAlign::Right);
-        registerTextElement("player_name",     "Player Name Label",           50.f, 50.f,  11, TextAlign::Center);
-        registerTextElement("player_score",    "Player Score Label",          50.f, 50.f,   9, TextAlign::Center);
-        registerTextElement("floating_text",   "Floating Score Text",         50.f, 50.f,  16, TextAlign::Center);
-        registerTextElement("sub_info",        "Sub Reward Info",             50.f, 95.5f, 9,  TextAlign::Center, true, "#AAAACC99");
-        registerTextElement("sub_goal",        "Sub Goal Bar",                50.f, 93.0f, 12, TextAlign::Center, true, "#FFD700FF");
-        registerTextElement("combo_text",      "Smash Combo Counter",         50.f, 50.f,  14, TextAlign::Center);
+        // x/y are offsets from the alignment anchor: left=from left, center=from center, right=from right
+        registerTextElement("title",           "Game Title",                   0.f,  0.8f, 22, TextAlign::Center);
+        registerTextElement("info_text",       "Info / Status",                0.f,  2.3f, 13, TextAlign::Center);
+        registerTextElement("join_hint",       "Join Hint (bottom)",           0.f, 97.9f, 11, TextAlign::Center);
+        registerTextElement("event_warning",   "Black Hole Warning Bar",       0.f,  3.6f, 12, TextAlign::Center);
+        registerTextElement("cosmic_warning",  "Cosmic Event Warning",         0.f,  3.9f, 16, TextAlign::Center);
+        registerTextElement("cosmic_timer",    "Cosmic Timer (near BH)",       0.f, 25.0f, 24, TextAlign::Center);
+        registerTextElement("countdown",       "Countdown Number",             0.f,  0.0f, 80, TextAlign::Center, true, "", "center");
+        registerTextElement("kill_feed",       "Kill Feed",                    1.4f, 5.2f, 11, TextAlign::Right);
+        registerTextElement("player_name",     "Player Name Label",            0.f,  0.f,  11, TextAlign::Center, true, "", "center");
+        registerTextElement("player_score",    "Player Score Label",           0.f,  0.f,   9, TextAlign::Center, true, "", "center");
+        registerTextElement("floating_text",   "Floating Score Text",          0.f,  0.f,  16, TextAlign::Center, true, "", "center");
+        registerTextElement("sub_info",        "Sub Reward Info",              0.f, 95.5f, 9,  TextAlign::Center, true, "#AAAACC99");
+        registerTextElement("sub_goal",        "Sub Goal Bar",                 0.f, 93.0f, 12, TextAlign::Center, true, "#FFD700FF");
+        registerTextElement("combo_text",      "Smash Combo Counter",          0.f,  0.f,  14, TextAlign::Center, true, "", "center");
     }
 
     // Create Box2D world with zero gravity (we apply custom forces)

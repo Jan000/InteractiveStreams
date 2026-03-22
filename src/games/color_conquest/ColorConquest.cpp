@@ -33,21 +33,22 @@ void ColorConquest::initialize() {
     // Register configurable text elements
     if (m_textElements.empty()) {
         //                          id                    label                            x%      y%    fs   align
+        // x/y are offsets from the alignment anchor: left=from left, center=from center, right=from right
         registerTextElement("title",            "Game Title",                      1.9f,   0.8f, 28, TextAlign::Left);
-        registerTextElement("phase",            "Phase / Round Info",             92.2f,   0.8f, 24, TextAlign::Right);
-        registerTextElement("timer",            "Round Timer",                    50.0f,   1.9f, 22, TextAlign::Center);
-        registerTextElement("team_name",        "Team Name (in panel)",           50.0f,  50.0f, 20, TextAlign::Center);
-        registerTextElement("team_players",     "Team Player Count",              50.0f,  50.0f, 18, TextAlign::Center);
-        registerTextElement("team_cells",       "Team Cell Count",                50.0f,  50.0f, 18, TextAlign::Center);
-        registerTextElement("team_votes",       "Team Vote Info",                 50.0f,  50.0f, 16, TextAlign::Center);
-        registerTextElement("total_players",    "Total Players",                  50.0f,  89.1f, 20, TextAlign::Center);
-        registerTextElement("vote_arrow",       "Vote Direction Labels",          50.0f,  50.0f, 22, TextAlign::Center);
-        registerTextElement("lobby_title",      "Lobby: Join Title",              50.0f,  37.5f, 32, TextAlign::Center);
-        registerTextElement("lobby_team",       "Lobby: Team Buttons",            50.0f,  40.1f, 24, TextAlign::Center);
-        registerTextElement("lobby_auto",       "Lobby: Auto-assign Hint",        50.0f,  43.8f, 20, TextAlign::Center);
-        registerTextElement("lobby_wait",       "Lobby: Waiting",                 50.0f,  45.8f, 22, TextAlign::Center);
-        registerTextElement("gameover_title",   "Game Over Title",                50.0f,  36.5f, 40, TextAlign::Center);
-        registerTextElement("gameover_rank",    "Game Over Rankings",             50.0f,  39.6f, 22, TextAlign::Center);
+        registerTextElement("phase",            "Phase / Round Info",              7.8f,   0.8f, 24, TextAlign::Right);
+        registerTextElement("timer",            "Round Timer",                     0.0f,   1.9f, 22, TextAlign::Center);
+        registerTextElement("team_name",        "Team Name (in panel)",            0.0f,   0.0f, 20, TextAlign::Center, true, "", "center");
+        registerTextElement("team_players",     "Team Player Count",               0.0f,   0.0f, 18, TextAlign::Center, true, "", "center");
+        registerTextElement("team_cells",       "Team Cell Count",                 0.0f,   0.0f, 18, TextAlign::Center, true, "", "center");
+        registerTextElement("team_votes",       "Team Vote Info",                  0.0f,   0.0f, 16, TextAlign::Center, true, "", "center");
+        registerTextElement("total_players",    "Total Players",                   0.0f,  89.1f, 20, TextAlign::Center);
+        registerTextElement("vote_arrow",       "Vote Direction Labels",           0.0f,   0.0f, 22, TextAlign::Center, true, "", "center");
+        registerTextElement("lobby_title",      "Lobby: Join Title",               0.0f,  37.5f, 32, TextAlign::Center);
+        registerTextElement("lobby_team",       "Lobby: Team Buttons",             0.0f,  40.1f, 24, TextAlign::Center);
+        registerTextElement("lobby_auto",       "Lobby: Auto-assign Hint",         0.0f,  43.8f, 20, TextAlign::Center);
+        registerTextElement("lobby_wait",       "Lobby: Waiting",                  0.0f,  45.8f, 22, TextAlign::Center);
+        registerTextElement("gameover_title",   "Game Over Title",                 0.0f,  36.5f, 40, TextAlign::Center);
+        registerTextElement("gameover_rank",    "Game Over Rankings",              0.0f,  39.6f, 22, TextAlign::Center);
         registerTextElement("event_feed",       "Event Feed (bottom)",             1.9f,  98.4f, 22, TextAlign::Left);
     }
 

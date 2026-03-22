@@ -267,9 +267,20 @@ protected:
 
     ResolvedText resolve(const std::string& id, float targetW, float targetH) const {
         const TextElement* e = te(id);
-        if (!e) return {0, 0, 16, TextAlign::Center, "top", true, "", ""};
-        float px = e->x * targetW / 100.f;
-        float py = e->y * targetH / 100.f;
+        if (!e) return {targetW / 2.f, targetH / 2.f, 16, TextAlign::Center, "center", true, "", ""};
+        float offsetX = e->x * targetW / 100.f;
+        float offsetY = e->y * targetH / 100.f;
+        // Position is relative to alignment anchor (like scoreboard panels)
+        float px;
+        switch (e->align) {
+        case TextAlign::Left:   px = offsetX; break;
+        case TextAlign::Center: px = targetW / 2.f + offsetX; break;
+        case TextAlign::Right:  px = targetW - offsetX; break;
+        }
+        float py;
+        if (e->alignY == "center")      py = targetH / 2.f + offsetY;
+        else if (e->alignY == "bottom") py = targetH - offsetY;
+        else                             py = offsetY; // "top"
         unsigned fs = static_cast<unsigned>(std::max(1.f, e->fontSize * m_fontScale));
         return {px, py, fs, e->align, e->alignY, e->visible, e->color, e->content};
     }

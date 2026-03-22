@@ -57,6 +57,12 @@ public:
                       bool isWin,
                       const std::string& avatarUrl = "");
 
+    /// Update a player's avatar URL (and display name) without recording a game result.
+    /// Called on every chat message so historical players get their avatar backfilled.
+    void touchPlayer(const std::string& userId,
+                     const std::string& displayName,
+                     const std::string& avatarUrl);
+
     // ── Leaderboard queries ──────────────────────────────────────────────
 
     /// Get top N players by total points in the last `hours` hours.

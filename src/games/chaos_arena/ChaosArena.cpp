@@ -31,19 +31,20 @@ void ChaosArena::initialize() {
     // Register configurable text elements
     if (m_textElements.empty()) {
         //                          id                      label                           x%     y%    fs   align
+        // x/y are offsets from the alignment anchor: left=from left, center=from center, right=from right
         registerTextElement("title",              "Game Title",                       1.4f,  0.6f, 28, TextAlign::Left);
-        registerTextElement("phase",              "Phase Indicator",                 50.0f,  0.7f, 26, TextAlign::Center);
-        registerTextElement("round_info",         "Round / Player Count",            98.6f,  0.8f, 22, TextAlign::Right);
-        registerTextElement("cmd_hint",           "Command Hint (bottom)",           50.0f, 97.7f, 20, TextAlign::Center);
-        registerTextElement("battle_timer",       "Battle Timer",                    50.0f,  3.3f, 30, TextAlign::Center);
-        registerTextElement("lobby_title",        "Lobby: Waiting Title",            50.0f, 47.7f, 32, TextAlign::Center);
-        registerTextElement("lobby_join_hint",    "Lobby: Join Hint",                50.0f, 49.7f, 22, TextAlign::Center);
-        registerTextElement("lobby_player_count", "Lobby: Player Count",             50.0f, 51.1f, 22, TextAlign::Center);
+        registerTextElement("phase",              "Phase Indicator",                  0.0f,  0.7f, 26, TextAlign::Center);
+        registerTextElement("round_info",         "Round / Player Count",             1.4f,  0.8f, 22, TextAlign::Right);
+        registerTextElement("cmd_hint",           "Command Hint (bottom)",            0.0f, 97.7f, 20, TextAlign::Center);
+        registerTextElement("battle_timer",       "Battle Timer",                     0.0f,  3.3f, 30, TextAlign::Center);
+        registerTextElement("lobby_title",        "Lobby: Waiting Title",             0.0f, 47.7f, 32, TextAlign::Center);
+        registerTextElement("lobby_join_hint",    "Lobby: Join Hint",                 0.0f, 49.7f, 22, TextAlign::Center);
+        registerTextElement("lobby_player_count", "Lobby: Player Count",              0.0f, 51.1f, 22, TextAlign::Center);
         registerTextElement("kill_feed",          "Kill Feed",                       98.0f,  3.6f, 18, TextAlign::Left);
         registerTextElement("leaderboard_header", "Leaderboard Header",               1.5f,  3.9f, 18, TextAlign::Left);
         registerTextElement("leaderboard_entry",  "Leaderboard Entry",                2.4f,  5.2f, 18, TextAlign::Left);
-        registerTextElement("countdown",          "Countdown Number",                50.0f, 50.0f, 80, TextAlign::Center);
-        registerTextElement("player_name",        "Player Name Tag",                 50.0f, 50.0f, 18, TextAlign::Center);
+        registerTextElement("countdown",          "Countdown Number",                 0.0f,  0.0f, 80, TextAlign::Center, true, "", "center");
+        registerTextElement("player_name",        "Player Name Tag",                  0.0f,  0.0f, 18, TextAlign::Center, true, "", "center");
     }
 
     m_physics = std::make_unique<PhysicsWorld>(0.0f, 15.0f);

@@ -152,6 +152,33 @@ void PlayerDatabase::recordResult(const std::string& userId,
                   displayName, userId, points, isWin, gameName);
 }
 
+void PlayerDatabase::touchPlayer(const std::string& userId,
+                                  const std::string& displayName,
+                                  const std::string& avatarUrl) {
+    if (userId.empty() || avatarUrl.empty()) return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_db) return;
+
+    // Lightweight upsert: update avatar_url and display_name for existing players.
+    // If the player doesn't exist yet, create a stub row so the avatar is available
+    // in the scoreboard once they score their first points.
+    const char* sql = R"(
+        INSERT INTO players (user_id, display_name, avatar_url, total_points, total_wins, games_played, updated_at)
+        VALUES (?, ?, ?, 0, 0, 0, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+            display_name = excluded.display_name,
+            avatar_url   = CASE WHEN excluded.avatar_url != '' THEN excluded.avatar_url ELSE avatar_url END;
+    )";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, userId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, displayName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, avatarUrl.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 std::vector<ScoreEntry> PlayerDatabase::getTopRecent(int limit, int hours) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<ScoreEntry> results;
