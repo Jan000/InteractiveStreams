@@ -705,6 +705,8 @@ void StreamInstance::updateScoreboardCache() {
 }
 
 void StreamInstance::rebuildScoreboardPanels() {
+    // Preserve timers and current indices across rebuilds
+    std::map<int, PanelGroup> oldGroups = std::move(m_panelGroups);
     m_panelGroups.clear();
 
     for (size_t i = 0; i < m_sbConfig.panels.size(); ++i) {
@@ -727,8 +729,13 @@ void StreamInstance::rebuildScoreboardPanels() {
         m_panelGroups[p.group].panelIndices.push_back(i);
     }
 
-    // Clamp current indices
+    // Restore timers and clamp current indices
     for (auto& [groupId, grp] : m_panelGroups) {
+        auto it = oldGroups.find(groupId);
+        if (it != oldGroups.end()) {
+            grp.cycleTimer   = it->second.cycleTimer;
+            grp.currentIndex = it->second.currentIndex;
+        }
         if (grp.panelIndices.empty()) {
             grp.currentIndex = 0;
         } else if (grp.currentIndex >= static_cast<int>(grp.panelIndices.size())) {
