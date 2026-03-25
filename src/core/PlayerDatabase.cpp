@@ -94,6 +94,9 @@ void PlayerDatabase::createTables() {
     // Migration: add avatar_url column if missing
     const char* addCol = "ALTER TABLE players ADD COLUMN avatar_url TEXT DEFAULT '';";
     sqlite3_exec(m_db, addCol, nullptr, nullptr, nullptr); // ignore error if already exists
+
+    // Migration: remove country_wins with empty country_code (flagless players)
+    sqlite3_exec(m_db, "DELETE FROM country_wins WHERE country_code = '';", nullptr, nullptr, nullptr);
 }
 
 void PlayerDatabase::recordResult(const std::string& userId,

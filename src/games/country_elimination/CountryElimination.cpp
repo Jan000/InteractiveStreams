@@ -905,7 +905,9 @@ void CountryElimination::endRound() {
         recordRoundWin(w);
 
         if (!w.isBot()) {
-            recordCountryWin(w.label);
+            if (!w.label.empty()) {
+                recordCountryWin(w.label);
+            }
             sendChatFeedback("🏆 " + w.displayName + " wins Round " +
                               std::to_string(m_roundNumber) + "!");
             try {
