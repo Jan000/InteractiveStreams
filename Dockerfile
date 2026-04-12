@@ -95,10 +95,20 @@ RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
 # Combined with FetchContent cache, only actually-changed TUs are recompiled.
 # POST_BUILD copy commands (CopyIfStale) will silently skip because assets/
 # config/ are not present – that's expected; we copy them in the runtime stage.
+#
+# Parallelism is capped at min(nproc, MemTotalGB/2) to prevent OOM kills
+# during heavy builds (gRPC + Abseil + Protobuf can use 1-2 GB per compiler
+# process).  On machines with plenty of RAM this still saturates all cores.
 RUN --mount=type=cache,id=is-fetchcontent,target=/fetchcontent-cache \
     --mount=type=cache,id=is-ccache,target=/ccache \
     ccache --zero-stats > /dev/null 2>&1 || true && \
-    cmake --build build --config Release -j$(nproc) && \
+    MEM_GB=$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo) && \
+    MAX_BY_MEM=$(( MEM_GB / 2 )) && \
+    CPUS=$(nproc) && \
+    JOBS=$(( MAX_BY_MEM < CPUS ? MAX_BY_MEM : CPUS )) && \
+    JOBS=$(( JOBS > 0 ? JOBS : 1 )) && \
+    echo "=== Build: ${CPUS} CPUs, ${MEM_GB} GB RAM → -j${JOBS} ===" && \
+    cmake --build build --config Release -j${JOBS} && \
     echo "=== ccache statistics ===" && \
     ccache --show-stats 2>/dev/null || true
 
